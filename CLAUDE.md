@@ -34,27 +34,28 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 
 ## Current Status
 
-**Phase 1 in progress.** Core skeleton is working: telnet login, room navigation, basic commands. 29 source files (~6,864 lines), 7 test files (~1,770 lines), 284 test cases — all passing. The binary compiles and runs.
+**Phase 1 in progress.** Area files load from disk, players walk through real SMAUG rooms with ANSI color. 29 source files (~6,919 lines), 8 test files (~2,003 lines), 288 test cases — all passing. Boot loads 1,909 rooms, 505 mobs, 821 objects, 4,299 exits from 26 area files.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
 - Telnet login flow (name → password → MOTD → enter game)
 - Single-threaded game loop at 4 pulses/second
 - Command interpreter with prefix matching
-- Room navigation (10 directions) with auto-look
+- Room navigation (10 directions) with auto-look through real loaded rooms
 - Commands: look, quit, say, score, who, help, commands, inventory, equipment
-- Area file parser (loads `.are` files with mobs, objects, rooms, resets, shops, specials)
-- ANSI color code processor (exists but not yet wired into output path)
-- Test suite covering types, util, net, persist, command, and world packages (mutation-verified)
+- Area file loading from `db/area/*.are` with skip-and-recover on parse errors
+- Exit resolution (vnum → room pointer linking after all areas load)
+- ANSI color processing wired into output flush (`ColorFunc` on descriptor)
+- Test suite covering types, util, net, persist (scanner + area integration), command, and world (mutation-verified)
 
 ### What's next (Phase 1 remaining)
-1. Wire up `persist.LoadAreas()` in `bootDB()` (replace hardcoded test rooms)
-2. Implement `FixExits()` to resolve exit vnums to room pointers after loading
-3. Create `persist/player.go` for player save/load
-4. Wire color processing into `FlushOutput()`
-5. Create class/race file loaders
-6. Expand nanny() for character creation
-7. Mob/object instantiation from area resets
+1. Fix spell-name values in object parser (~370 remaining parse errors)
+2. Create `persist/player.go` for player save/load (TDD)
+3. Create class/race file loaders (TDD)
+4. Expand nanny() for character creation
+5. Skills data loading (`skills.dat`)
+6. Mob/object instantiation from area resets
+7. Help file loading, prompt system, system data
 
 ## Building and Running the Go Port
 

@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"path/filepath"
+
 	"github.com/eilidhmae/smaug/internal/act"
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/game"
 	smaugnet "github.com/eilidhmae/smaug/internal/net"
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -74,40 +78,30 @@ func main() {
 func bootDB(w *world.World) error {
 	log.Println("Booting database...")
 
-	// For now, create a minimal world with a starting room
-	startRoom := &types.RoomIndexData{
-		Vnum:        types.ROOM_VNUM_TEMPLE,
-		Name:        "The Temple of Midgaard",
-		Description: "You are standing in the Temple of Midgaard. Marble pillars rise\n\rto the ceiling high above, and the air smells of ancient incense.\n\rA soft light filters through stained glass windows.\n\r",
-		SectorType:  types.SECT_INSIDE,
+	// Load area files
+	areaDir := filepath.Join(w.DataDir, "area")
+	if err := persist.LoadAreas(w, areaDir); err != nil {
+		return fmt.Errorf("loading areas: %w", err)
 	}
 
-	// Add a second room and connect them
-	squareRoom := &types.RoomIndexData{
-		Vnum:        types.ROOM_VNUM_CHAT,
-		Name:        "The Town Square",
-		Description: "You are standing in the town square of Midgaard. The square bustles\n\rwith activity as merchants hawk their wares and travellers rest.\n\rA large fountain stands in the center.\n\r",
-		SectorType:  types.SECT_CITY,
+	// Resolve exit vnums to room pointers
+	w.FixExits()
+
+	log.Printf("Boot complete. %d rooms, %d mob templates, %d obj templates loaded.",
+		len(w.Rooms), len(w.MobIndex), len(w.ObjIndex))
+
+	// Ensure we have a starting room — create a fallback if temple doesn't exist
+	if w.GetRoom(types.ROOM_VNUM_TEMPLE) == nil {
+		log.Printf("WARNING: Temple room (vnum %d) not found. Creating fallback.", types.ROOM_VNUM_TEMPLE)
+		fallback := &types.RoomIndexData{
+			Vnum:        types.ROOM_VNUM_TEMPLE,
+			Name:        "The Void",
+			Description: "You are floating in an empty void. The world has not been loaded.\n\r",
+			SectorType:  types.SECT_INSIDE,
+		}
+		w.Rooms[fallback.Vnum] = fallback
 	}
 
-	// Connect rooms: temple is south of square
-	startRoom.Exits = append(startRoom.Exits, &types.ExitData{
-		Direction: types.DIR_NORTH,
-		ToRoom:    squareRoom,
-		Vnum:      squareRoom.Vnum,
-	})
-	squareRoom.Exits = append(squareRoom.Exits, &types.ExitData{
-		Direction: types.DIR_SOUTH,
-		ToRoom:    startRoom,
-		Vnum:      startRoom.Vnum,
-	})
-
-	w.Rooms[startRoom.Vnum] = startRoom
-	w.Rooms[squareRoom.Vnum] = squareRoom
-
-	// TODO: Load from area files with persist.LoadAreas()
-
-	log.Printf("Boot complete. %d rooms loaded.", len(w.Rooms))
 	return nil
 }
 

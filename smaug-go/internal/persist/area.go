@@ -56,8 +56,10 @@ func loadAreaFile(w *world.World, filename string) error {
 			break // EOF
 		}
 		if letter != '#' {
-			util.Bug("loadAreaFile: %s:%d: '#' not found, got '%c'", filename, sc.Line(), letter)
-			return fmt.Errorf("loadAreaFile: # not found at %s:%d", filename, sc.Line())
+			util.Bug("loadAreaFile: %s:%d: '#' not found, got '%c' — skipping to next section", filename, sc.Line(), letter)
+			// Skip forward to find the next '#' at start of a line
+			skipSection(sc, "recovery")
+			continue
 		}
 
 		word := sc.ReadWord()
@@ -212,25 +214,24 @@ func loadRanges(sc *Scanner, area *types.AreaData) {
 // skipSection consumes input until the next '#' marker is found (which is
 // left in the stream for the main loop to handle), or EOF.
 func skipSection(sc *Scanner, sectionName string) {
-	// For known structured sections we just consume lines until we see a
-	// pattern that tells us the section is done. In practice the main loop
-	// calls ReadLetter looking for '#', so we need to advance past this
-	// entire section. We read one byte at a time looking for '\n#'.
+	// Skip an unrecognised or unsupported section by consuming bytes until we
+	// find a '#' at the start of a line (i.e. after a newline). We unread the
+	// '#' so the main dispatch loop can process it.
+	atLineStart := false
 	for {
 		b, err := sc.readByte()
 		if err != nil {
 			return // EOF
 		}
+		if b == '#' && atLineStart {
+			sc.unreadByte()
+			return
+		}
 		if b == '\n' {
 			sc.line++
-			next, err := sc.readByte()
-			if err != nil {
-				return
-			}
-			if next == '#' {
-				sc.unreadByte()
-				return
-			}
+			atLineStart = true
+		} else {
+			atLineStart = false
 		}
 	}
 }
@@ -276,9 +277,12 @@ func loadMobiles(w *world.World, sc *Scanner, area *types.AreaData) {
 		mob.Description = capitalizeFirst(mob.Description)
 
 		// Line 1: act affected_by alignment letter
-		mob.Act = sc.ReadBitvector()
+		// These are read as individual numbers, not whole-line bitvectors.
+		actFlags := sc.ReadNumber()
+		mob.Act = types.BitVectorFromInt(uint32(actFlags))
 		mob.Act.Set(types.ACT_IS_NPC)
-		mob.AffectedBy = sc.ReadBitvector()
+		affFlags := sc.ReadNumber()
+		mob.AffectedBy = types.BitVectorFromInt(uint32(affFlags))
 		mob.Alignment = sc.ReadNumber()
 		mobLetter := sc.ReadLetter()
 
@@ -297,11 +301,34 @@ func loadMobiles(w *world.World, sc *Scanner, area *types.AreaData) {
 		sc.ReadLetter() // '+'
 		mob.DamPlus = sc.ReadNumber()
 
-		// Line 3: gold exp
-		mob.Gold = sc.ReadNumber()
-		mob.Exp = sc.ReadNumber()
+		// Gold/exp line. Format depends on ENABLE_GOLD_SILVER_COPPER:
+		// Without: gold exp
+		// With:    exp gold silver copper
+		// We detect by reading the first number: if the rest of the gold
+		// line has 3 more numbers, it's the multi-currency format.
+		// Since fread_number skips newlines, we read via ReadToEOL to get the line.
+		goldLine := sc.ReadToEOL()
+		goldFields := strings.Fields(goldLine)
+		if len(goldFields) >= 4 {
+			// Multi-currency: exp gold silver copper
+			mob.Exp = atoi(goldFields[0])
+			mob.Gold = atoi(goldFields[1])
+			mob.Silver = atoi(goldFields[2])
+			mob.Copper = atoi(goldFields[3])
+		} else if len(goldFields) >= 2 {
+			// Standard: gold exp
+			mob.Gold = atoi(goldFields[0])
+			mob.Exp = atoi(goldFields[1])
+		} else if len(goldFields) == 1 {
+			// Single number — likely multi-currency with exp on this line
+			// and gold/silver/copper on next
+			mob.Exp = atoi(goldFields[0])
+			mob.Gold = sc.ReadNumber()
+			mob.Silver = sc.ReadNumber()
+			mob.Copper = sc.ReadNumber()
+		}
 
-		// Line 4: position defposition sex
+		// Position line: position defposition sex
 		mob.Position = convertPosition(sc.ReadNumber())
 		mob.DefPosition = convertPosition(sc.ReadNumber())
 		mob.Sex = sc.ReadNumber()
@@ -487,8 +514,12 @@ func loadObjects(w *world.World, sc *Scanner, area *types.AreaData) {
 	for {
 		letter := sc.ReadLetter()
 		if letter != '#' {
-			util.Bug("loadObjects: %s:%d: '#' not found", sc.File(), sc.Line())
-			return
+			if letter == 0 {
+				return // EOF
+			}
+			util.Bug("loadObjects: %s:%d: '#' not found, got '%c' — skipping to next object", sc.File(), sc.Line(), letter)
+			skipSection(sc, "obj-recovery")
+			continue
 		}
 
 		vnum := sc.ReadNumber()
@@ -516,27 +547,17 @@ func loadObjects(w *world.World, sc *Scanner, area *types.AreaData) {
 
 		obj.Description = capitalizeFirst(obj.Description)
 
-		// Line: item_type extra_flags wear_flags
-		obj.ItemType = sc.ReadNumber()
-		obj.ExtraFlags = sc.ReadBitvector()
-		// Remaining on the line: wear_flags [layers [level]]
-		wearLine := sc.ReadToEOL()
-		parseObjWearLine(wearLine, obj)
+		// Line 1: item_type extra_flags wear_flags [layers [level]]
+		typeLine := sc.ReadToEOL()
+		parseObjTypeLine(typeLine, obj)
 
-		// Values line: value[0..5]
+		// Line 2: value[0..5]
 		valLine := sc.ReadToEOL()
 		parseObjValues(valLine, obj)
 
-		// Weight cost rent line: weight cost rent
-		// OR: weight gold_cost silver_cost copper_cost rent
-		obj.Weight = sc.ReadNumber()
-		if obj.Weight < 1 {
-			obj.Weight = 1
-		}
-		obj.GoldCost = sc.ReadNumber()
-		// Read rest of cost line
-		costRest := sc.ReadToEOL()
-		parseObjCosts(costRest, obj)
+		// Line 3: weight cost [silver copper] [rent]
+		costLine := sc.ReadToEOL()
+		parseObjCostLine(costLine, obj)
 
 		// Read optional trailing sections: E (extra descr), A (affect), > (prog)
 		loadObjExtras(sc, obj)
@@ -546,17 +567,50 @@ func loadObjects(w *world.World, sc *Scanner, area *types.AreaData) {
 	}
 }
 
-// parseObjWearLine parses "wear_flags [layers [level]]" from remaining line content.
-func parseObjWearLine(line string, obj *types.ObjIndexData) {
+// parseObjTypeLine parses "item_type extra_flags wear_flags [layers [level]]".
+func parseObjTypeLine(line string, obj *types.ObjIndexData) {
 	fields := strings.Fields(line)
 	if len(fields) >= 1 {
-		obj.WearFlags = atoi(fields[0])
+		obj.ItemType = atoi(fields[0])
 	}
 	if len(fields) >= 2 {
-		obj.Layers = atoi(fields[1])
+		obj.ExtraFlags = types.BitVectorFromInt(uint32(atoi(fields[1])))
 	}
 	if len(fields) >= 3 {
-		obj.Level = atoi(fields[2])
+		obj.WearFlags = atoi(fields[2])
+	}
+	if len(fields) >= 4 {
+		obj.Layers = atoi(fields[3])
+	}
+	if len(fields) >= 5 {
+		obj.Level = atoi(fields[4])
+	}
+}
+
+// parseObjCostLine parses "weight cost [silver copper] [rent]".
+func parseObjCostLine(line string, obj *types.ObjIndexData) {
+	fields := strings.Fields(line)
+	if len(fields) >= 1 {
+		obj.Weight = atoi(fields[0])
+		if obj.Weight < 1 {
+			obj.Weight = 1
+		}
+	}
+	if len(fields) >= 2 {
+		obj.GoldCost = atoi(fields[1])
+	}
+	if len(fields) == 3 {
+		// weight cost rent
+		obj.Rent = atoi(fields[2])
+	} else if len(fields) >= 5 {
+		// weight gold silver copper rent
+		obj.SilverCost = atoi(fields[2])
+		obj.CopperCost = atoi(fields[3])
+		obj.Rent = atoi(fields[4])
+	} else if len(fields) == 4 {
+		// weight gold silver copper (no rent)
+		obj.SilverCost = atoi(fields[2])
+		obj.CopperCost = atoi(fields[3])
 	}
 }
 
@@ -571,42 +625,6 @@ func parseObjValues(line string, obj *types.ObjIndexData) {
 // parseObjCosts parses the remainder after weight and first cost.
 // This handles the simple format: "cost rent" where we already read weight and cost.
 // The cost rest contains: "rent" (and rent is unused).
-func parseObjCosts(rest string, obj *types.ObjIndexData) {
-	fields := strings.Fields(rest)
-	// We already read weight and gold_cost from ReadNumber calls.
-	// The rest could be: "rent" (version 0/1) or "silver copper rent" (version 2+).
-	// For simplicity, just parse what's available.
-	if len(fields) >= 1 {
-		// Could be silver_cost or rent - try treating as rent for now
-		// since most area files use the simple format.
-		val := atoi(fields[0])
-		if len(fields) >= 2 {
-			// Three or more fields: treat as silver, copper, [rent]
-			obj.SilverCost = obj.GoldCost
-			obj.GoldCost = 0
-			obj.CopperCost = val
-			if len(fields) >= 3 {
-				obj.Rent = atoi(fields[2])
-			}
-			// Re-parse: fields are after weight+first_number.
-			// Actually, the C code for version <= 1 reads: weight, cost, rent.
-			// cost is a single gold amount. For version >= 2: weight, gold, silver, copper, rent.
-			// Since we don't track version per-area in our simple loader, and the sample
-			// files use version 0 format (3 numbers: level weight cost), let's re-examine.
-			//
-			// Looking at the actual format more carefully:
-			// The line is: "level weight cost" in version 0
-			// But the C code reads: weight = fread_number, cost = fread_number, rent = fread_number
-			// The scanner already read weight and gold_cost (cost). rest has "rent".
-			obj.SilverCost = 0
-			// obj.GoldCost already set above
-			obj.CopperCost = 0
-			obj.Rent = val
-		} else {
-			obj.Rent = val
-		}
-	}
-}
 
 func loadObjExtras(sc *Scanner, obj *types.ObjIndexData) {
 	for {
@@ -694,11 +712,9 @@ func loadRooms(w *world.World, sc *Scanner, area *types.AreaData) {
 		room.Description = sc.ReadString()
 
 		// Line: (unused) room_flags sector_type [tele_delay tele_vnum tunnel [max_weight]]
-		_ = sc.ReadNumber() // unused (area number in old format)
-		room.RoomFlags = sc.ReadBitvector()
-		// Rest of line: sector_type [tele_delay tele_vnum tunnel [max_weight]]
+		// Read the entire line to avoid ReadNumber consuming the newline.
 		flagLine := sc.ReadToEOL()
-		parseRoomFlags(flagLine, room)
+		parseRoomFlagLine(flagLine, room)
 
 		// Read room contents: exits (D), extra descrs (E), mudprogs (>), end (S)
 		loadRoomContents(sc, room, vnum)
@@ -709,22 +725,27 @@ func loadRooms(w *world.World, sc *Scanner, area *types.AreaData) {
 }
 
 // parseRoomFlags parses "sector_type [tele_delay tele_vnum tunnel [max_weight]]".
-func parseRoomFlags(line string, room *types.RoomIndexData) {
+// parseRoomFlagLine parses "(unused) room_flags sector_type [tele_delay tele_vnum tunnel [max_weight]]".
+func parseRoomFlagLine(line string, room *types.RoomIndexData) {
 	fields := strings.Fields(line)
-	if len(fields) >= 1 {
-		room.SectorType = atoi(fields[0])
-	}
+	// field 0: unused (area number in old format)
 	if len(fields) >= 2 {
-		room.TeleDelay = atoi(fields[1])
+		room.RoomFlags = types.BitVectorFromInt(uint32(atoi(fields[1])))
 	}
 	if len(fields) >= 3 {
-		room.TeleVnum = atoi(fields[2])
+		room.SectorType = atoi(fields[2])
 	}
 	if len(fields) >= 4 {
-		room.Tunnel = atoi(fields[3])
+		room.TeleDelay = atoi(fields[3])
 	}
 	if len(fields) >= 5 {
-		room.MaxWeight = atoi(fields[4])
+		room.TeleVnum = atoi(fields[4])
+	}
+	if len(fields) >= 6 {
+		room.Tunnel = atoi(fields[5])
+	}
+	if len(fields) >= 7 {
+		room.MaxWeight = atoi(fields[6])
 	}
 }
 

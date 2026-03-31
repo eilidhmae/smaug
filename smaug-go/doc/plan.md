@@ -229,7 +229,7 @@ smaug-go/
 
 ### Current State (as of 2026-03-30)
 
-7 test files, 1,770 lines, 284 test cases — all passing. 6 mutations tested and detected.
+8 test files, ~2,003 lines, 288 test cases — all passing. 6 mutations tested and detected.
 
 | Test File | Package | Cases | Coverage |
 |-----------|---------|-------|----------|
@@ -238,6 +238,7 @@ smaug-go/
 | `dice_test.go` | `util/` | ~35 | Statistical distribution tests over 10k trials |
 | `color_test.go` | `net/` | ~40 | All color codes, ANSI on/off, escapes |
 | `scanner_test.go` | `persist/` | ~45 | All Scanner methods, tilde strings, pipe-OR, flags |
+| `area_test.go` | `persist/` | 4 | Integration: objects, rooms, C-mobs, V-mobs with testdata fixtures |
 | `interpret_test.go` | `command/` | ~9 | Find (exact/prefix/trust), Interpret dispatch/position |
 | `world_test.go` | `world/` | ~6 | CRUD operations on World |
 

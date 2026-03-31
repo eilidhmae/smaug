@@ -1,14 +1,16 @@
 # Phase 1: Completed Work
 
-This document records what has been implemented during the initial Phase 1 session.
+This document records what has been implemented during Phase 1.
 
 ## Summary
 
 Phase 1 goal: "Connect via telnet, log in, walk between rooms, see descriptions."
 
-**Status**: Core skeleton is working. Players can telnet in, log in (simplified flow), walk between rooms, use basic commands, and quit. The project compiles to a single 4MB binary with zero external dependencies. Test suite is in place with mutation-verified coverage.
+**Status**: Area files load from disk, players can telnet in, log in, walk through real SMAUG rooms loaded from `.are` files, use basic commands, and quit. ANSI color codes render in telnet clients. The project compiles to a single 4MB binary with zero external dependencies. Test suite is in place with mutation-verified coverage.
 
-**Stats**: 29 source files (~6,864 lines), 7 test files (~1,770 lines), 284 test cases — all passing.
+**Stats**: 29 source files (~6,919 lines), 8 test files (~2,003 lines), 288 test cases — all passing.
+
+**Boot results (26 area files)**: 1,909 rooms, 4,299 exits resolved, 505 mob templates, 821 object templates.
 
 ---
 
@@ -31,7 +33,7 @@ All major C structs from `mud.h` (~6,700 lines) have been ported to Go:
 | `mob_index.go` | `MobIndexData`. |
 | `affect.go` | `AffectData`, `SmaugAff`. |
 | `skill.go` | `SkillType` with all fields for spell/skill definitions. |
-| `descriptor.go` | `DescriptorData` with `net.Conn`, goroutine-safe output buffering (`sync.Mutex`), `InputQueue` channel, `TelnetState`, `NewDescriptor()`, `WriteToBuffer()`, `WriteToBufferf()`, `FlushOutput()`, `HasOutput()`. |
+| `descriptor.go` | `DescriptorData` with `net.Conn`, goroutine-safe output buffering (`sync.Mutex`), `InputQueue` channel, `TelnetState`, `ColorFunc` callback for ANSI processing on flush, `NewDescriptor()`, `WriteToBuffer()`, `WriteToBufferf()`, `FlushOutput()` (applies color processing if `ColorFunc` set), `HasOutput()`. |
 | `clan.go` | `ClanData`, `CouncilData`, `DeityData`. |
 | `shop.go` | `ShopData`, `RepairData`. |
 | `system.go` | `SystemData`, `TimeInfoData`, `ClassType`, `RaceData`. |
@@ -54,20 +56,20 @@ All major C structs from `mud.h` (~6,700 lines) have been ported to Go:
 - Data tables: `Areas`, `Skills`, `Classes`, `Races`, `Clans`, `Councils`, `Deities`, `Shops`, `Repairs`, `Boards`, `Socials`, `Bans`, `Helps`
 - Config: `SysData`, `TimeInfo`, `Auction`
 - Extraction queues: `ExtractChars`, `ExtractObjs`
-- Methods: `New()`, `GetRoom()`, `GetMobIndex()`, `GetObjIndex()`, `AddChar()`, `RemoveChar()`, `AddObj()`, `RemoveObj()`
+- Methods: `New()`, `GetRoom()`, `GetMobIndex()`, `GetObjIndex()`, `AddChar()`, `RemoveChar()`, `AddObj()`, `RemoveObj()`, `FixExits()`
 
 ### `internal/persist/` — File Format I/O (2 files, 1,416 lines)
 
 | File | Contents |
 |------|----------|
 | `scanner.go` | `Scanner` wrapping `bufio.Reader` with file/line tracking. Methods: `ReadWord`, `ReadString` (tilde-terminated), `ReadNumber` (with pipe-OR support), `ReadToEOL`, `ReadBitvector`, `ReadLetter`, `ReadStringNoHash`, `ReadFlag` (number or letter-based flag format), `Errorf`. |
-| `area.go` | `LoadAreas(w, areaDir)` — reads `area.lst`, loads each `.are` file. `loadAreaFile` dispatches `#SECTION` headers. Section loaders: `loadMobiles` (S/C/V formats, dice parsing, bitvectors, default stances, mudprogs), `loadObjects` (item type, flags, values, extra descs, affects, progs), `loadRooms` (description, flags, exits with lock conversion, extra descs, map data, progs), `loadResets`, `loadShops`, `loadRepairs`, `loadSpecials`. Helpers: `convertPosition`, `mprogNameToType`, `setDefaultStances`, `skipSection`. |
+| `area.go` | `LoadAreas(w, areaDir)` — reads `area.lst`, loads each `.are` file. `loadAreaFile` dispatches `#SECTION` headers with skip-and-recover on parse errors. Section loaders: `loadMobiles` (S/C/V formats, dice parsing, bitvectors, default stances, mudprogs, multi-currency gold detection), `loadObjects` (whole-line parsing for type/flags/values/cost lines, extra descs, affects, progs, recovery on failure), `loadRooms` (whole-line flag parsing, exits with lock conversion, extra descs, map data, progs), `loadResets`, `loadShops`, `loadRepairs`, `loadSpecials`. Helpers: `convertPosition`, `mprogNameToType`, `setDefaultStances`, `skipSection` (with `atLineStart` tracking), `parseObjTypeLine`, `parseObjCostLine`, `parseRoomFlagLine`. |
 
 ### `internal/net/` — Networking (2 files, 226 lines)
 
 | File | Contents |
 |------|----------|
-| `server.go` | `Server` with TCP listener, `Incoming` channel (cap 50), `Start(port)`, `Stop()`. Accept loop goroutine creates `DescriptorData` via `types.NewDescriptor()`, spawns read goroutine per connection. Read goroutine: `bufio.Scanner` line reading, telnet IAC stripping (2-byte commands, 3-byte WILL/WONT/DO/DONT), sends to `InputQueue`. |
+| `server.go` | `Server` with TCP listener, `Incoming` channel (cap 50), `Start(port)`, `Stop()`. Accept loop goroutine creates `DescriptorData` via `types.NewDescriptor()`, sets `ColorFunc = ProcessColors`, spawns read goroutine per connection. Read goroutine: `bufio.Scanner` line reading, telnet IAC stripping (2-byte commands, 3-byte WILL/WONT/DO/DONT), sends to `InputQueue`. |
 | `color.go` | `ProcessColors(text, ansiEnabled)` — converts `&R/&G/&B/&W/&Y/&C/&P/&O` (and lowercase variants) to ANSI escape sequences. `&D/&d` resets, `&&` = literal `&`. Strips codes when ANSI disabled. |
 
 ### `internal/game/` — Game Loop (1 file, 344 lines)
@@ -109,7 +111,7 @@ Helper functions: `showExits`, `moveChar`, `removeFromRoom`, `addToRoom`, `wearL
 
 `main()`: parse flags (`-port`, `-data`), create `World`, set `act.WorldRef`, call `bootDB()`, register commands, create server + game loop, signal handling, run.
 
-`bootDB()`: currently creates 2 hardcoded test rooms (Temple of Midgaard + Town Square) connected north/south. TODO: replace with `persist.LoadAreas()`.
+`bootDB()`: calls `persist.LoadAreas()` to load all `.are` files from `db/area/`, then calls `w.FixExits()` to resolve exit vnums to room pointers. Creates a fallback room if the temple (vnum 21001) isn't found.
 
 `registerCommands()`: registers all 21 commands (look, quit, say, score, who, commands, help, inventory, equipment, + 10 directions).
 
@@ -136,7 +138,7 @@ Verified end-to-end on 2026-03-30:
 
 ## Test Suite
 
-**7 test files, 1,770 lines, 284 test cases — all passing.**
+**8 test files, ~2,003 lines, 288 test cases — all passing.**
 
 All tests were verified non-vacuous using mutation testing: code was temporarily broken, tests confirmed to fail, code reverted, tests confirmed to pass again.
 
@@ -149,6 +151,7 @@ All tests were verified non-vacuous using mutation testing: code was temporarily
 | `util/dice_test.go` | 215 | ~35 | NumberRange (equal, inverted, statistical distribution over 10k trials), NumberPercent (bounds + all-values-appear), NumberDoor, NumberBits (width 0/1/8), DiceRoll (size 0/1, 1d6 bounds, 2d6 mean), NumberFuzzy (range + never-below-1) |
 | `net/color_test.go` | 201 | ~40 | ProcessColors ANSI enabled (all 18 color codes, reset, sequences), ANSI disabled (strip codes), escaped ampersand (&&→&), edge cases (trailing &, unknown codes, empty string) |
 | `persist/scanner_test.go` | 317 | ~45 | ReadWord (simple, quoted, empty), ReadString (tilde-terminated, multi-line, empty), ReadNumber (positive, negative, plus, pipe-OR, zero, sequential), ReadToEOL, ReadLetter, ReadFlag (numeric + letter-based A-Z/a-z), line tracking, ParseVnum |
+| `persist/area_test.go` | 233 | 4 | Integration tests using testdata fixtures: objects (candlestick + tickler with extra descs & affects), rooms (chapel + courtyard with exits, FixExits linking), C-format mobs (skeleton), V-format mobs (priestess with multi-currency gold + stances + room) |
 | `command/interpret_test.go` | 202 | ~9 | Find (exact, prefix, no-match, trust check, exact-beats-prefix), Interpret (dispatch, empty input, unknown command → "Huh?", position check → sleeping message). Uses `net.Pipe()` for output capture. |
 | `world/world_test.go` | 136 | ~6 | New (maps initialized), GetRoom/GetMobIndex/GetObjIndex (found + not-found), AddChar/RemoveChar (add 3, remove middle, remove non-existent), AddObj/RemoveObj |
 

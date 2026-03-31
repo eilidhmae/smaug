@@ -61,6 +61,10 @@ type DescriptorData struct {
 
 	// Protocol state
 	TelnetState *TelnetState
+
+	// ColorFunc processes color codes in output before sending to the client.
+	// Set by the server layer. If nil, output is sent as-is.
+	ColorFunc func(text string, ansiEnabled bool) string
 }
 
 // TelnetState tracks telnet protocol negotiation.
@@ -95,6 +99,7 @@ func (d *DescriptorData) WriteToBufferf(format string, args ...any) {
 }
 
 // FlushOutput sends the output buffer to the connection and clears it.
+// If ColorFunc is set, color codes are processed before sending.
 // Returns an error if the write fails.
 func (d *DescriptorData) FlushOutput() error {
 	d.outMu.Lock()
@@ -106,6 +111,13 @@ func (d *DescriptorData) FlushOutput() error {
 	copy(buf, d.outBuf)
 	d.outBuf = d.outBuf[:0]
 	d.outMu.Unlock()
+
+	// Process color codes if a color function is set
+	if d.ColorFunc != nil {
+		ansi := d.Character != nil && d.Character.Act.IsSet(PLR_ANSI)
+		processed := d.ColorFunc(string(buf), ansi)
+		buf = []byte(processed)
+	}
 
 	_, err := d.Conn.Write(buf)
 	return err

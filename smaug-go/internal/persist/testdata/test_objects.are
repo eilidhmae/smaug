@@ -1,0 +1,69 @@
+#AREA   Test Area~
+
+#AUTHOR Test~
+
+#RANGES
+0 60 0 60
+$
+
+#FLAGS
+0
+
+#ECONOMY 0 0
+
+#OBJECTS
+#3400
+candlestick~
+a candlestick~
+A pewter candlestick is standing here.~
+~
+1 0 16385
+0 0 24 0
+5 150 15
+E
+candlestick~
+It is a rather old-looking three-armed candlestick made from pewter.
+~
+#3402
+tickler~
+a nightgaunt's tickler~
+A nightgaunt's tickler has been left here.~
+tickle~
+5 128 8193
+0 3 4 5
+8 5000 500
+E
+tickler~
+A horrid black mass of gooey tentacles.
+~
+A
+18 1
+A
+19 2
+#0
+
+#ROOMS
+#3405
+Inside the Chapel~
+You are in a small, dark chapel.
+~
+0 0 1
+D0
+The chapel door is made of dark wood.
+~
+door~
+7 -1 3406
+S
+#3406
+The Courtyard~
+A stone courtyard.
+~
+0 0 2
+D2
+~
+~
+0 0 3405
+S
+#0
+
+#$

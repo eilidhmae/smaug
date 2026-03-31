@@ -1,0 +1,44 @@
+#AREA   Test V Mob~
+
+#AUTHOR Test~
+
+#RANGES
+0 60 0 60
+$
+
+#FLAGS
+0
+
+#ECONOMY 0 0
+
+#CLIMATE 2 2 2
+
+#MOBILES
+#21000
+healer cleric priestess~
+the cathedral priestess~
+A priestess of the cathedral bestows blessings from the altar.
+~
+~
+3 4194472 1000 V
+50 0 0 25d500+300 0d0+0
+0
+0 0 0
+112 112 2
+18 13 13 13 13 13 13
+0 0 0 0 0
+0 1 0 0 262143 1 0
+0 0 2047 0 3156992 0 0 263
+1 240 240 240 240 240 240 0 0 0 0 0
+#0
+
+#ROOMS
+#21001
+The Temple~
+A grand temple.
+~
+0 0 0
+S
+#0
+
+#$

@@ -2,6 +2,8 @@
 package world
 
 import (
+	"log"
+
 	"github.com/eilidhmae/smaug/internal/types"
 )
 
@@ -125,5 +127,30 @@ func (w *World) RemoveObj(obj *types.ObjData) {
 			w.Objects = append(w.Objects[:i], w.Objects[i+1:]...)
 			return
 		}
+	}
+}
+
+// FixExits resolves exit vnum fields to actual room pointers after all
+// areas have been loaded. Equivalent to fix_exits() in db.c.
+func (w *World) FixExits() {
+	fixed := 0
+	broken := 0
+	for _, room := range w.Rooms {
+		for _, exit := range room.Exits {
+			if exit.ToRoom == nil && exit.Vnum > 0 {
+				dest := w.Rooms[exit.Vnum]
+				if dest != nil {
+					exit.ToRoom = dest
+					fixed++
+				} else {
+					broken++
+				}
+			}
+		}
+	}
+	if broken > 0 {
+		log.Printf("FixExits: %d exits resolved, %d broken (destination room not found)", fixed, broken)
+	} else {
+		log.Printf("FixExits: %d exits resolved.", fixed)
 	}
 }

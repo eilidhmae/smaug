@@ -63,6 +63,7 @@ func (s *Server) acceptLoop() {
 		}
 
 		desc := types.NewDescriptor(conn)
+		desc.ColorFunc = ProcessColors
 		log.Printf("[net] New connection from %s", desc.Host)
 
 		go s.readLoop(desc, conn)
