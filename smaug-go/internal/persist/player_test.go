@@ -70,6 +70,9 @@ func TestLoadPlayer(t *testing.T) {
 	if ch.Armor != 50 {
 		t.Errorf("Armor = %d, want 50", ch.Armor)
 	}
+	if ch.Position != types.POS_STANDING {
+		t.Errorf("Position = %d, want POS_STANDING (%d)", ch.Position, types.POS_STANDING)
+	}
 	if ch.PermStr != 15 {
 		t.Errorf("PermStr = %d, want 15", ch.PermStr)
 	}
@@ -174,6 +177,24 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if loaded.Alignment != ch.Alignment {
 		t.Errorf("Alignment = %d, want %d", loaded.Alignment, ch.Alignment)
+	}
+	if loaded.Position != ch.Position {
+		t.Errorf("Position = %d, want %d", loaded.Position, ch.Position)
+	}
+	if loaded.Style != ch.Style {
+		t.Errorf("Style = %d, want %d", loaded.Style, ch.Style)
+	}
+	if loaded.Height != ch.Height {
+		t.Errorf("Height = %d, want %d", loaded.Height, ch.Height)
+	}
+	if loaded.Weight != ch.Weight {
+		t.Errorf("Weight = %d, want %d", loaded.Weight, ch.Weight)
+	}
+	// Verify on-disk format has Position + 100 (C compatibility)
+	saved := buf.String()
+	if !bytes.Contains([]byte(saved), []byte("Position   112")) {
+		t.Errorf("saved file should contain 'Position   112' (POS_STANDING=12 + 100), got:\n%s",
+			saved)
 	}
 	if loaded.PCData == nil {
 		t.Fatal("PCData is nil after round-trip")

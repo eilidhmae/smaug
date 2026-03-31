@@ -114,7 +114,7 @@ func (d *DescriptorData) FlushOutput() error {
 
 	// Process color codes if a color function is set
 	if d.ColorFunc != nil {
-		ansi := d.Character != nil && d.Character.Act.IsSet(PLR_ANSI)
+		ansi := d.Character == nil || d.Character.Act.IsSet(PLR_ANSI)
 		processed := d.ColorFunc(string(buf), ansi)
 		buf = []byte(processed)
 	}
