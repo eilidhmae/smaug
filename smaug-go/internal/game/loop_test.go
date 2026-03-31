@@ -1,9 +1,14 @@
 package game
 
 import (
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/eilidhmae/smaug/internal/command"
+	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -150,4 +155,76 @@ func TestNewGameLoop(t *testing.T) {
 	if g.pulseTick != types.PULSE_TICK {
 		t.Errorf("pulseTick = %d, want %d", g.pulseTick, types.PULSE_TICK)
 	}
+}
+
+// --- flushOutput broken pipe test ---
+
+func TestFlushOutput_BrokenPipe(t *testing.T) {
+	g := newTestLoop()
+
+	// Create a descriptor with an already-closed connection
+	server, client := net.Pipe()
+	client.Close() // Close the client end
+	d := types.NewDescriptor(server)
+	d.WriteToBuffer("Hello, world!\n\r")
+	g.world.Descriptors = append(g.world.Descriptors, d)
+
+	g.flushOutput()
+
+	if d.Connected != -1 {
+		t.Errorf("d.Connected = %d, want -1 (should be marked for cleanup after broken pipe)", d.Connected)
+	}
+	server.Close()
+}
+
+// --- closeDescriptor saves player test ---
+
+func TestCloseDescriptor_SavesPlayer(t *testing.T) {
+	tmpDir := t.TempDir()
+	w := world.New(tmpDir)
+	reg := command.NewRegistry()
+	incoming := make(chan *types.DescriptorData, 10)
+	g := NewGameLoop(w, reg, incoming)
+
+	room := &types.RoomIndexData{Vnum: 21001, Name: "Temple"}
+	w.Rooms[21001] = room
+
+	server, client := net.Pipe()
+	defer client.Close()
+	d := types.NewDescriptor(server)
+	ch := &types.CharData{
+		Name:     "Savetest",
+		Level:    5,
+		Position: types.POS_STANDING,
+		Hit:      50, MaxHit: 100,
+		Mana: 30, MaxMana: 50,
+		Move: 60, MaxMove: 80,
+		PCData: &types.PCData{
+			Pwd:      "pass",
+			Title:    "the Tester",
+			Prompt:   "<%hhp> ",
+			Filename: "savetest",
+			PagerLen: 24,
+		},
+	}
+	d.Character = ch
+	ch.Desc = d
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	g.closeDescriptor(d)
+
+	// Verify player file was saved
+	playerPath := persist.PlayerFilePath(tmpDir, "Savetest")
+	if _, err := os.Stat(playerPath); os.IsNotExist(err) {
+		t.Errorf("player file not saved at %s", playerPath)
+	}
+
+	// Verify character removed from world
+	if len(w.Characters) != 0 {
+		t.Errorf("world.Characters = %d, want 0", len(w.Characters))
+	}
+
+	// Suppress unused import
+	_ = filepath.Base
 }

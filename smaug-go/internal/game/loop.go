@@ -631,7 +631,8 @@ func isValidName(name string) bool {
 func (g *GameLoop) flushOutput() {
 	for _, d := range g.world.Descriptors {
 		if err := d.FlushOutput(); err != nil {
-			log.Printf("Flush error for %s: %v", d.Host, err)
+			log.Printf("Lost connection to %s: %v", d.Host, err)
+			d.Connected = -1 // Mark for cleanup
 		}
 	}
 }
@@ -653,6 +654,7 @@ func (g *GameLoop) cleanupDescriptors() {
 func (g *GameLoop) closeDescriptor(d *types.DescriptorData) {
 	if d.Character != nil {
 		ch := d.Character
+		g.SavePlayer(ch)
 		log.Printf("%s has left the game.", ch.Name)
 
 		// Remove from room
