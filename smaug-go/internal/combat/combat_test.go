@@ -185,6 +185,86 @@ func TestMakeCorpse_NPC(t *testing.T) {
 	}
 }
 
+func TestViolenceUpdate_IncapCantAttack(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 8010, Name: "Arena"}
+	w.Rooms[8010] = room
+
+	ch := newFighter("Incap Player", 10)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	victim := newFighter("Mob", 10)
+	victim.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+
+	StartFighting(ch, victim)
+
+	// Simulate being beaten to incap after combat started
+	ch.Hit = 0
+	ch.Position = types.POS_INCAP
+	startHP := victim.Hit
+
+	ViolenceUpdate(w)
+
+	if victim.Hit != startHP {
+		t.Errorf("victim.Hit = %d, want %d (incapacitated attacker should not deal damage)", victim.Hit, startHP)
+	}
+}
+
+func TestMakeCorpse_GoldInCorpse(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 8011, Name: "Arena"}
+	w.Rooms[8011] = room
+
+	mobIdx := &types.MobIndexData{
+		Vnum: 9010, PlayerName: "rich guard", ShortDescr: "a rich guard",
+		Level: 5, Position: types.POS_STANDING, DefPosition: types.POS_STANDING,
+	}
+	w.MobIndex[9010] = mobIdx
+	mob := handler.CreateMobile(w, mobIdx)
+	handler.CharToRoom(mob, room)
+	mob.Gold = 100
+
+	MakeCorpse(w, mob)
+
+	corpse := room.Contents[0]
+	if corpse.Value[0] != 100 {
+		t.Errorf("corpse.Value[0] (gold) = %d, want 100", corpse.Value[0])
+	}
+}
+
+func TestDamage_XPGainOnKill(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 8012, Name: "Arena"}
+	w.Rooms[8012] = room
+
+	ch := newFighter("Player", 10)
+	ch.PCData = &types.PCData{}
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	startXP := ch.Exp
+
+	mobIdx := &types.MobIndexData{
+		Vnum: 9011, PlayerName: "target", ShortDescr: "a target",
+		Level: 5, Position: types.POS_STANDING, DefPosition: types.POS_STANDING,
+		HitNoDice: 1, HitSizeDice: 1, HitPlus: 10,
+	}
+	w.MobIndex[9011] = mobIdx
+	victim := handler.CreateMobile(w, mobIdx)
+	handler.CharToRoom(victim, room)
+	victim.Hit = 10
+	victim.MaxHit = 10
+	victim.Exp = 500
+
+	StartFighting(ch, victim)
+	Damage(w, ch, victim, 200, types.TYPE_HIT)
+
+	if ch.Exp <= startXP {
+		t.Errorf("Exp = %d, should have increased from %d after killing mob", ch.Exp, startXP)
+	}
+}
+
 func TestViolenceUpdate(t *testing.T) {
 	w := newCombatWorld()
 	room := &types.RoomIndexData{Vnum: 8004, Name: "Arena"}

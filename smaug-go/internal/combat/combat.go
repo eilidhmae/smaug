@@ -62,6 +62,12 @@ func ViolenceUpdate(w *world.World) {
 			continue
 		}
 
+		// Can't fight if incapacitated or worse, or at 0 HP
+		if ch.Hit <= 0 || ch.Position <= types.POS_INCAP {
+			StopFighting(ch, false)
+			continue
+		}
+
 		victim := ch.Fighting.Who
 		if victim == nil || victim.InRoom != ch.InRoom {
 			StopFighting(ch, false)
@@ -104,7 +110,7 @@ func OneHit(w *world.World, ch *types.CharData, victim *types.CharData, dt int) 
 	thac0 -= types.StrApp[ch.GetCurrStr()].ToHit
 
 	// Victim AC (capped at -19)
-	victimAC := util.UMAX(-19, ch.Armor/10)
+	victimAC := util.UMAX(-19, victim.Armor/10)
 
 	// Roll d20
 	diceroll := rollD20()
@@ -188,12 +194,31 @@ func Damage(w *world.World, ch *types.CharData, victim *types.CharData, dam int,
 		victim.Sendf("%s hits you for %d damage.\n\r", ch.Name, dam)
 	}
 
-	// Update position
+	// Update position and send status messages
+	oldPos := victim.Position
 	updatePos(victim)
+
+	if victim.Position != oldPos && victim.Position <= types.POS_INCAP {
+		switch victim.Position {
+		case types.POS_INCAP:
+			victim.Send("You are incapacitated and will slowly die, if not aided.\n\r")
+			StopFighting(victim, true)
+		case types.POS_STUNNED:
+			victim.Send("You are stunned, but will probably recover.\n\r")
+			StopFighting(victim, true)
+		}
+	}
 
 	// Death check
 	if victim.Position == types.POS_DEAD {
 		StopFighting(ch, true)
+
+		// XP gain for killer (player killing NPC)
+		if !ch.IsNPC() && victim.IsNPC() {
+			xpGain := computeXP(ch, victim)
+			ch.Exp += xpGain
+			ch.Sendf("You receive %d experience points.\n\r", xpGain)
+		}
 
 		if victim.IsNPC() {
 			MakeCorpse(w, victim)
@@ -252,8 +277,9 @@ func MakeCorpse(w *world.World, ch *types.CharData) {
 		handler.ObjToObj(obj, corpse)
 	}
 
-	// Drop gold into corpse as a note (simplified — full money objects later)
+	// Store gold in corpse value[0] for looting
 	if ch.Gold > 0 {
+		corpse.Value[0] = ch.Gold
 		ch.Gold = 0
 	}
 
@@ -279,6 +305,36 @@ func rollD20() int {
 			return v
 		}
 	}
+}
+
+// computeXP calculates XP gained for killing a victim.
+// Based on victim's base XP scaled by level difference.
+func computeXP(ch *types.CharData, victim *types.CharData) int {
+	xp := victim.Exp
+	if xp <= 0 {
+		// Fallback: base XP from level
+		xp = victim.Level * victim.Level * 10
+	}
+
+	// Level difference scaling
+	diff := victim.Level - ch.Level
+	switch {
+	case diff >= 5:
+		xp = xp * 3 / 2 // 150%
+	case diff >= 1:
+		xp = xp * 11 / 10 // 110%
+	case diff >= -3:
+		// Same range, no modifier
+	case diff >= -8:
+		xp = xp * 3 / 4 // 75%
+	default:
+		xp = xp / 4 // 25% for very low level mobs
+	}
+
+	if xp < 1 {
+		xp = 1
+	}
+	return xp
 }
 
 // AFF_SANCTUARY constant check.

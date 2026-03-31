@@ -165,6 +165,16 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "help", DoFun: act.DoHelp, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "inventory", DoFun: act.DoInventory, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "equipment", DoFun: act.DoEquipment, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "consider", DoFun: act.DoConsider, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "where", DoFun: act.DoWhere, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "time", DoFun: act.DoTime, Position: types.POS_DEAD, Level: 0})
+
+	// Communication commands
+	reg.Register(&command.Command{Name: "tell", DoFun: act.DoTell, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "reply", DoFun: act.DoReply, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "yell", DoFun: act.DoYell, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "gossip", DoFun: act.DoGossip, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "emote", DoFun: act.DoEmote, Position: types.POS_RESTING, Level: 0})
 
 	// Object commands
 	reg.Register(&command.Command{Name: "get", DoFun: act.DoGet, Position: types.POS_RESTING, Level: 0})
@@ -175,9 +185,18 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "remove", DoFun: act.DoRemove, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "sacrifice", DoFun: act.DoSacrifice, Position: types.POS_RESTING, Level: 0})
 
+	// Magic commands
+	reg.Register(&command.Command{Name: "cast", DoFun: act.DoCast, Position: types.POS_FIGHTING, Level: 0})
+
 	// Combat commands
 	reg.Register(&command.Command{Name: "kill", DoFun: act.DoKill, Position: types.POS_FIGHTING, Level: 0})
 	reg.Register(&command.Command{Name: "flee", DoFun: act.DoFlee, Position: types.POS_FIGHTING, Level: 0})
+
+	// Door commands
+	reg.Register(&command.Command{Name: "open", DoFun: act.DoOpen, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "close", DoFun: act.DoClose, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "unlock", DoFun: act.DoUnlock, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "lock", DoFun: act.DoLock, Position: types.POS_STANDING, Level: 0})
 
 	// Movement commands
 	reg.Register(&command.Command{Name: "north", DoFun: act.DoNorth, Position: types.POS_STANDING, Level: 0})

@@ -81,8 +81,12 @@ func TestRegisterCommands(t *testing.T) {
 	}{
 		{"look"}, {"quit"}, {"say"}, {"score"}, {"who"},
 		{"commands"}, {"help"}, {"inventory"}, {"equipment"},
+		{"consider"}, {"where"}, {"time"},
+		{"tell"}, {"reply"}, {"yell"}, {"gossip"}, {"emote"},
 		{"get"}, {"drop"}, {"put"}, {"give"}, {"wear"}, {"remove"}, {"sacrifice"},
+		{"cast"},
 		{"kill"}, {"flee"},
+		{"open"}, {"close"}, {"unlock"}, {"lock"},
 		{"north"}, {"south"}, {"east"}, {"west"}, {"up"}, {"down"},
 		{"northeast"}, {"northwest"}, {"southeast"}, {"southwest"},
 	}
@@ -98,13 +102,17 @@ func TestRegisterCommands(t *testing.T) {
 func TestRegisterCommands_Count(t *testing.T) {
 	reg := registerCommands()
 
-	// 9 info + 7 object + 2 combat + 10 movement = 28 commands
-	expected := 28
+	// 12 info + 5 comm + 7 object + 1 magic + 2 combat + 4 door + 10 movement = 41 commands
+	expected := 41
 	count := 0
 	for _, name := range []string{
 		"look", "quit", "say", "score", "who", "commands", "help", "inventory", "equipment",
+		"consider", "where", "time",
+		"tell", "reply", "yell", "gossip", "emote",
 		"get", "drop", "put", "give", "wear", "remove", "sacrifice",
+		"cast",
 		"kill", "flee",
+		"open", "close", "unlock", "lock",
 		"north", "east", "south", "west", "up", "down",
 		"northeast", "northwest", "southeast", "southwest",
 	} {

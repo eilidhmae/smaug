@@ -224,6 +224,15 @@ func MoveChar(ch *types.CharData, dir int) {
 		return
 	}
 
+	if ch.Position < types.POS_STANDING {
+		if ch.Position == types.POS_FIGHTING {
+			ch.Send("You can't move while fighting! Try 'flee'.\n\r")
+		} else {
+			ch.Send("You need to stand up first.\n\r")
+		}
+		return
+	}
+
 	exit := ch.InRoom.GetExit(dir)
 	if exit == nil || exit.ToRoom == nil {
 		ch.Send("Alas, you cannot go that way.\n\r")

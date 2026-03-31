@@ -6,9 +6,9 @@ This document records what has been implemented during Phase 2.
 
 Phase 2 goal: "A playable game with full combat, inventory management, and basic spells."
 
-**Status**: In progress. Handler layer, attribute tables, object commands, game updates, and combat system complete.
+**Status**: In progress. 9 of 10 task groups complete. Only player persistence enhancement remains.
 
-**Stats**: 46 source files, 21 test files, 414 test cases — all passing.
+**Stats**: 55 source files, 27 test files, 450 test cases — all passing.
 
 ---
 
@@ -146,11 +146,80 @@ Combat formulas:
 
 Both `kill` and `flee` commands registered in main.go.
 
+### 5b. Combat Polish
+
+- **Position check in ViolenceUpdate**: Characters at `POS_INCAP` or below can no longer attack
+- **XP gain on NPC kill**: `computeXP(ch, victim)` — level-difference scaled XP from victim's base XP
+- **Gold in corpses**: NPC gold stored in `corpse.Value[0]` for looting
+- **Bug fix**: `OneHit` was using `ch.Armor` for victim AC instead of `victim.Armor`
+
+### 6. Communication Commands (act/comm.go)
+
+| Command | Function | Purpose |
+|---------|----------|---------|
+| `tell` | `DoTell` | Private message to any character in world; sets Reply pointer |
+| `reply` | `DoReply` | Reply to last tell sender |
+| `yell` | `DoYell` | Message to all players in same area |
+| `gossip` | `DoGossip` | Global channel message to all connected players |
+| `emote` | `DoEmote` | Roleplay action visible to room |
+
+All 5 commands registered in main.go.
+
+### 7. Movement Enhancement (act/move.go, act/info.go)
+
+#### Door Commands
+
+| Command | Function | Purpose |
+|---------|----------|---------|
+| `open` | `DoOpen` | Open closed doors and containers; checks locked state |
+| `close` | `DoClose` | Close open doors |
+| `unlock` | `DoUnlock` | Unlock doors with matching key in inventory |
+| `lock` | `DoLock` | Lock closed doors with matching key |
+
+Helper functions: `findDoor(ch, arg)` (keyword/direction match), `hasKey(ch, vnum)`.
+
+#### Position Check
+
+`MoveChar` now requires `POS_STANDING` — sitting/resting/fighting characters get appropriate error messages instead of moving.
+
+All 4 door commands registered in main.go.
+
+### 8. Enhanced Information (act/info2.go)
+
+| Command | Function | Purpose |
+|---------|----------|---------|
+| `consider` | `DoConsider` | Compare levels with mob (7 messages from "not worth" to "death wish") |
+| `where` | `DoWhere` | Find characters in same area by name, or list all visible players |
+| `time` | `DoTime` | Display game time (hour, time of day, day/month/year) |
+
+### 9. Basic Magic System (magic/magic.go, act/magic.go)
+
+**Spell function registry** with 12 spells:
+
+| Spell | Type | Effect |
+|-------|------|--------|
+| `cure light` | Heal | 1d8 + level/3 HP |
+| `cure serious` | Heal | 2d8 + level/2 HP |
+| `cure critical` | Heal | 3d8 + level HP |
+| `magic missile` | Damage | Level-scaled, no save |
+| `fireball` | Damage | Level-scaled, save for half |
+| `armor` | Buff | -20 AC for 24+level ticks |
+| `bless` | Buff | +hitroll for 12+level ticks |
+| `sanctuary` | Buff | AFF_SANCTUARY (damage halved) for 16+level/2 ticks |
+| `curse` | Debuff | -1 hitroll + AFF_CURSE, save negates |
+| `poison` | Debuff | -2 STR + AFF_POISON, save negates |
+| `blindness` | Debuff | -4 hitroll + AFF_BLIND, save negates |
+| `dispel magic` | Utility | Remove all affects from target, save negates |
+
+**Cast command** (`DoCast`): spell lookup by name, mana cost check, target resolution by TAR_* type, spell function dispatch, room notification.
+
+**Saving throws**: `SavesSpellStaff`, `SavesPoisonDeath` — formula: 50 + (victim_level - caster_level - victim_saves) * 5, clamped 5-95%.
+
 ---
 
 ## Test Suite
 
-**21 test files, 414 test cases — all passing.**
+**27 test files, 450 test cases — all passing.**
 
 New/modified test files this phase:
 
@@ -160,5 +229,9 @@ New/modified test files this phase:
 | `handler/handler_test.go` | 33 | Object removal, extraction, affects, find functions, GetEqChar, CanDropObj |
 | `act/obj_test.go` | 12 | DoGet (room, container, not found, no arg), DoDrop (normal, nodrop), DoWear (armor, weapon), DoRemove, DoPut, DoGive, DoSacrifice |
 | `game/update_test.go` | 10 | hitGain (NPC, standing, sleeping, poisoned), manaGain, moveGain, charUpdate regen, affect expiry, objUpdate corpse decay, mobileUpdate wander |
-| `combat/combat_test.go` | 7 | StartFighting, StopFighting, OneHit, Damage (reduces HP, kills victim), MakeCorpse, ViolenceUpdate |
+| `combat/combat_test.go` | 10 | StartFighting, StopFighting, OneHit, Damage (reduce/kill), MakeCorpse (basic/gold), XP gain, ViolenceUpdate (basic/incap) |
+| `act/comm_test.go` | 6 | DoTell (normal/no-arg), DoReply, DoGossip, DoEmote, DoYell |
+| `act/move_test.go` | 6 | DoOpen (normal/locked), DoClose, DoUnlock, DoLock, MoveChar sitting |
+| `act/info2_test.go` | 6 | DoConsider (weaker/stronger/no-arg), DoWhere (found/not-found), DoTime |
+| `magic/magic_test.go` | 8 | SpellRegistry, CureLight, MagicMissile, Armor, Poison, Sanctuary, SavesSpellStaff, FindSpellByName |
 | `persist/player_test.go` | +3 | Position round-trip, on-disk +100 format, Style/Height/Weight round-trip |

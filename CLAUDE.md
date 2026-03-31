@@ -36,7 +36,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 
 ## Current Status
 
-**Phase 1 complete. Phase 2 in progress.** 46 source files, 21 test files, 414 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
+**Phase 1 complete. Phase 2 in progress (9/10 done).** 55 source files, 27 test files, 450 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -46,7 +46,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Single-threaded game loop at 4 pulses/second
 - Command interpreter with prefix matching
 - Room navigation (10 directions) with auto-look through real loaded rooms
-- Commands: look, quit, say, score, who, help, commands, inventory, equipment, get, drop, put, give, wear, remove, sacrifice, kill, flee
+- Commands: look, quit, say, score, who, help, commands, inventory, equipment, get, drop, put, give, wear, remove, sacrifice, kill, flee, tell, reply, yell, gossip, emote, open, close, unlock, lock, consider, where, time, cast
 - Area file loading from `db/area/*.are` with skip-and-recover on parse errors
 - Exit resolution (vnum → room pointer linking after all areas load)
 - Area reset processing: mob/object instantiation (M/O/P/G/E/D/H reset commands)
@@ -63,14 +63,17 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - BitVector: added Not(), AndNot() methods
 - Object commands: get (room + container), drop, put, give, wear (auto-detect location), remove, sacrifice
 - Game updates: HP/mana/move regen per tick, affect duration countdown with wear-off, corpse decay, NPC wandering, violence update
-- Combat system: StartFighting, StopFighting, ViolenceUpdate, OneHit (thac0 + d20 vs AC), Damage, MakeCorpse, kill/flee commands
-- Test suite: 21 files, 414 cases covering types, util, net, persist, command, world, handler, game, act, combat (mutation-verified)
+- Combat system: StartFighting, StopFighting, ViolenceUpdate, OneHit (thac0 + d20 vs AC), Damage, MakeCorpse, kill/flee commands, XP gain on kill, gold in corpses, position checks
+- Communication: tell/reply (private), yell (area), gossip (global), emote (room)
+- Door commands: open, close, lock, unlock with key matching
+- Movement position check: must be standing to move
+- Enhanced info: consider (level comparison), where (find in area), time (game clock)
+- Magic system: 12 spells (3 heals, 2 damage, 3 buffs, 4 debuffs), cast command with mana/target/save, spell function registry
+- Test suite: 27 files, 450 cases covering types, util, net, persist, command, world, handler, game, act, combat, magic (mutation-verified)
 
 ### What's next (Phase 2: Core Gameplay — remaining)
-1. Basic magic (~20 spells)
-5. Movement enhancement (sector costs, doors)
-6. Communication (tell, gossip, channels)
-7. See `smaug-go/doc/phase2-remaining.md` for full breakdown
+1. Player persistence enhancement (save inventory/affects, autosave)
+2. See `smaug-go/doc/phase2-remaining.md` for full breakdown
 
 ## Building and Running the Go Port
 

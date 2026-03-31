@@ -131,6 +131,34 @@ func (g *GameLoop) charUpdate() {
 			continue
 		}
 
+		// Incapacitated/mortal players slowly bleed out
+		if ch.Position == types.POS_INCAP || ch.Position == types.POS_MORTAL {
+			ch.Send("You are bleeding out...\n\r")
+			ch.Hit--
+			if ch.Hit <= -ch.MaxHit {
+				ch.Position = types.POS_DEAD
+				ch.Send("You have been KILLED!\n\r")
+				// PC death: reset
+				if !ch.IsNPC() {
+					ch.Hit = 1
+					ch.Mana = 1
+					ch.Move = 1
+					ch.Position = types.POS_RESTING
+					ch.Send("You awaken in a daze...\n\r")
+				}
+			}
+			continue
+		}
+
+		// Stunned characters auto-recover
+		if ch.Position == types.POS_STUNNED {
+			ch.Hit++
+			if ch.Hit > 0 {
+				ch.Position = types.POS_STANDING
+				ch.Send("You regain consciousness.\n\r")
+			}
+		}
+
 		// HP/mana/move regeneration
 		if ch.Position >= types.POS_STUNNED {
 			if ch.Hit < ch.MaxHit {

@@ -31,12 +31,20 @@ func DoKill(ch *types.CharData, argument string) {
 		return
 	}
 
+	if ch.Hit <= 0 || ch.Position < types.POS_STANDING {
+		ch.Send("You are in no condition to fight!\n\r")
+		return
+	}
+
 	if ch.Fighting != nil {
 		ch.Send("You do the best you can!\n\r")
 		return
 	}
 
 	combat.StartFighting(ch, victim)
+	if victim.Fighting == nil {
+		combat.StartFighting(victim, ch)
+	}
 	ch.Sendf("You attack %s!\n\r", victim.ShortDescr)
 }
 
