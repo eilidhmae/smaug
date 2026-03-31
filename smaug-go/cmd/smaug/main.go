@@ -87,6 +87,33 @@ func bootDB(w *world.World) error {
 	// Resolve exit vnums to room pointers
 	w.FixExits()
 
+	// Load class and race data
+	classDir := filepath.Join(w.DataDir, "classes")
+	if err := persist.LoadClasses(w, classDir); err != nil {
+		log.Printf("WARNING: failed to load classes: %v", err)
+	} else {
+		count := 0
+		for _, c := range w.Classes {
+			if c != nil {
+				count++
+			}
+		}
+		log.Printf("Loaded %d classes.", count)
+	}
+
+	raceDir := filepath.Join(w.DataDir, "races")
+	if err := persist.LoadRaces(w, raceDir); err != nil {
+		log.Printf("WARNING: failed to load races: %v", err)
+	} else {
+		count := 0
+		for _, r := range w.Races {
+			if r != nil {
+				count++
+			}
+		}
+		log.Printf("Loaded %d races.", count)
+	}
+
 	log.Printf("Boot complete. %d rooms, %d mob templates, %d obj templates loaded.",
 		len(w.Rooms), len(w.MobIndex), len(w.ObjIndex))
 

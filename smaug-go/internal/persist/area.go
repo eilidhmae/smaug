@@ -559,6 +559,10 @@ func loadObjects(w *world.World, sc *Scanner, area *types.AreaData) {
 		costLine := sc.ReadToEOL()
 		parseObjCostLine(costLine, obj)
 
+		// For spell-containing item types, the next line has quoted spell names.
+		// Only present when area_version > 0 (which all our files are).
+		loadObjSpellNames(sc, obj)
+
 		// Read optional trailing sections: E (extra descr), A (affect), > (prog)
 		loadObjExtras(sc, obj)
 
@@ -625,6 +629,78 @@ func parseObjValues(line string, obj *types.ObjIndexData) {
 // parseObjCosts parses the remainder after weight and first cost.
 // This handles the simple format: "cost rent" where we already read weight and cost.
 // The cost rest contains: "rent" (and rent is unused).
+
+// loadObjSpellNames reads the spell-name line for item types that contain spells.
+// The line contains single-quoted spell names like: 'heal' 'NONE' 'NONE'
+// We peek at the next non-whitespace char — if it's a quote, read the line.
+// Otherwise do nothing (the line belongs to the next section).
+func loadObjSpellNames(sc *Scanner, obj *types.ObjIndexData) {
+	switch obj.ItemType {
+	case types.ITEM_POTION, types.ITEM_SCROLL, types.ITEM_PILL,
+		types.ITEM_WAND, types.ITEM_STAFF, types.ITEM_SALVE:
+		// Peek at next non-whitespace character
+		sc.skipWhitespace()
+		b, err := sc.readByte()
+		if err != nil {
+			return
+		}
+		if b != '\'' {
+			// Not a spell-name line — put it back
+			sc.unreadByte()
+			return
+		}
+		// Put back the quote and read the full line
+		sc.unreadByte()
+		line := sc.ReadToEOL()
+		names := parseQuotedNames(line)
+
+		switch obj.ItemType {
+		case types.ITEM_POTION, types.ITEM_SCROLL, types.ITEM_PILL:
+			if len(names) >= 1 {
+				obj.SpellNames[1] = names[0]
+			}
+			if len(names) >= 2 {
+				obj.SpellNames[2] = names[1]
+			}
+			if len(names) >= 3 {
+				obj.SpellNames[3] = names[2]
+			}
+		case types.ITEM_WAND, types.ITEM_STAFF:
+			if len(names) >= 1 {
+				obj.SpellNames[3] = names[0]
+			}
+		case types.ITEM_SALVE:
+			if len(names) >= 1 {
+				obj.SpellNames[4] = names[0]
+			}
+			if len(names) >= 2 {
+				obj.SpellNames[5] = names[1]
+			}
+		}
+
+	default:
+		// No spell names for this item type.
+	}
+}
+
+// parseQuotedNames extracts single-quoted strings from a line.
+// Input: "'heal' 'NONE' 'NONE'" → ["heal", "NONE", "NONE"]
+func parseQuotedNames(line string) []string {
+	var names []string
+	for {
+		start := strings.IndexByte(line, '\'')
+		if start == -1 {
+			break
+		}
+		end := strings.IndexByte(line[start+1:], '\'')
+		if end == -1 {
+			break
+		}
+		names = append(names, line[start+1:start+1+end])
+		line = line[start+1+end+1:]
+	}
+	return names
+}
 
 func loadObjExtras(sc *Scanner, obj *types.ObjIndexData) {
 	for {

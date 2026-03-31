@@ -1,0 +1,44 @@
+#PLAYER
+Version    2
+Name       Testchar~
+Description A brave test character.
+~
+Sex        1
+Class      3
+Race       0
+Languages  1 1
+Level      10
+Played     3600
+Room       21001
+HpManaMove 100 100 50 50 80 80
+Stance     0
+Gold       500
+Exp        5000
+Height     72
+Weight     180
+Act        0 0 0 0
+AffectedBy 0 0 0 0
+Position   112
+Style      2
+Practice   5
+Alignment  0
+SavingThrows 0 0 0 0 0
+Hitroll    3
+Damroll    5
+Armor      50
+Wimpy      20
+AttrPerm   15 13 12 14 13 11 13
+AttrMod    0 0 0 0 0 0 0
+Condition  0 48 48 0
+Password   testpass~
+Title      the Brave~
+Prompt     <%hhp %mm %vmv> ~
+Pagerlen   24
+Flags      2
+PKills     0
+PDeaths    0
+MKills     42
+MDeaths    3
+Site       localhost~
+End
+

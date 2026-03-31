@@ -6,11 +6,11 @@ This document records what has been implemented during Phase 1.
 
 Phase 1 goal: "Connect via telnet, log in, walk between rooms, see descriptions."
 
-**Status**: Area files load from disk, players can telnet in, log in, walk through real SMAUG rooms loaded from `.are` files, use basic commands, and quit. ANSI color codes render in telnet clients. The project compiles to a single 4MB binary with zero external dependencies. Test suite is in place with mutation-verified coverage.
+**Status**: Area files, class files, and race files all load from disk. Players can telnet in, log in, walk through real SMAUG rooms, and quit. Player save/load implemented (round-trip tested). Spell-name values in area objects handled. ANSI color codes render in telnet clients. The project compiles to a single 4MB binary with zero external dependencies.
 
-**Stats**: 29 source files (~6,919 lines), 8 test files (~2,003 lines), 288 test cases — all passing.
+**Stats**: 32 source files (~7,667 lines), 11 test files (~2,369 lines), 293 test cases — all passing.
 
-**Boot results (26 area files)**: 1,909 rooms, 4,299 exits resolved, 505 mob templates, 821 object templates.
+**Boot results (26 area files)**: 1,909 rooms, 4,299 exits, 505 mob templates, 821 object templates, 17 classes, 15 races.
 
 ---
 
@@ -111,9 +111,26 @@ Helper functions: `showExits`, `moveChar`, `removeFromRoom`, `addToRoom`, `wearL
 
 `main()`: parse flags (`-port`, `-data`), create `World`, set `act.WorldRef`, call `bootDB()`, register commands, create server + game loop, signal handling, run.
 
-`bootDB()`: calls `persist.LoadAreas()` to load all `.are` files from `db/area/`, then calls `w.FixExits()` to resolve exit vnums to room pointers. Creates a fallback room if the temple (vnum 21001) isn't found.
+`bootDB()`: calls `persist.LoadAreas()`, `w.FixExits()`, `persist.LoadClasses()`, `persist.LoadRaces()`. Creates a fallback room if the temple (vnum 21001) isn't found.
 
 `registerCommands()`: registers all 21 commands (look, quit, say, score, who, commands, help, inventory, equipment, + 10 directions).
+
+### New Persist Loaders (3 files, ~750 lines)
+
+| File | Contents |
+|------|----------|
+| `classes.go` | `LoadClasses(w, classDir)` — reads `class.lst`, loads each `.class` file. Parses: Name, Class index, AttrPrime/Second/Deficient, Weapon, Guild, SkillAdept, Thac0/Thac32, HPMin/Max, Mana, ExpBase, Affected, Resist, Suscept, Skill entries, Title entries, Login/Logout/Reconnect messages. |
+| `races.go` | `LoadRaces(w, raceDir)` — reads `race.lst`, loads each `.race` file. Parses: Name, Race index, Classes restriction, stat bonuses (Str/Dex/Wis/Int/Con/Cha/Lck), Hit/Mana, Affected/Resist/Suscept, Language, Alignment/MinAlign/MaxAlign, ACPlus, ExpMult, Attacks/Defenses, Height/Weight, HungerMod/ThirstMod, ManaRegen/HPRegen, RaceRecall, WhereName entries, Skill entries. Case-insensitive keyword matching. |
+| `player.go` | `LoadPlayer(r, filename)` — reads `#PLAYER` section with 60+ KEY/VALUE keywords (Name, Sex, Class, Race, Level, HpManaMove, Gold, Exp, stats, saves, password, title, flags, etc.). Skips `#OBJECT`/`#CORPSE` sections. `SavePlayer(w, ch)` — writes matching format. `PlayerFilePath(dataDir, name)` — returns `db/player/<first_letter>/<Name>` path. |
+
+### Spell-Name Handling in Area Parser
+
+Added `loadObjSpellNames()` to `persist/area.go` — peeks at next char after cost line; if `'` (single quote), reads spell names for the item type:
+- Potions/scrolls/pills: 3 names → `SpellNames[1],[2],[3]`
+- Wands/staves: 1 name → `SpellNames[3]`
+- Salves: 2 names → `SpellNames[4],[5]`
+
+Added `SpellNames [6]string` field to `types.ObjIndexData`.
 
 ---
 
@@ -138,7 +155,7 @@ Verified end-to-end on 2026-03-30:
 
 ## Test Suite
 
-**8 test files, ~2,003 lines, 288 test cases — all passing.**
+**11 test files, ~2,369 lines, 293 test cases — all passing.**
 
 All tests were verified non-vacuous using mutation testing: code was temporarily broken, tests confirmed to fail, code reverted, tests confirmed to pass again.
 
@@ -151,7 +168,10 @@ All tests were verified non-vacuous using mutation testing: code was temporarily
 | `util/dice_test.go` | 215 | ~35 | NumberRange (equal, inverted, statistical distribution over 10k trials), NumberPercent (bounds + all-values-appear), NumberDoor, NumberBits (width 0/1/8), DiceRoll (size 0/1, 1d6 bounds, 2d6 mean), NumberFuzzy (range + never-below-1) |
 | `net/color_test.go` | 201 | ~40 | ProcessColors ANSI enabled (all 18 color codes, reset, sequences), ANSI disabled (strip codes), escaped ampersand (&&→&), edge cases (trailing &, unknown codes, empty string) |
 | `persist/scanner_test.go` | 317 | ~45 | ReadWord (simple, quoted, empty), ReadString (tilde-terminated, multi-line, empty), ReadNumber (positive, negative, plus, pipe-OR, zero, sequential), ReadToEOL, ReadLetter, ReadFlag (numeric + letter-based A-Z/a-z), line tracking, ParseVnum |
-| `persist/area_test.go` | 233 | 4 | Integration tests using testdata fixtures: objects (candlestick + tickler with extra descs & affects), rooms (chapel + courtyard with exits, FixExits linking), C-format mobs (skeleton), V-format mobs (priestess with multi-currency gold + stances + room) |
+| `persist/area_test.go` | ~280 | 5 | Integration tests: objects (candlestick + tickler with extra descs & affects), rooms (chapel + courtyard with exits, FixExits linking), C-format mobs (skeleton), V-format mobs (priestess with multi-currency gold + stances + room), spell-name objects (potion/wand/scroll with quoted spell names) |
+| `persist/classes_test.go` | ~50 | 1 | LoadClasses with TestWarrior.class fixture: WhoName, AttrPrime, Weapon, Guild, SkillAdept, Thac0, HPMin/Max, ExpBase |
+| `persist/races_test.go` | ~50 | 1 | LoadRaces with TestHuman.race fixture: Name, Language, MinAlign, MaxAlign, ExpMultiplier, Height, Weight, WhereName |
+| `persist/player_test.go` | ~170 | 2 | LoadPlayer from fixture (name, sex, class, level, stats, password, title, mkills), SaveLoadRoundTrip (create → save → load → verify all fields) |
 | `command/interpret_test.go` | 202 | ~9 | Find (exact, prefix, no-match, trust check, exact-beats-prefix), Interpret (dispatch, empty input, unknown command → "Huh?", position check → sleeping message). Uses `net.Pipe()` for output capture. |
 | `world/world_test.go` | 136 | ~6 | New (maps initialized), GetRoom/GetMobIndex/GetObjIndex (found + not-found), AddChar/RemoveChar (add 3, remove middle, remove non-existent), AddObj/RemoveObj |
 

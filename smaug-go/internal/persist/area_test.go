@@ -231,3 +231,63 @@ func TestLoadAreaFile_VMob(t *testing.T) {
 		t.Errorf("room name = %q, want %q", room.Name, "The Temple")
 	}
 }
+
+func TestLoadAreaFile_SpellObjects(t *testing.T) {
+	w := world.New("")
+	path := filepath.Join("testdata", "test_spellobj.are")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("testdata not found: %s", path)
+	}
+
+	err := loadAreaFile(w, path)
+	if err != nil {
+		t.Fatalf("loadAreaFile failed: %v", err)
+	}
+
+	// --- Object 21000: potion with spell names ---
+	potion := w.ObjIndex[21000]
+	if potion == nil {
+		t.Fatal("object 21000 (potion) not loaded")
+	}
+	if potion.ItemType != types.ITEM_POTION {
+		t.Errorf("potion item_type = %d, want %d (ITEM_POTION)", potion.ItemType, types.ITEM_POTION)
+	}
+	// Spell names: 'heal' 'NONE' 'NONE' → stored in SpellNames[1], [2], [3]
+	if potion.SpellNames[1] != "heal" {
+		t.Errorf("potion SpellNames[1] = %q, want %q", potion.SpellNames[1], "heal")
+	}
+	if potion.SpellNames[2] != "NONE" {
+		t.Errorf("potion SpellNames[2] = %q, want %q", potion.SpellNames[2], "NONE")
+	}
+	if potion.SpellNames[3] != "NONE" {
+		t.Errorf("potion SpellNames[3] = %q, want %q", potion.SpellNames[3], "NONE")
+	}
+
+	// --- Object 21001: wand with spell name ---
+	wand := w.ObjIndex[21001]
+	if wand == nil {
+		t.Fatal("object 21001 (wand) not loaded")
+	}
+	if wand.ItemType != types.ITEM_WAND {
+		t.Errorf("wand item_type = %d, want %d (ITEM_WAND)", wand.ItemType, types.ITEM_WAND)
+	}
+	// Wand: spell name in value[3] → SpellNames[3]
+	if wand.SpellNames[3] != "identify" {
+		t.Errorf("wand SpellNames[3] = %q, want %q", wand.SpellNames[3], "identify")
+	}
+
+	// --- Object 21002: scroll with spell names ---
+	scroll := w.ObjIndex[21002]
+	if scroll == nil {
+		t.Fatal("object 21002 (scroll) not loaded")
+	}
+	if scroll.ItemType != types.ITEM_SCROLL {
+		t.Errorf("scroll item_type = %d, want %d (ITEM_SCROLL)", scroll.ItemType, types.ITEM_SCROLL)
+	}
+	if scroll.SpellNames[1] != "magic missile" {
+		t.Errorf("scroll SpellNames[1] = %q, want %q", scroll.SpellNames[1], "magic missile")
+	}
+	if scroll.SpellNames[2] != "armor" {
+		t.Errorf("scroll SpellNames[2] = %q, want %q", scroll.SpellNames[2], "armor")
+	}
+}

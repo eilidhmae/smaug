@@ -28,6 +28,11 @@ type ObjIndexData struct {
 	Serial     int
 	Layers     int
 	Rent       int
+
+	// SpellNames stores spell name strings for spell-containing item types
+	// (potions, scrolls, pills, wands, staves, salves). Resolved to skill
+	// numbers later when skills.dat is loaded.
+	SpellNames [6]string
 }
 
 // ObjData is one object instance in the game world.

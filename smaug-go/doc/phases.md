@@ -10,7 +10,7 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Goal:** Connect via telnet, log in, walk between rooms, see descriptions.
 
-**Status:** In progress. 29 source files (~6,919 lines), 8 test files (~2,003 lines), 288 test cases. Area files load (1,909 rooms, 505 mobs, 821 objects, 4,299 exits). Players walk through real rooms with ANSI color. Player persistence, character creation, and mob/obj instantiation remain.
+**Status:** In progress. 32 source files (~7,667 lines), 11 test files (~2,369 lines), 293 test cases. Boot loads 1,909 rooms, 505 mobs, 821 objects, 4,299 exits, 17 classes, 15 races. Player save/load implemented (round-trip tested). Wiring into login flow, character creation, and mob/obj instantiation remain.
 
 **Deliverables:**
 - All core data structures ported from `mud.h` (`types/` package)

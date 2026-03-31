@@ -34,7 +34,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 
 ## Current Status
 
-**Phase 1 in progress.** Area files load from disk, players walk through real SMAUG rooms with ANSI color. 29 source files (~6,919 lines), 8 test files (~2,003 lines), 288 test cases — all passing. Boot loads 1,909 rooms, 505 mobs, 821 objects, 4,299 exits from 26 area files.
+**Phase 1 in progress.** Area files, classes, and races load from disk. Player save/load implemented. 32 source files (~7,667 lines), 11 test files (~2,369 lines), 293 test cases — all passing. Boot loads 1,909 rooms, 505 mobs, 821 objects, 4,299 exits, 17 classes, 15 races.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -46,16 +46,18 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Area file loading from `db/area/*.are` with skip-and-recover on parse errors
 - Exit resolution (vnum → room pointer linking after all areas load)
 - ANSI color processing wired into output flush (`ColorFunc` on descriptor)
-- Test suite covering types, util, net, persist (scanner + area integration), command, and world (mutation-verified)
+- Spell-name object values (potions/scrolls/wands) via peek-based detection
+- Class file loading (17 classes from `db/classes/`)
+- Race file loading (15 races from `db/races/`)
+- Player save/load (`persist.LoadPlayer` / `persist.SavePlayer`, round-trip tested)
+- Test suite: 11 files, 293 cases covering types, util, net, persist (scanner, area, classes, races, player), command, world (mutation-verified)
 
 ### What's next (Phase 1 remaining)
-1. Fix spell-name values in object parser (~370 remaining parse errors)
-2. Create `persist/player.go` for player save/load (TDD)
-3. Create class/race file loaders (TDD)
-4. Expand nanny() for character creation
-5. Skills data loading (`skills.dat`)
-6. Mob/object instantiation from area resets
-7. Help file loading, prompt system, system data
+1. Wire player save/load into login flow (check for existing player, password verify, save on quit)
+2. Character creation flow (sex/race/class selection using loaded data)
+3. Mob/object instantiation from area resets (populate rooms)
+4. Skills data loading (`skills.dat`)
+5. Help file loading, prompt system, system data
 
 ## Building and Running the Go Port
 

@@ -1,0 +1,45 @@
+#AREA   Test Spell Objects~
+
+#VERSION 3
+#AUTHOR Test~
+
+#RANGES
+0 60 0 60
+$
+
+#FLAGS
+0
+
+#ECONOMY 0 0
+
+#OBJECTS
+#21000
+potion violet glowing~
+a glowing violet potion~
+A glowing violet potion has been carelessly left here.~
+~
+10 321 1
+25 -1 -1 -1
+2 6 10 0 6100
+'heal' 'NONE' 'NONE'
+#21001
+wand oak~
+an oak wand~
+An oak wand lies here.~
+~
+3 0 8193
+12 5 5 0
+3 300 30
+'identify'
+#21002
+scroll dusty~
+a dusty scroll~
+A dusty scroll lies here.~
+~
+2 0 1
+10 0 0 0
+1 50 5
+'magic missile' 'armor' 'NONE'
+#0
+
+#$
