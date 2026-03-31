@@ -1,0 +1,368 @@
+// Package act implements player-facing commands.
+package act
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/eilidhmae/smaug/internal/types"
+	"github.com/eilidhmae/smaug/internal/util"
+	"github.com/eilidhmae/smaug/internal/world"
+)
+
+// WorldRef holds a reference to the world for commands that need it.
+// Set during boot.
+var WorldRef *world.World
+
+// DoLook implements the 'look' command.
+func DoLook(ch *types.CharData, argument string) {
+	if ch.InRoom == nil {
+		ch.Send("You are nowhere!\n\r")
+		return
+	}
+
+	room := ch.InRoom
+
+	if argument == "" || strings.EqualFold(argument, "auto") {
+		// Look at the room
+		ch.Sendf("&W%s&D\n\r", room.Name)
+		if room.Description != "" {
+			ch.Send(room.Description)
+		}
+
+		// Show exits
+		showExits(ch, room)
+
+		// Show objects in room
+		for _, obj := range room.Contents {
+			ch.Sendf("&G%s&D\n\r", obj.Description)
+		}
+
+		// Show characters in room
+		for _, rch := range room.People {
+			if rch == ch {
+				continue
+			}
+			if rch.IsNPC() {
+				ch.Sendf("&Y%s&D\n\r", rch.LongDescr)
+			} else {
+				ch.Sendf("&Y%s %s&D\n\r", rch.Name, rch.PCData.Title)
+			}
+		}
+		return
+	}
+
+	// Look at something specific
+	arg, _ := util.OneArgument(argument)
+
+	// Check for looking at a character
+	for _, rch := range room.People {
+		if util.IsName(arg, rch.Name) {
+			ch.Sendf("You look at %s.\n\r", rch.ShortDescr)
+			if rch.Description != "" {
+				ch.Send(rch.Description)
+			}
+			return
+		}
+	}
+
+	// Check extra descriptions
+	for _, ed := range room.ExtraDescr {
+		if util.IsName(arg, ed.Keyword) {
+			ch.Send(ed.Description)
+			return
+		}
+	}
+
+	// Check objects
+	for _, obj := range room.Contents {
+		if util.IsName(arg, obj.Name) {
+			ch.Sendf("%s\n\r", obj.Description)
+			return
+		}
+	}
+
+	// Check inventory
+	for _, obj := range ch.Carrying {
+		if util.IsName(arg, obj.Name) {
+			ch.Sendf("%s\n\r", obj.Description)
+			return
+		}
+	}
+
+	ch.Send("You do not see that here.\n\r")
+}
+
+func showExits(ch *types.CharData, room *types.RoomIndexData) {
+	dirNames := []string{"north", "east", "south", "west", "up", "down",
+		"northeast", "northwest", "southeast", "southwest"}
+
+	var exits []string
+	for _, ex := range room.Exits {
+		if ex.ToRoom == nil {
+			continue
+		}
+		if ex.ExitInfo&int(types.EX_CLOSED) != 0 {
+			continue // don't show closed exits in brief
+		}
+		if ex.Direction >= 0 && ex.Direction < len(dirNames) {
+			exits = append(exits, dirNames[ex.Direction])
+		}
+	}
+
+	if len(exits) == 0 {
+		ch.Send("&DExits: none\n\r")
+	} else {
+		ch.Sendf("&DExits: %s\n\r", strings.Join(exits, " "))
+	}
+}
+
+// DoScore implements the 'score' command.
+func DoScore(ch *types.CharData, argument string) {
+	ch.Sendf("You are %s.\n\r", ch.Name)
+	ch.Sendf("Level: %d  Race: %d  Class: %d  Sex: %d\n\r",
+		ch.Level, ch.Race, ch.Class, ch.Sex)
+	ch.Sendf("Hp: %d/%d  Mana: %d/%d  Move: %d/%d\n\r",
+		ch.Hit, ch.MaxHit, ch.Mana, ch.MaxMana, ch.Move, ch.MaxMove)
+	ch.Sendf("Str: %d  Int: %d  Wis: %d  Dex: %d  Con: %d  Cha: %d  Lck: %d\n\r",
+		ch.GetCurrStr(), ch.GetCurrInt(), ch.GetCurrWis(),
+		ch.GetCurrDex(), ch.GetCurrCon(), ch.GetCurrCha(), ch.GetCurrLck())
+	ch.Sendf("Hitroll: %d  Damroll: %d  Armor: %d\n\r",
+		ch.Hitroll, ch.Damroll, ch.Armor)
+	ch.Sendf("Gold: %d  Exp: %d\n\r", ch.Gold, ch.Exp)
+	ch.Sendf("Alignment: %d  Position: %d\n\r", ch.Alignment, ch.Position)
+}
+
+// DoWho implements the 'who' command.
+func DoWho(ch *types.CharData, argument string) {
+	if WorldRef == nil {
+		ch.Send("Error: no world reference.\n\r")
+		return
+	}
+	count := 0
+	ch.Send("&W--- Players Online ---&D\n\r")
+	for _, d := range WorldRef.Descriptors {
+		if d.Connected != int(types.CON_PLAYING) || d.Character == nil {
+			continue
+		}
+		rch := d.Character
+		if rch.IsNPC() {
+			continue
+		}
+		count++
+		title := ""
+		if rch.PCData != nil {
+			title = rch.PCData.Title
+		}
+		ch.Sendf("[%2d] %s %s\n\r", rch.Level, rch.Name, title)
+	}
+	ch.Sendf("\n\r%d player%s online.\n\r", count, plural(count))
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// DoQuit implements the 'quit' command.
+func DoQuit(ch *types.CharData, argument string) {
+	if ch.Position == types.POS_FIGHTING {
+		ch.Send("No way! You are fighting.\n\r")
+		return
+	}
+	ch.Send("Your surroundings begin to fade as you slowly slip into a deep sleep ...\n\r")
+	// The game loop will handle the actual disconnection
+	if ch.Desc != nil {
+		ch.Desc.Connected = -1 // signal to close
+	}
+}
+
+// DoSay implements the 'say' command.
+func DoSay(ch *types.CharData, argument string) {
+	if argument == "" {
+		ch.Send("Say what?\n\r")
+		return
+	}
+	ch.Sendf("&CYou say '%s'&D\n\r", argument)
+	if ch.InRoom != nil {
+		for _, rch := range ch.InRoom.People {
+			if rch != ch && rch.Desc != nil {
+				rch.Sendf("&C%s says '%s'&D\n\r", ch.Name, argument)
+			}
+		}
+	}
+}
+
+// DoNorth etc. — movement commands
+func DoNorth(ch *types.CharData, argument string)     { moveChar(ch, types.DIR_NORTH) }
+func DoEast(ch *types.CharData, argument string)      { moveChar(ch, types.DIR_EAST) }
+func DoSouth(ch *types.CharData, argument string)     { moveChar(ch, types.DIR_SOUTH) }
+func DoWest(ch *types.CharData, argument string)      { moveChar(ch, types.DIR_WEST) }
+func DoUp(ch *types.CharData, argument string)        { moveChar(ch, types.DIR_UP) }
+func DoDown(ch *types.CharData, argument string)      { moveChar(ch, types.DIR_DOWN) }
+func DoNortheast(ch *types.CharData, argument string) { moveChar(ch, types.DIR_NORTHEAST) }
+func DoNorthwest(ch *types.CharData, argument string) { moveChar(ch, types.DIR_NORTHWEST) }
+func DoSoutheast(ch *types.CharData, argument string) { moveChar(ch, types.DIR_SOUTHEAST) }
+func DoSouthwest(ch *types.CharData, argument string) { moveChar(ch, types.DIR_SOUTHWEST) }
+
+func moveChar(ch *types.CharData, dir int) {
+	if ch.InRoom == nil {
+		ch.Send("You are nowhere!\n\r")
+		return
+	}
+
+	exit := ch.InRoom.GetExit(dir)
+	if exit == nil || exit.ToRoom == nil {
+		ch.Send("Alas, you cannot go that way.\n\r")
+		return
+	}
+
+	if exit.ExitInfo&int(types.EX_CLOSED) != 0 {
+		ch.Send("The door is closed.\n\r")
+		return
+	}
+
+	dirNames := []string{"north", "east", "south", "west", "up", "down",
+		"northeast", "northwest", "southeast", "southwest"}
+	revDir := []int{2, 3, 0, 1, 5, 4, 9, 8, 7, 6}
+
+	// Leave message
+	if ch.InRoom != nil {
+		for _, rch := range ch.InRoom.People {
+			if rch != ch && rch.Desc != nil {
+				rch.Sendf("%s leaves %s.\n\r", ch.Name, dirNames[dir])
+			}
+		}
+	}
+
+	// Remove from old room
+	oldRoom := ch.InRoom
+	removeFromRoom(ch, oldRoom)
+
+	// Add to new room
+	dest := exit.ToRoom
+	addToRoom(ch, dest)
+
+	// Arrive message
+	if dir < len(revDir) {
+		revName := dirNames[revDir[dir]]
+		for _, rch := range dest.People {
+			if rch != ch && rch.Desc != nil {
+				rch.Sendf("%s arrives from the %s.\n\r", ch.Name, revName)
+			}
+		}
+	}
+
+	// Auto-look
+	DoLook(ch, "")
+}
+
+func removeFromRoom(ch *types.CharData, room *types.RoomIndexData) {
+	if room == nil {
+		return
+	}
+	for i, p := range room.People {
+		if p == ch {
+			room.People = append(room.People[:i], room.People[i+1:]...)
+			break
+		}
+	}
+	ch.WasInRoom = room
+	ch.InRoom = nil
+}
+
+func addToRoom(ch *types.CharData, room *types.RoomIndexData) {
+	ch.InRoom = room
+	room.People = append(room.People, ch)
+}
+
+// DoCommands lists all available commands.
+func DoCommands(ch *types.CharData, argument string) {
+	ch.Send("Available commands: look, quit, say, score, who, commands\n\r")
+	ch.Send("Movement: north, south, east, west, up, down, ne, nw, se, sw\n\r")
+}
+
+// DoHelp implements basic help.
+func DoHelp(ch *types.CharData, argument string) {
+	if argument == "" {
+		ch.Send("Type 'commands' for a list of commands.\n\r")
+		return
+	}
+
+	if WorldRef != nil {
+		arg := strings.ToUpper(argument)
+		for _, help := range WorldRef.Helps {
+			if strings.Contains(strings.ToUpper(help.Keyword), arg) {
+				ch.Sendf("&W%s&D\n\r%s\n\r", help.Keyword, help.Text)
+				return
+			}
+		}
+	}
+
+	ch.Sendf("No help found for '%s'.\n\r", argument)
+}
+
+// DoInventory implements the 'inventory' command.
+func DoInventory(ch *types.CharData, argument string) {
+	ch.Send("You are carrying:\n\r")
+	if len(ch.Carrying) == 0 {
+		ch.Send("     Nothing.\n\r")
+		return
+	}
+	for _, obj := range ch.Carrying {
+		if obj.WearLoc == types.WEAR_NONE {
+			ch.Sendf("     %s\n\r", obj.ShortDescr)
+		}
+	}
+}
+
+// DoEquipment implements the 'equipment' command.
+func DoEquipment(ch *types.CharData, argument string) {
+	ch.Send("You are using:\n\r")
+	found := false
+	for _, obj := range ch.Carrying {
+		if obj.WearLoc != types.WEAR_NONE {
+			ch.Sendf("  <%s>  %s\n\r", wearLocName(obj.WearLoc), obj.ShortDescr)
+			found = true
+		}
+	}
+	if !found {
+		ch.Send("     Nothing.\n\r")
+	}
+}
+
+func wearLocName(loc int) string {
+	names := map[int]string{
+		types.WEAR_LIGHT:      "used as light",
+		types.WEAR_FINGER_L:   "left finger",
+		types.WEAR_FINGER_R:   "right finger",
+		types.WEAR_NECK_1:     "around neck",
+		types.WEAR_NECK_2:     "around neck",
+		types.WEAR_BODY:       "on body",
+		types.WEAR_HEAD:       "on head",
+		types.WEAR_LEGS:       "on legs",
+		types.WEAR_FEET:       "on feet",
+		types.WEAR_HANDS:      "on hands",
+		types.WEAR_ARMS:       "on arms",
+		types.WEAR_SHIELD:     "as shield",
+		types.WEAR_ABOUT:      "about body",
+		types.WEAR_WAIST:      "around waist",
+		types.WEAR_WRIST_L:    "left wrist",
+		types.WEAR_WRIST_R:    "right wrist",
+		types.WEAR_WIELD:      "wielded",
+		types.WEAR_HOLD:       "held",
+		types.WEAR_DUAL_WIELD: "dual wielded",
+		types.WEAR_EARS:       "on ears",
+		types.WEAR_EYES:       "over eyes",
+		types.WEAR_BACK:       "on back",
+		types.WEAR_FACE:       "on face",
+		types.WEAR_ANKLE_L:    "left ankle",
+		types.WEAR_ANKLE_R:    "right ankle",
+	}
+	if n, ok := names[loc]; ok {
+		return n
+	}
+	return fmt.Sprintf("wear loc %d", loc)
+}
