@@ -14,6 +14,7 @@ import (
 	"github.com/eilidhmae/smaug/internal/act"
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/game"
+	"github.com/eilidhmae/smaug/internal/handler"
 	smaugnet "github.com/eilidhmae/smaug/internal/net"
 	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
@@ -119,8 +120,19 @@ func bootDB(w *world.World) error {
 		log.Printf("Loaded %d races.", count)
 	}
 
+	// Load skills data
+	skillsPath := filepath.Join(w.DataDir, "system", "en", "skills.dat")
+	if err := persist.LoadSkills(w, skillsPath); err != nil {
+		log.Printf("WARNING: failed to load skills: %v", err)
+	} else {
+		log.Printf("Loaded %d skills/spells.", len(w.Skills))
+	}
+
 	log.Printf("Boot complete. %d rooms, %d mob templates, %d obj templates loaded.",
 		len(w.Rooms), len(w.MobIndex), len(w.ObjIndex))
+
+	// Process area resets to populate rooms with mobs and objects
+	handler.ResetAllAreas(w)
 
 	// Ensure we have a starting room — create a fallback if temple doesn't exist
 	if w.GetRoom(types.ROOM_VNUM_TEMPLE) == nil {

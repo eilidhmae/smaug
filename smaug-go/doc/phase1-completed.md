@@ -6,11 +6,11 @@ This document records what has been implemented during Phase 1.
 
 Phase 1 goal: "Connect via telnet, log in, walk between rooms, see descriptions."
 
-**Status**: Area files, class files, and race files all load from disk. Players can telnet in, log in, walk through real SMAUG rooms, and quit. Player save/load implemented (round-trip tested). Spell-name values in area objects handled. ANSI color codes render in telnet clients. The project compiles to a single 4MB binary with zero external dependencies.
+**Status**: Full Phase 1 login flow implemented. New players go through character creation (name, password, sex, class, race). Returning players load from saved files with password verification. Players save on quit. Area resets populate rooms with 406 NPCs and 710 objects. 325 skills/spells loaded from skills.dat. ANSI color codes render. Single static binary with zero dependencies.
 
-**Stats**: 32 source files (~7,667 lines), 11 test files (~2,369 lines), 293 test cases — all passing.
+**Stats**: 35 source files (~8,778 lines), 13 test files (~2,910 lines), 312 test cases — all passing.
 
-**Boot results (26 area files)**: 1,909 rooms, 4,299 exits, 505 mob templates, 821 object templates, 17 classes, 15 races.
+**Boot results (26 area files)**: 1,909 rooms, 4,299 exits, 505 mob templates, 821 object templates, 406 mob instances, 710 object instances, 325 skills/spells, 17 classes, 15 races.
 
 ---
 
@@ -91,13 +91,13 @@ All major C structs from `mud.h` (~6,700 lines) have been ported to Go:
 
 `Registry` with `commands map[string]*Command` and `sorted []*Command`. `Register()`, `Find()` (exact then prefix match with trust check), `Interpret()` (parse via `OneArgument`, position check with SMAUG-style messages, dispatch).
 
-### `internal/act/` — Player Commands (1 file, 368 lines)
+### `internal/act/` — Player Commands (1 file, ~380 lines)
 
 Commands implemented:
 - `DoLook` — Room description, exits, objects, characters; look at specific target (character, extra desc, object in room, object in inventory)
 - `DoScore` — Character stats display
 - `DoWho` — Online player listing with level and title
-- `DoQuit` — Disconnect with fight check
+- `DoQuit` — Save player, then disconnect with fight check. Uses `SaveFunc` callback to avoid circular dependency.
 - `DoSay` — Chat to room
 - `DoNorth/East/South/West/Up/Down/Northeast/Northwest/Southeast/Southwest` — Movement with exit checking, closed door detection, leave/arrive messages, auto-look
 - `DoCommands` — List available commands
@@ -107,21 +107,29 @@ Commands implemented:
 
 Helper functions: `showExits`, `moveChar`, `removeFromRoom`, `addToRoom`, `wearLocName`.
 
-### `cmd/smaug/main.go` — Entry Point (1 file, 140 lines)
+### `internal/handler/` — Entity Manipulation (2 files, ~494 lines)
 
-`main()`: parse flags (`-port`, `-data`), create `World`, set `act.WorldRef`, call `bootDB()`, register commands, create server + game loop, signal handling, run.
+| File | Contents |
+|------|----------|
+| `handler.go` | `CreateMobile(w, idx)` — instantiate mob from index template (HP dice, AC interpolation, bare-hand damage). `CreateObject(w, idx, level)` — instantiate object from template (copy extra descs, affects). `CharToRoom`, `CharFromRoom`, `ObjToRoom`, `ObjToChar`, `ObjToObj`, `EquipChar` — entity placement functions. |
+| `reset.go` | `ResetArea(w, area)` — process area reset commands (M=mob spawn, G=give to mob, E=equip on mob, O=object in room, P=put in container, D=door state, H=hide object). `ResetAllAreas(w)` — process all areas during boot. Tracks max mob count, deduplicates room objects. |
 
-`bootDB()`: calls `persist.LoadAreas()`, `w.FixExits()`, `persist.LoadClasses()`, `persist.LoadRaces()`. Creates a fallback room if the temple (vnum 21001) isn't found.
+### `cmd/smaug/main.go` — Entry Point (1 file, ~170 lines)
+
+`main()`: parse flags (`-port`, `-data`), create `World`, set `act.WorldRef`, call `bootDB()`, register commands, create server + game loop, wire `SaveFunc`, signal handling, run.
+
+`bootDB()`: calls `persist.LoadAreas()`, `w.FixExits()`, `persist.LoadClasses()`, `persist.LoadRaces()`, `persist.LoadSkills()`, `handler.ResetAllAreas()`. Creates a fallback room if the temple (vnum 21001) isn't found.
 
 `registerCommands()`: registers all 21 commands (look, quit, say, score, who, commands, help, inventory, equipment, + 10 directions).
 
-### New Persist Loaders (3 files, ~750 lines)
+### Persist Loaders (4 files, ~1,000 lines)
 
 | File | Contents |
 |------|----------|
 | `classes.go` | `LoadClasses(w, classDir)` — reads `class.lst`, loads each `.class` file. Parses: Name, Class index, AttrPrime/Second/Deficient, Weapon, Guild, SkillAdept, Thac0/Thac32, HPMin/Max, Mana, ExpBase, Affected, Resist, Suscept, Skill entries, Title entries, Login/Logout/Reconnect messages. |
 | `races.go` | `LoadRaces(w, raceDir)` — reads `race.lst`, loads each `.race` file. Parses: Name, Race index, Classes restriction, stat bonuses (Str/Dex/Wis/Int/Con/Cha/Lck), Hit/Mana, Affected/Resist/Suscept, Language, Alignment/MinAlign/MaxAlign, ACPlus, ExpMult, Attacks/Defenses, Height/Weight, HungerMod/ThirstMod, ManaRegen/HPRegen, RaceRecall, WhereName entries, Skill entries. Case-insensitive keyword matching. |
 | `player.go` | `LoadPlayer(r, filename)` — reads `#PLAYER` section with 60+ KEY/VALUE keywords (Name, Sex, Class, Race, Level, HpManaMove, Gold, Exp, stats, saves, password, title, flags, etc.). Skips `#OBJECT`/`#CORPSE` sections. `SavePlayer(w, ch)` — writes matching format. `PlayerFilePath(dataDir, name)` — returns `db/player/<first_letter>/<Name>` path. |
+| `skills.go` | `LoadSkills(w, filename)` — reads `skills.dat` with `#SKILL` blocks. Parses: Name, Type, Info, Flags, Target, Minpos (with legacy conversion), Saves, Slot, Mana, Rounds, Range, Code (spell/skill function name), Dammsg, Dice, all message strings (hit/miss/die/imm/abs for char/vict/room), Affect entries (duration/location/modifier/bitvector), Class/Race level assignments, Components, Teachers, Value. 325 skills loaded from real data. |
 
 ### Spell-Name Handling in Area Parser
 
@@ -155,7 +163,7 @@ Verified end-to-end on 2026-03-30:
 
 ## Test Suite
 
-**11 test files, ~2,369 lines, 293 test cases — all passing.**
+**13 test files, ~2,910 lines, 312 test cases — all passing.**
 
 All tests were verified non-vacuous using mutation testing: code was temporarily broken, tests confirmed to fail, code reverted, tests confirmed to pass again.
 
@@ -172,8 +180,10 @@ All tests were verified non-vacuous using mutation testing: code was temporarily
 | `persist/classes_test.go` | ~50 | 1 | LoadClasses with TestWarrior.class fixture: WhoName, AttrPrime, Weapon, Guild, SkillAdept, Thac0, HPMin/Max, ExpBase |
 | `persist/races_test.go` | ~50 | 1 | LoadRaces with TestHuman.race fixture: Name, Language, MinAlign, MaxAlign, ExpMultiplier, Height, Weight, WhereName |
 | `persist/player_test.go` | ~170 | 2 | LoadPlayer from fixture (name, sex, class, level, stats, password, title, mkills), SaveLoadRoundTrip (create → save → load → verify all fields) |
+| `persist/skills_test.go` | ~100 | 1 | LoadSkills with 3-skill fixture (fireball spell, backstab skill, sanctuary with affect). Verifies Name, Type, Target, Slot, MinMana, Beats, NounDamage, SpellFunName/SkillFunName, messages, Affect duration/location/modifier/bitvector |
 | `command/interpret_test.go` | 202 | ~9 | Find (exact, prefix, no-match, trust check, exact-beats-prefix), Interpret (dispatch, empty input, unknown command → "Huh?", position check → sleeping message). Uses `net.Pipe()` for output capture. |
 | `world/world_test.go` | 136 | ~6 | New (maps initialized), GetRoom/GetMobIndex/GetObjIndex (found + not-found), AddChar/RemoveChar (add 3, remove middle, remove non-existent), AddObj/RemoveObj |
+| `handler/handler_test.go` | 444 | 18 | CreateMobile (fields, ACT_IS_NPC, HP dice, HP no-dice, index count, world add). CreateObject (fields, level, wear loc, extra descrs copy). CharToRoom/CharFromRoom. ObjToRoom, ObjToChar, ObjToObj. EquipChar (wear loc). ResetArea (mob spawn, max count enforcement, object in room with zero cost, give to mob, equip on mob, door state). Interpolate. |
 
 ### Mutation Verification Results
 

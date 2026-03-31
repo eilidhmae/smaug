@@ -34,30 +34,34 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 
 ## Current Status
 
-**Phase 1 in progress.** Area files, classes, and races load from disk. Player save/load implemented. 32 source files (~7,667 lines), 11 test files (~2,369 lines), 293 test cases — all passing. Boot loads 1,909 rooms, 505 mobs, 821 objects, 4,299 exits, 17 classes, 15 races.
+**Phase 1 nearly complete.** 35 source files (~8,778 lines), 13 test files (~2,910 lines), 312 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 object templates, 406 mob instances, 710 object instances, 325 skills/spells, 17 classes, 15 races.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
-- Telnet login flow (name → password → MOTD → enter game)
+- Full login flow: returning players load from saved files with password verification
+- Character creation: new player flow with name confirm, password, sex/class/race selection
+- Player save on quit with automatic directory creation
 - Single-threaded game loop at 4 pulses/second
 - Command interpreter with prefix matching
 - Room navigation (10 directions) with auto-look through real loaded rooms
 - Commands: look, quit, say, score, who, help, commands, inventory, equipment
 - Area file loading from `db/area/*.are` with skip-and-recover on parse errors
 - Exit resolution (vnum → room pointer linking after all areas load)
+- Area reset processing: mob/object instantiation (M/O/P/G/E/D/H reset commands)
 - ANSI color processing wired into output flush (`ColorFunc` on descriptor)
 - Spell-name object values (potions/scrolls/wands) via peek-based detection
 - Class file loading (17 classes from `db/classes/`)
 - Race file loading (15 races from `db/races/`)
+- Skills/spells loading (325 from `db/system/en/skills.dat`)
 - Player save/load (`persist.LoadPlayer` / `persist.SavePlayer`, round-trip tested)
-- Test suite: 11 files, 293 cases covering types, util, net, persist (scanner, area, classes, races, player), command, world (mutation-verified)
+- Handler package: CreateMobile, CreateObject, CharToRoom/FromRoom, ObjToRoom/Char/Obj, EquipChar
+- Test suite: 13 files, 312 cases covering types, util, net, persist (scanner, area, classes, races, player, skills), command, world, handler (mutation-verified)
 
-### What's next (Phase 1 remaining)
-1. Wire player save/load into login flow (check for existing player, password verify, save on quit)
-2. Character creation flow (sex/race/class selection using loaded data)
-3. Mob/object instantiation from area resets (populate rooms)
-4. Skills data loading (`skills.dat`)
-5. Help file loading, prompt system, system data
+### What's next (Phase 1 polish, then Phase 2)
+1. Help file loading (parse `#HELPS` sections)
+2. Prompt system (token substitution)
+3. System data loading
+4. **Phase 2**: Combat, items, skills, movement costs, object commands, communication
 
 ## Building and Running the Go Port
 
@@ -102,15 +106,15 @@ smaug-go/
     types/                            # Core data structures, enums, constants (17 files)
     util/                             # String, dice, logging helpers (3 files)
     world/                            # Mutable game state container (1 file)
-    persist/                          # File format I/O — scanner + area loader (2 files)
+    persist/                          # File format I/O — scanner, area, classes, races, player, skills (6 files)
     net/                              # TCP server + color processing (2 files)
-    game/                             # Game loop + nanny state machine (1 file)
+    game/                             # Game loop + nanny state machine + login/creation flow (1 file)
     command/                          # Command registry + interpreter (1 file)
     act/                              # Player commands (1 file)
+    handler/                          # Entity manipulation: create mob/obj, room placement, area resets (2 files)
     combat/                           # (future) Combat system
     magic/                            # (future) Spell/skill system
     mudprog/                          # (future) MUD program interpreter
-    handler/                          # (future) Entity manipulation
     overland/                         # (future) Overland maps
   doc/                                # Port documentation
 ```

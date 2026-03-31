@@ -1,0 +1,54 @@
+#SKILL
+Name         fireball~
+Type         Spell
+Info         5
+Flags        0
+Target       1
+Minpos       109
+Slot         26
+Mana         15
+Rounds       12
+Code         spell_fireball
+Dammsg       fireball~
+Wearoff      !Fireball!~
+Misschar     Your fireball goes wide!~
+Hitvict      You are engulfed in a ball of fire!~
+Hitroom      $N is engulfed by $n's fireball!~
+Minlevel     20
+End
+
+#SKILL
+Name         backstab~
+Type         Skill
+Info         0
+Flags        0
+Target       1
+Minpos       108
+Slot         0
+Rounds       24
+Code         do_backstab
+Dammsg       backstab~
+Wearoff      !Backstab!~
+Minlevel     8
+End
+
+#SKILL
+Name         sanctuary~
+Type         Spell
+Info         0
+Flags        0
+Target       2
+Minpos       112
+Slot         36
+Mana         75
+Rounds       12
+Code         spell_sanctuary
+Dammsg       ~
+Wearoff      The white aura around your body fades.~
+Hitvict      A white aura surrounds you.~
+Hitroom      $N is surrounded by a white aura.~
+Affect       'l*5+20' 0 '0' 19
+Minlevel     30
+End
+
+#END
