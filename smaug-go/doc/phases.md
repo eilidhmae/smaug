@@ -38,7 +38,7 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Goal:** A playable game with full combat, inventory management, and basic spells.
 
-**Status:** In progress. Handler layer complete (object removal, extraction, affects, find functions), attribute bonus tables ported. 40 source files, 18 test files, 383 test cases. See `phase2-completed.md` for done work and `phase2-remaining.md` for remaining tasks.
+**Status:** In progress. Handler layer, attribute tables, object commands, game updates, and combat system complete. 46 source files, 21 test files, 414 test cases. See `phase2-completed.md` for done work and `phase2-remaining.md` for remaining tasks.
 
 **Deliverables:**
 

@@ -349,7 +349,7 @@ func TestMoveChar(t *testing.T) {
 	ch.InRoom = temple
 	temple.People = append(temple.People, ch)
 
-	moveChar(ch, types.DIR_NORTH)
+	MoveChar(ch, types.DIR_NORTH)
 	out := readOutput(ch, client)
 
 	if ch.InRoom != w.GetRoom(21002) {
@@ -368,7 +368,7 @@ func TestMoveChar_Blocked(t *testing.T) {
 	room := &types.RoomIndexData{Vnum: 99997, Name: "Dead End"}
 	ch.InRoom = room
 
-	moveChar(ch, types.DIR_EAST)
+	MoveChar(ch, types.DIR_EAST)
 	out := readOutput(ch, client)
 
 	if !strings.Contains(out, "cannot go that way") {

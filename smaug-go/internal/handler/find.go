@@ -164,7 +164,7 @@ func GetObjWear(ch *types.CharData, argument string) *types.ObjData {
 func GetObjHere(ch *types.CharData, argument string) *types.ObjData {
 	// Check room contents
 	if ch.InRoom != nil {
-		if obj := getObjList(ch, argument, ch.InRoom.Contents); obj != nil {
+		if obj := GetObjList(ch.InRoom.Contents, argument); obj != nil {
 			return obj
 		}
 	}
@@ -213,9 +213,9 @@ func GetObjWorld(w *world.World, ch *types.CharData, argument string) *types.Obj
 	return nil
 }
 
-// getObjList finds an object in a list by name.
+// GetObjList finds an object in a list by name.
 // Two-phase search: exact match first, then prefix match.
-func getObjList(ch *types.CharData, argument string, list []*types.ObjData) *types.ObjData {
+func GetObjList(list []*types.ObjData, argument string) *types.ObjData {
 	number, arg := util.NumberArgument(argument)
 
 	// Phase 1: exact match

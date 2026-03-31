@@ -229,7 +229,7 @@ smaug-go/
 
 ### Current State (as of 2026-03-30)
 
-18 test files, 383 test cases — all passing. 6 mutations tested and detected. All `internal/` packages have test coverage (only `cmd/smaug` has no tests — it's just wiring).
+21 test files, 414 test cases — all passing. 6 mutations tested and detected. All `internal/` packages have test coverage (only `cmd/smaug` has no tests — it's just wiring).
 
 | Test File | Package | Cases | Coverage |
 |-----------|---------|-------|----------|
@@ -247,7 +247,10 @@ smaug-go/
 | `helps_test.go` | `persist/` | 1 | loadHelps: 3 entries, level/keyword/text |
 | `interpret_test.go` | `command/` | ~9 | Find (exact/prefix/trust), Interpret dispatch/position |
 | `world_test.go` | `world/` | ~6 | CRUD operations on World |
-| `handler_test.go` | `handler/` | 49 | CreateMobile, CreateObject, placement, ResetArea, obj removal, extraction, affects, find functions |
+| `handler_test.go` | `handler/` | 51 | CreateMobile, CreateObject, placement, ResetArea, obj removal, extraction, affects, find functions, GetEqChar, CanDropObj |
+| `obj_test.go` | `act/` | 12 | DoGet, DoDrop, DoWear, DoRemove, DoPut, DoGive, DoSacrifice |
+| `update_test.go` | `game/` | 10 | hitGain, manaGain, moveGain, charUpdate regen + affect expiry, objUpdate corpse decay, mobileUpdate wander |
+| `combat_test.go` | `combat/` | 7 | StartFighting, StopFighting, OneHit, Damage, MakeCorpse, ViolenceUpdate |
 | `loop_test.go` | `game/` | 17 | isValidName, createNewCharacter, applyRaceBonuses, NewGameLoop |
 | `prompt_test.go` | `game/` | 5 | FormatPrompt: standard, all tokens, default, no PCData, unknown |
 | `info_test.go` | `act/` | 17 | DoLook, DoScore, DoSay, DoWho, DoInventory, DoEquipment, DoQuit, moveChar, showExits |

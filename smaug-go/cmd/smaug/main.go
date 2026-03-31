@@ -166,6 +166,19 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "inventory", DoFun: act.DoInventory, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "equipment", DoFun: act.DoEquipment, Position: types.POS_DEAD, Level: 0})
 
+	// Object commands
+	reg.Register(&command.Command{Name: "get", DoFun: act.DoGet, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "drop", DoFun: act.DoDrop, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "put", DoFun: act.DoPut, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "give", DoFun: act.DoGive, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "wear", DoFun: act.DoWear, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "remove", DoFun: act.DoRemove, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "sacrifice", DoFun: act.DoSacrifice, Position: types.POS_RESTING, Level: 0})
+
+	// Combat commands
+	reg.Register(&command.Command{Name: "kill", DoFun: act.DoKill, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "flee", DoFun: act.DoFlee, Position: types.POS_FIGHTING, Level: 0})
+
 	// Movement commands
 	reg.Register(&command.Command{Name: "north", DoFun: act.DoNorth, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "east", DoFun: act.DoEast, Position: types.POS_STANDING, Level: 0})

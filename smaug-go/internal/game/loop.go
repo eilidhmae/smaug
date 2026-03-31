@@ -682,9 +682,3 @@ func (g *GameLoop) closeDescriptor(d *types.DescriptorData) {
 }
 
 // Stub update functions -- implementations will follow in later modules.
-
-func (g *GameLoop) areaUpdate()     {}
-func (g *GameLoop) violenceUpdate() {}
-func (g *GameLoop) mobileUpdate()   {}
-func (g *GameLoop) charUpdate()     {}
-func (g *GameLoop) objUpdate()      {}

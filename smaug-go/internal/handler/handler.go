@@ -508,6 +508,22 @@ func AffectJoin(ch *types.CharData, aff *types.AffectData) {
 	AffectToChar(ch, aff)
 }
 
+// GetEqChar returns the object equipped at a specific wear location, or nil.
+func GetEqChar(ch *types.CharData, wearLoc int) *types.ObjData {
+	for _, obj := range ch.Carrying {
+		if obj.WearLoc == wearLoc {
+			return obj
+		}
+	}
+	return nil
+}
+
+// CanDropObj returns true if an object can be dropped/given away.
+// Objects with ITEM_NODROP flag cannot be dropped.
+func CanDropObj(obj *types.ObjData) bool {
+	return !obj.ExtraFlags.IsSet(types.ITEM_NODROP)
+}
+
 // interpolate does linear interpolation between low and high over 0..LEVEL_AVATAR range.
 func interpolate(level, low, high int) int {
 	if types.LEVEL_AVATAR <= 0 {

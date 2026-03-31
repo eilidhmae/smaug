@@ -2,7 +2,7 @@
 
 Phase 2 goal: "A playable game with full combat, inventory management, and basic spells."
 
-**Status**: In progress. Handler layer and attribute tables complete. See `phase2-completed.md` for work done so far.
+**Status**: In progress. Handler layer, attribute tables, object commands, game updates, and combat system complete. See `phase2-completed.md` for work done so far.
 
 **Prerequisites from Phase 1 (carry-over):**
 - GSN variable assignment (skill name → slot number mapping)
@@ -20,39 +20,17 @@ See `phase2-completed.md`.
 
 See `phase2-completed.md`.
 
-### 3. Object Commands (HIGH — item interaction)
+### ~~3. Object Commands~~ — DONE (core commands)
 
-**`act/obj.go`:**
-- `get` — get from room, get from container, get all
-- `drop` — drop to room
-- `put` — put in container
-- `give` — give to character
-- `sacrifice` — destroy for gold
-- `wear` — wear/wield/hold based on wear flags
-- `remove` — remove worn item
-- `eat`, `drink` — consume food/drink
-- `examine` — detailed look at object
+See `phase2-completed.md`. Remaining: `eat`, `drink`, `examine` (lower priority).
 
-### 4. Game Updates (HIGH — world feels alive)
+### ~~4. Game Updates~~ — DONE
 
-**`game/update.go`:**
-- `charUpdate()` — HP/mana/move regeneration per tick, hunger/thirst drain, poison tick, affect duration countdown with wear-off messages
-- `objUpdate()` — item timers, corpse decay
-- `mobileUpdate()` — NPC wandering, scavenging
-- `aggrUpdate()` — aggressive mob targeting
-- Area reset on timer (respawn mobs/objects)
+See `phase2-completed.md`. Remaining: `aggrUpdate` (aggressive mob targeting), scavenging, area reset on timer.
 
-### 5. Combat System (HIGH — core gameplay)
+### ~~5. Combat System~~ — DONE (core)
 
-**`combat/`:**
-- `violenceUpdate()` — per-pulse combat round
-- `oneHit(ch, victim, dt)` — single attack: hit roll vs AC, damage calculation, damage types
-- `damage(ch, victim, dam, dt)` — apply damage, handle death
-- Multi-attack (NumAttacks field)
-- Dual wield support
-- `kill`/`murder` commands
-- Flee and wimpy
-- Death handling: create corpse, transfer items, experience loss, gold drop
+See `phase2-completed.md`. Remaining: dual wield attacks, murder command, wimpy, XP gain/loss on kill, group XP.
 
 ### 6. Basic Magic (MEDIUM — first ~20 spells)
 

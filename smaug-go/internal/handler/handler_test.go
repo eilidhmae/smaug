@@ -976,6 +976,40 @@ func TestGetObjWorld(t *testing.T) {
 	}
 }
 
+func TestGetEqChar(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+	idx := newTestObjIndex(2050)
+	obj := CreateObject(w, idx, 1)
+	EquipChar(ch, obj, types.WEAR_WIELD)
+
+	found := GetEqChar(ch, types.WEAR_WIELD)
+	if found != obj {
+		t.Error("GetEqChar should find equipped item at WEAR_WIELD")
+	}
+
+	found = GetEqChar(ch, types.WEAR_HEAD)
+	if found != nil {
+		t.Error("GetEqChar should return nil for empty slot")
+	}
+}
+
+func TestCanDropObj(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2051)
+	obj := CreateObject(w, idx, 1)
+
+	if !CanDropObj(obj) {
+		t.Error("normal object should be droppable")
+	}
+
+	// Set no-drop flag
+	obj.ExtraFlags.Set(types.ITEM_NODROP)
+	if CanDropObj(obj) {
+		t.Error("ITEM_NODROP object should not be droppable")
+	}
+}
+
 func TestInterpolate(t *testing.T) {
 	// Level 0 should return low
 	if v := interpolate(0, 100, -100); v != 100 {

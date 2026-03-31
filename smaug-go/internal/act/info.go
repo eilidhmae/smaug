@@ -207,18 +207,18 @@ func DoSay(ch *types.CharData, argument string) {
 }
 
 // DoNorth etc. — movement commands
-func DoNorth(ch *types.CharData, argument string)     { moveChar(ch, types.DIR_NORTH) }
-func DoEast(ch *types.CharData, argument string)      { moveChar(ch, types.DIR_EAST) }
-func DoSouth(ch *types.CharData, argument string)     { moveChar(ch, types.DIR_SOUTH) }
-func DoWest(ch *types.CharData, argument string)      { moveChar(ch, types.DIR_WEST) }
-func DoUp(ch *types.CharData, argument string)        { moveChar(ch, types.DIR_UP) }
-func DoDown(ch *types.CharData, argument string)      { moveChar(ch, types.DIR_DOWN) }
-func DoNortheast(ch *types.CharData, argument string) { moveChar(ch, types.DIR_NORTHEAST) }
-func DoNorthwest(ch *types.CharData, argument string) { moveChar(ch, types.DIR_NORTHWEST) }
-func DoSoutheast(ch *types.CharData, argument string) { moveChar(ch, types.DIR_SOUTHEAST) }
-func DoSouthwest(ch *types.CharData, argument string) { moveChar(ch, types.DIR_SOUTHWEST) }
+func DoNorth(ch *types.CharData, argument string)     { MoveChar(ch, types.DIR_NORTH) }
+func DoEast(ch *types.CharData, argument string)      { MoveChar(ch, types.DIR_EAST) }
+func DoSouth(ch *types.CharData, argument string)     { MoveChar(ch, types.DIR_SOUTH) }
+func DoWest(ch *types.CharData, argument string)      { MoveChar(ch, types.DIR_WEST) }
+func DoUp(ch *types.CharData, argument string)        { MoveChar(ch, types.DIR_UP) }
+func DoDown(ch *types.CharData, argument string)      { MoveChar(ch, types.DIR_DOWN) }
+func DoNortheast(ch *types.CharData, argument string) { MoveChar(ch, types.DIR_NORTHEAST) }
+func DoNorthwest(ch *types.CharData, argument string) { MoveChar(ch, types.DIR_NORTHWEST) }
+func DoSoutheast(ch *types.CharData, argument string) { MoveChar(ch, types.DIR_SOUTHEAST) }
+func DoSouthwest(ch *types.CharData, argument string) { MoveChar(ch, types.DIR_SOUTHWEST) }
 
-func moveChar(ch *types.CharData, dir int) {
+func MoveChar(ch *types.CharData, dir int) {
 	if ch.InRoom == nil {
 		ch.Send("You are nowhere!\n\r")
 		return
