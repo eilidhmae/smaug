@@ -210,6 +210,304 @@ func EquipChar(ch *types.CharData, obj *types.ObjData, wearLoc int) {
 	ch.Carrying = append(ch.Carrying, obj)
 }
 
+// ObjFromChar removes an object from a character's carrying list.
+// If the object is equipped, it is unequipped first.
+func ObjFromChar(obj *types.ObjData) {
+	ch := obj.CarriedBy
+	if ch == nil {
+		util.Bug("ObjFromChar: nil CarriedBy for %s", obj.Name)
+		return
+	}
+
+	// If equipped, unequip first
+	if obj.WearLoc != types.WEAR_NONE {
+		UnequipChar(ch, obj)
+	}
+
+	// Remove from carrying list
+	for i, o := range ch.Carrying {
+		if o == obj {
+			ch.Carrying = append(ch.Carrying[:i], ch.Carrying[i+1:]...)
+			break
+		}
+	}
+
+	obj.CarriedBy = nil
+	obj.InRoom = nil
+}
+
+// ObjFromRoom removes an object from a room's contents.
+func ObjFromRoom(obj *types.ObjData) {
+	room := obj.InRoom
+	if room == nil {
+		util.Bug("ObjFromRoom: nil InRoom for %s", obj.Name)
+		return
+	}
+
+	for i, o := range room.Contents {
+		if o == obj {
+			room.Contents = append(room.Contents[:i], room.Contents[i+1:]...)
+			break
+		}
+	}
+
+	obj.CarriedBy = nil
+	obj.InObj = nil
+	obj.InRoom = nil
+}
+
+// ObjFromObj removes an object from inside a container object.
+func ObjFromObj(obj *types.ObjData) {
+	container := obj.InObj
+	if container == nil {
+		util.Bug("ObjFromObj: nil InObj for %s", obj.Name)
+		return
+	}
+
+	for i, o := range container.Contents {
+		if o == obj {
+			container.Contents = append(container.Contents[:i], container.Contents[i+1:]...)
+			break
+		}
+	}
+
+	obj.InObj = nil
+	obj.InRoom = nil
+	obj.CarriedBy = nil
+}
+
+// UnequipChar removes equipment from a character's wear location.
+// The object remains in the character's carrying list (moved to inventory).
+func UnequipChar(ch *types.CharData, obj *types.ObjData) {
+	if obj.WearLoc == types.WEAR_NONE {
+		util.Bug("UnequipChar: already unequipped: %s", obj.Name)
+		return
+	}
+
+	// If removing primary wield and dual wield exists, move dual to wield
+	if obj.WearLoc == types.WEAR_WIELD {
+		for _, o := range ch.Carrying {
+			if o.WearLoc == types.WEAR_DUAL_WIELD {
+				o.WearLoc = types.WEAR_WIELD
+				break
+			}
+		}
+	}
+
+	obj.WearLoc = types.WEAR_NONE
+}
+
+// ExtractObj fully removes an object from the game world.
+// Recursively extracts all contents.
+func ExtractObj(w *world.World, obj *types.ObjData) {
+	// Remove from wherever it is
+	if obj.CarriedBy != nil {
+		ObjFromChar(obj)
+	} else if obj.InRoom != nil {
+		ObjFromRoom(obj)
+	} else if obj.InObj != nil {
+		ObjFromObj(obj)
+	}
+
+	// Recursively extract contents
+	for len(obj.Contents) > 0 {
+		ExtractObj(w, obj.Contents[len(obj.Contents)-1])
+	}
+
+	// Remove from world object list
+	w.RemoveObj(obj)
+
+	// Update template count
+	if obj.IndexData != nil {
+		obj.IndexData.Count--
+	}
+}
+
+// ExtractChar fully removes a character from the game world.
+// If fPull is true, the character is permanently removed (not rebirth).
+func ExtractChar(w *world.World, ch *types.CharData, fPull bool) {
+	if ch.InRoom == nil {
+		util.Bug("ExtractChar: nil InRoom for %s", ch.Name)
+	}
+
+	// Stop combat
+	if ch.Fighting != nil {
+		ch.Fighting = nil
+		ch.NumFighting = 0
+	}
+
+	// Clear mount references
+	if ch.Mount != nil {
+		ch.Mount = nil
+	}
+
+	// Extract all carried objects
+	for len(ch.Carrying) > 0 {
+		ExtractObj(w, ch.Carrying[len(ch.Carrying)-1])
+	}
+
+	// Remove from room
+	if ch.InRoom != nil {
+		CharFromRoom(ch)
+	}
+
+	if !fPull {
+		// Rebirth path — not implemented yet (Phase 2 combat death)
+		return
+	}
+
+	// Update NPC template count
+	if ch.IsNPC() && ch.IndexData != nil {
+		ch.IndexData.Count--
+	}
+
+	// Clear reply/retell references in other characters
+	for _, wch := range w.Characters {
+		if wch.Reply == ch {
+			wch.Reply = nil
+		}
+		if wch.Retell == ch {
+			wch.Retell = nil
+		}
+	}
+
+	// Remove from world character list
+	w.RemoveChar(ch)
+
+	// Disconnect if has descriptor
+	if ch.Desc != nil {
+		ch.Desc.Character = nil
+		ch.Desc = nil
+	}
+}
+
+// AffectModify applies or removes an affect's stat modifications on a character.
+// If fAdd is true, the modifier is added; if false, it is subtracted.
+func AffectModify(ch *types.CharData, aff *types.AffectData, fAdd bool) {
+	mod := aff.Modifier
+	if !fAdd {
+		mod = -mod
+	}
+
+	switch aff.Location {
+	case types.APPLY_NONE:
+		// no stat change
+	case types.APPLY_STR:
+		ch.ModStr += mod
+	case types.APPLY_DEX:
+		ch.ModDex += mod
+	case types.APPLY_INT:
+		ch.ModInt += mod
+	case types.APPLY_WIS:
+		ch.ModWis += mod
+	case types.APPLY_CON:
+		ch.ModCon += mod
+	case types.APPLY_CHA:
+		ch.ModCha += mod
+	case types.APPLY_LCK:
+		ch.ModLck += mod
+	case types.APPLY_SEX:
+		ch.Sex += mod
+	case types.APPLY_LEVEL:
+		// not applied to mod directly in SMAUG
+	case types.APPLY_AGE:
+		// not applied to mod directly
+	case types.APPLY_HEIGHT:
+		ch.Height += mod
+	case types.APPLY_WEIGHT:
+		ch.Weight += mod
+	case types.APPLY_MANA:
+		ch.MaxMana += mod
+	case types.APPLY_HIT:
+		ch.MaxHit += mod
+	case types.APPLY_MOVE:
+		ch.MaxMove += mod
+	case types.APPLY_GOLD:
+		// not applied to mod
+	case types.APPLY_EXP:
+		// not applied to mod
+	case types.APPLY_AC:
+		ch.Armor += mod
+	case types.APPLY_HITROLL:
+		ch.Hitroll += mod
+	case types.APPLY_DAMROLL:
+		ch.Damroll += mod
+	case types.APPLY_SAVING_POISON:
+		ch.SavingPoisonDeath += mod
+	case types.APPLY_SAVING_ROD:
+		ch.SavingWand += mod
+	case types.APPLY_SAVING_PARA:
+		ch.SavingParaPetri += mod
+	case types.APPLY_SAVING_BREATH:
+		ch.SavingBreath += mod
+	case types.APPLY_SAVING_SPELL:
+		ch.SavingSpellStaff += mod
+	}
+
+	// Apply bitvector flags
+	if !aff.BitVector.IsEmpty() {
+		if fAdd {
+			ch.AffectedBy = ch.AffectedBy.Or(aff.BitVector)
+		} else {
+			ch.AffectedBy = ch.AffectedBy.AndNot(aff.BitVector)
+		}
+	}
+}
+
+// AffectToChar adds a new affect to a character, applying its stat modifications.
+func AffectToChar(ch *types.CharData, aff *types.AffectData) {
+	newAff := &types.AffectData{
+		Type:      aff.Type,
+		Duration:  aff.Duration,
+		Location:  aff.Location,
+		Modifier:  aff.Modifier,
+		BitVector: aff.BitVector,
+	}
+	ch.Affects = append(ch.Affects, newAff)
+	AffectModify(ch, newAff, true)
+}
+
+// AffectRemove removes a specific affect from a character, reversing its stat modifications.
+func AffectRemove(ch *types.CharData, aff *types.AffectData) {
+	AffectModify(ch, aff, false)
+
+	for i, a := range ch.Affects {
+		if a == aff {
+			ch.Affects = append(ch.Affects[:i], ch.Affects[i+1:]...)
+			return
+		}
+	}
+	util.Bug("AffectRemove: affect not found on %s", ch.Name)
+}
+
+// AffectStrip removes all affects of a given skill/spell type from a character.
+func AffectStrip(ch *types.CharData, sn int) {
+	for i := len(ch.Affects) - 1; i >= 0; i-- {
+		if ch.Affects[i].Type == sn {
+			AffectRemove(ch, ch.Affects[i])
+		}
+	}
+}
+
+// AffectJoin combines a new affect with an existing one of the same type,
+// or adds it if no matching affect exists.
+func AffectJoin(ch *types.CharData, aff *types.AffectData) {
+	for _, old := range ch.Affects {
+		if old.Type == aff.Type {
+			// Combine duration and modifier
+			aff.Duration = util.UMIN(1000000, aff.Duration+old.Duration)
+			if aff.Modifier != 0 {
+				aff.Modifier = util.UMIN(5000, aff.Modifier+old.Modifier)
+			} else {
+				aff.Modifier = old.Modifier
+			}
+			AffectRemove(ch, old)
+			break
+		}
+	}
+	AffectToChar(ch, aff)
+}
+
 // interpolate does linear interpolation between low and high over 0..LEVEL_AVATAR range.
 func interpolate(level, low, high int) int {
 	if types.LEVEL_AVATAR <= 0 {

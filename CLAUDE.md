@@ -31,11 +31,12 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - `smaug-go/doc/phases.md` — All 4 implementation phases with detailed deliverables and verification criteria
 - `smaug-go/doc/phase1-completed.md` — Phase 1 record (per-package breakdown with files, structs, functions, test results)
 - `smaug-go/doc/phase1-remaining.md` — Phase 1 status (complete)
+- `smaug-go/doc/phase2-completed.md` — Phase 2 record (completed work so far)
 - `smaug-go/doc/phase2-remaining.md` — Phase 2 task breakdown with priority order
 
 ## Current Status
 
-**Phase 1 complete. Phase 2 next.** 36 source files (~8,891 lines), 17 test files (~3,636 lines), 352 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
+**Phase 1 complete. Phase 2 in progress.** 40 source files, 18 test files, 383 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -55,16 +56,20 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Race file loading (15 races from `db/races/`)
 - Skills/spells loading (325 from `db/system/en/skills.dat`)
 - Player save/load (`persist.LoadPlayer` / `persist.SavePlayer`, round-trip tested)
-- Handler package: CreateMobile, CreateObject, CharToRoom/FromRoom, ObjToRoom/Char/Obj, EquipChar
-- Test suite: 13 files, 312 cases covering types, util, net, persist (scanner, area, classes, races, player, skills), command, world, handler (mutation-verified)
+- Handler package: CreateMobile, CreateObject, CharToRoom/FromRoom, ObjToRoom/Char/Obj, EquipChar, ObjFromChar/Room/Obj, UnequipChar, ExtractObj, ExtractChar
+- Affect management: AffectToChar, AffectRemove, AffectStrip, AffectJoin, AffectModify (13 apply types + bitvector flags)
+- Find functions: GetCharRoom, GetCharWorld, GetObjCarry, GetObjWear, GetObjHere, GetObjWorld (two-phase exact+prefix search)
+- Attribute bonus tables: StrApp, IntApp, WisApp, DexApp, ConApp, ChaApp, LckApp (all 7 tables, 26 entries each)
+- BitVector: added Not(), AndNot() methods
+- Test suite: 18 files, 383 cases covering types, util, net, persist, command, world, handler, game, act (mutation-verified)
 
-### What's next (Phase 2: Core Gameplay)
-1. Handler layer completion (find functions, affect management, extraction queues)
-2. Attribute bonus tables (str_app, dex_app, etc. from const.c)
-3. Object commands (get, drop, wear, remove, eat, drink)
-4. Game updates (regen, mob AI, area resets on timer)
-5. Combat system (one_hit, damage, death, flee)
-6. Basic magic (~20 spells)
+### What's next (Phase 2: Core Gameplay — remaining)
+1. Object commands (get, drop, wear, remove, eat, drink)
+2. Game updates (regen, mob AI, area resets on timer)
+3. Combat system (one_hit, damage, death, flee)
+4. Basic magic (~20 spells)
+5. Movement enhancement (sector costs, doors)
+6. Communication (tell, gossip, channels)
 7. See `smaug-go/doc/phase2-remaining.md` for full breakdown
 
 ## Building and Running the Go Port

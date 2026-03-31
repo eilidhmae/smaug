@@ -432,6 +432,550 @@ func TestResetArea_DoorState(t *testing.T) {
 	}
 }
 
+func TestObjFromChar(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+	obj := CreateObject(w, newTestObjIndex(2020), 1)
+	ObjToChar(obj, ch)
+
+	ObjFromChar(obj)
+
+	if obj.CarriedBy != nil {
+		t.Error("obj.CarriedBy should be nil")
+	}
+	if len(ch.Carrying) != 0 {
+		t.Errorf("ch.Carrying should be empty, has %d", len(ch.Carrying))
+	}
+}
+
+func TestObjFromChar_Equipped(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+	obj := CreateObject(w, newTestObjIndex(2021), 1)
+	EquipChar(ch, obj, types.WEAR_WIELD)
+
+	ObjFromChar(obj)
+
+	if obj.CarriedBy != nil {
+		t.Error("obj.CarriedBy should be nil")
+	}
+	if obj.WearLoc != types.WEAR_NONE {
+		t.Errorf("WearLoc = %d, want WEAR_NONE", obj.WearLoc)
+	}
+	if len(ch.Carrying) != 0 {
+		t.Errorf("ch.Carrying should be empty, has %d", len(ch.Carrying))
+	}
+}
+
+func TestObjFromRoom(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3010)
+	obj := CreateObject(w, newTestObjIndex(2022), 1)
+	ObjToRoom(obj, room)
+
+	ObjFromRoom(obj)
+
+	if obj.InRoom != nil {
+		t.Error("obj.InRoom should be nil")
+	}
+	if len(room.Contents) != 0 {
+		t.Errorf("room.Contents should be empty, has %d", len(room.Contents))
+	}
+}
+
+func TestObjFromObj(t *testing.T) {
+	w := newTestWorld()
+	container := CreateObject(w, newTestObjIndex(2023), 1)
+	item := CreateObject(w, newTestObjIndex(2024), 1)
+	ObjToObj(item, container)
+
+	ObjFromObj(item)
+
+	if item.InObj != nil {
+		t.Error("item.InObj should be nil")
+	}
+	if len(container.Contents) != 0 {
+		t.Errorf("container.Contents should be empty, has %d", len(container.Contents))
+	}
+}
+
+func TestUnequipChar(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+	obj := CreateObject(w, newTestObjIndex(2025), 1)
+	EquipChar(ch, obj, types.WEAR_WIELD)
+
+	UnequipChar(ch, obj)
+
+	if obj.WearLoc != types.WEAR_NONE {
+		t.Errorf("WearLoc = %d, want WEAR_NONE", obj.WearLoc)
+	}
+	// Object should still be in carrying (moved to inventory)
+	if len(ch.Carrying) != 1 {
+		t.Errorf("ch.Carrying = %d, want 1 (unequip keeps in inventory)", len(ch.Carrying))
+	}
+}
+
+func TestUnequipChar_DualWield(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+	weapon := CreateObject(w, newTestObjIndex(2026), 1)
+	dual := CreateObject(w, newTestObjIndex(2027), 1)
+	EquipChar(ch, weapon, types.WEAR_WIELD)
+	EquipChar(ch, dual, types.WEAR_DUAL_WIELD)
+
+	// Unequip primary wield — dual should move to wield
+	UnequipChar(ch, weapon)
+
+	if weapon.WearLoc != types.WEAR_NONE {
+		t.Errorf("weapon.WearLoc = %d, want WEAR_NONE", weapon.WearLoc)
+	}
+	if dual.WearLoc != types.WEAR_WIELD {
+		t.Errorf("dual.WearLoc = %d, want WEAR_WIELD (should move from dual to wield)", dual.WearLoc)
+	}
+}
+
+func TestExtractObj(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3020)
+	idx := newTestObjIndex(2030)
+	obj := CreateObject(w, idx, 1)
+	ObjToRoom(obj, room)
+
+	ExtractObj(w, obj)
+
+	if len(room.Contents) != 0 {
+		t.Errorf("room.Contents should be empty, has %d", len(room.Contents))
+	}
+	if len(w.Objects) != 0 {
+		t.Errorf("world.Objects should be empty, has %d", len(w.Objects))
+	}
+	if idx.Count != 0 {
+		t.Errorf("idx.Count = %d, want 0", idx.Count)
+	}
+}
+
+func TestExtractObj_WithContents(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3021)
+	containerIdx := newTestObjIndex(2031)
+	containerIdx.Name = "container"
+	itemIdx := newTestObjIndex(2032)
+	itemIdx.Name = "item"
+
+	container := CreateObject(w, containerIdx, 1)
+	item := CreateObject(w, itemIdx, 1)
+	ObjToRoom(container, room)
+	ObjToObj(item, container)
+
+	ExtractObj(w, container)
+
+	// Both objects should be extracted
+	if len(w.Objects) != 0 {
+		t.Errorf("world.Objects should be empty, has %d", len(w.Objects))
+	}
+	if len(room.Contents) != 0 {
+		t.Errorf("room.Contents should be empty, has %d", len(room.Contents))
+	}
+}
+
+func TestExtractObj_FromChar(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+	idx := newTestObjIndex(2033)
+	obj := CreateObject(w, idx, 1)
+	ObjToChar(obj, ch)
+
+	ExtractObj(w, obj)
+
+	if len(ch.Carrying) != 0 {
+		t.Errorf("ch.Carrying should be empty, has %d", len(ch.Carrying))
+	}
+}
+
+func TestExtractChar(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3030)
+	idx := newTestMobIndex(1020, 5)
+	mob := CreateMobile(w, idx)
+	CharToRoom(mob, room)
+
+	ExtractChar(w, mob, true)
+
+	if len(room.People) != 0 {
+		t.Errorf("room.People should be empty, has %d", len(room.People))
+	}
+	if len(w.Characters) != 0 {
+		t.Errorf("world.Characters should be empty, has %d", len(w.Characters))
+	}
+	if idx.Count != 0 {
+		t.Errorf("idx.Count = %d, want 0", idx.Count)
+	}
+}
+
+func TestExtractChar_WithInventory(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3031)
+	mobIdx := newTestMobIndex(1021, 5)
+	mob := CreateMobile(w, mobIdx)
+	CharToRoom(mob, room)
+
+	objIdx := newTestObjIndex(2034)
+	obj := CreateObject(w, objIdx, 1)
+	ObjToChar(obj, mob)
+
+	ExtractChar(w, mob, true)
+
+	// Both mob and its inventory should be gone
+	if len(w.Characters) != 0 {
+		t.Errorf("world.Characters should be empty, has %d", len(w.Characters))
+	}
+	if len(w.Objects) != 0 {
+		t.Errorf("world.Objects should be empty, has %d", len(w.Objects))
+	}
+}
+
+func TestAffectToChar(t *testing.T) {
+	ch := &types.CharData{Name: "Tester", PermStr: 15}
+
+	aff := &types.AffectData{
+		Type:     1, // arbitrary skill number
+		Duration: 10,
+		Location: types.APPLY_STR,
+		Modifier: 3,
+	}
+
+	AffectToChar(ch, aff)
+
+	if len(ch.Affects) != 1 {
+		t.Fatalf("ch.Affects = %d, want 1", len(ch.Affects))
+	}
+	// Should be a copy, not same pointer
+	if ch.Affects[0] == aff {
+		t.Error("affect should be a copy, not same pointer")
+	}
+	if ch.Affects[0].Duration != 10 {
+		t.Errorf("Duration = %d, want 10", ch.Affects[0].Duration)
+	}
+	// ModStr should be increased by modifier
+	if ch.ModStr != 3 {
+		t.Errorf("ModStr = %d, want 3", ch.ModStr)
+	}
+}
+
+func TestAffectRemove(t *testing.T) {
+	ch := &types.CharData{Name: "Tester", PermStr: 15}
+
+	aff := &types.AffectData{
+		Type:     1,
+		Duration: 10,
+		Location: types.APPLY_STR,
+		Modifier: 3,
+	}
+
+	AffectToChar(ch, aff)
+	applied := ch.Affects[0]
+	AffectRemove(ch, applied)
+
+	if len(ch.Affects) != 0 {
+		t.Errorf("ch.Affects = %d, want 0", len(ch.Affects))
+	}
+	if ch.ModStr != 0 {
+		t.Errorf("ModStr = %d, want 0 (affect removed)", ch.ModStr)
+	}
+}
+
+func TestAffectStrip(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+
+	// Add two affects of same type, one of different
+	AffectToChar(ch, &types.AffectData{Type: 5, Duration: 10, Location: types.APPLY_STR, Modifier: 2})
+	AffectToChar(ch, &types.AffectData{Type: 5, Duration: 5, Location: types.APPLY_DEX, Modifier: 1})
+	AffectToChar(ch, &types.AffectData{Type: 7, Duration: 20, Location: types.APPLY_AC, Modifier: -10})
+
+	AffectStrip(ch, 5)
+
+	if len(ch.Affects) != 1 {
+		t.Errorf("ch.Affects = %d, want 1 (only type 7 should remain)", len(ch.Affects))
+	}
+	if ch.Affects[0].Type != 7 {
+		t.Errorf("remaining affect type = %d, want 7", ch.Affects[0].Type)
+	}
+	if ch.ModStr != 0 {
+		t.Errorf("ModStr = %d, want 0", ch.ModStr)
+	}
+	if ch.ModDex != 0 {
+		t.Errorf("ModDex = %d, want 0", ch.ModDex)
+	}
+}
+
+func TestAffectJoin(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+
+	// Add first affect
+	AffectToChar(ch, &types.AffectData{Type: 5, Duration: 10, Location: types.APPLY_STR, Modifier: 2})
+
+	// Join with same type — should combine
+	AffectJoin(ch, &types.AffectData{Type: 5, Duration: 5, Location: types.APPLY_STR, Modifier: 3})
+
+	if len(ch.Affects) != 1 {
+		t.Errorf("ch.Affects = %d, want 1 (should combine)", len(ch.Affects))
+	}
+	if ch.Affects[0].Duration != 15 {
+		t.Errorf("Duration = %d, want 15 (10+5)", ch.Affects[0].Duration)
+	}
+	if ch.Affects[0].Modifier != 5 {
+		t.Errorf("Modifier = %d, want 5 (2+3)", ch.Affects[0].Modifier)
+	}
+	if ch.ModStr != 5 {
+		t.Errorf("ModStr = %d, want 5", ch.ModStr)
+	}
+}
+
+func TestAffectModify_BitVector(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+
+	aff := &types.AffectData{
+		Type:     1,
+		Duration: 10,
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_INVISIBLE)
+
+	AffectToChar(ch, aff)
+
+	if !ch.AffectedBy.IsSet(types.AFF_INVISIBLE) {
+		t.Error("AFF_INVISIBLE should be set after affect applied")
+	}
+
+	AffectRemove(ch, ch.Affects[0])
+
+	if ch.AffectedBy.IsSet(types.AFF_INVISIBLE) {
+		t.Error("AFF_INVISIBLE should be cleared after affect removed")
+	}
+}
+
+func TestAffectModify_MultipleStats(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+
+	tests := []struct {
+		location int
+		modifier int
+		check    func() int
+		name     string
+	}{
+		{types.APPLY_STR, 3, func() int { return ch.ModStr }, "ModStr"},
+		{types.APPLY_DEX, 2, func() int { return ch.ModDex }, "ModDex"},
+		{types.APPLY_INT, 1, func() int { return ch.ModInt }, "ModInt"},
+		{types.APPLY_WIS, 4, func() int { return ch.ModWis }, "ModWis"},
+		{types.APPLY_CON, 2, func() int { return ch.ModCon }, "ModCon"},
+		{types.APPLY_CHA, 1, func() int { return ch.ModCha }, "ModCha"},
+		{types.APPLY_LCK, 3, func() int { return ch.ModLck }, "ModLck"},
+		{types.APPLY_AC, -20, func() int { return ch.Armor }, "Armor"},
+		{types.APPLY_HITROLL, 5, func() int { return ch.Hitroll }, "Hitroll"},
+		{types.APPLY_DAMROLL, 3, func() int { return ch.Damroll }, "Damroll"},
+		{types.APPLY_HIT, 50, func() int { return ch.MaxHit }, "MaxHit"},
+		{types.APPLY_MANA, 30, func() int { return ch.MaxMana }, "MaxMana"},
+		{types.APPLY_MOVE, 20, func() int { return ch.MaxMove }, "MaxMove"},
+	}
+
+	for _, tt := range tests {
+		aff := &types.AffectData{
+			Type:     1,
+			Duration: 10,
+			Location: tt.location,
+			Modifier: tt.modifier,
+		}
+		AffectToChar(ch, aff)
+		if got := tt.check(); got != tt.modifier {
+			t.Errorf("%s = %d, want %d after apply", tt.name, got, tt.modifier)
+		}
+		AffectRemove(ch, ch.Affects[len(ch.Affects)-1])
+		if got := tt.check(); got != 0 {
+			t.Errorf("%s = %d, want 0 after remove", tt.name, got)
+		}
+	}
+}
+
+func TestGetCharRoom(t *testing.T) {
+	room := newTestRoom(3040)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+
+	mob1 := &types.CharData{Name: "guard soldier"}
+	mob1.Act.Set(types.ACT_IS_NPC)
+	CharToRoom(mob1, room)
+
+	mob2 := &types.CharData{Name: "guard captain"}
+	mob2.Act.Set(types.ACT_IS_NPC)
+	CharToRoom(mob2, room)
+
+	// Find first guard
+	found := GetCharRoom(ch, "guard")
+	if found != mob1 {
+		t.Error("GetCharRoom('guard') should find first guard")
+	}
+
+	// Find 2nd guard
+	found = GetCharRoom(ch, "2.guard")
+	if found != mob2 {
+		t.Error("GetCharRoom('2.guard') should find second guard")
+	}
+
+	// Self
+	found = GetCharRoom(ch, "self")
+	if found != ch {
+		t.Error("GetCharRoom('self') should return self")
+	}
+
+	// Not found
+	found = GetCharRoom(ch, "dragon")
+	if found != nil {
+		t.Error("GetCharRoom('dragon') should return nil")
+	}
+}
+
+func TestGetCharWorld(t *testing.T) {
+	w := newTestWorld()
+	room1 := newTestRoom(3050)
+	room2 := newTestRoom(3051)
+
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room1)
+	w.AddChar(ch)
+
+	mob := &types.CharData{Name: "wizard mage"}
+	mob.Act.Set(types.ACT_IS_NPC)
+	CharToRoom(mob, room2)
+	w.AddChar(mob)
+
+	// Find in world (different room)
+	found := GetCharWorld(w, ch, "wizard")
+	if found != mob {
+		t.Error("GetCharWorld('wizard') should find mob in different room")
+	}
+
+	// Self
+	found = GetCharWorld(w, ch, "self")
+	if found != ch {
+		t.Error("GetCharWorld('self') should return self")
+	}
+
+	// Not found
+	found = GetCharWorld(w, ch, "dragon")
+	if found != nil {
+		t.Error("GetCharWorld('dragon') should return nil")
+	}
+}
+
+func TestGetObjCarry(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+
+	idx1 := newTestObjIndex(2040)
+	idx1.Name = "iron sword"
+	sword := CreateObject(w, idx1, 1)
+	ObjToChar(sword, ch)
+
+	idx2 := newTestObjIndex(2041)
+	idx2.Name = "iron shield"
+	shield := CreateObject(w, idx2, 1)
+	EquipChar(ch, shield, types.WEAR_BODY)
+
+	// Should find sword (in inventory, not equipped)
+	found := GetObjCarry(ch, "sword")
+	if found != sword {
+		t.Error("GetObjCarry('sword') should find sword in inventory")
+	}
+
+	// Should not find shield (it's equipped)
+	found = GetObjCarry(ch, "shield")
+	if found != nil {
+		t.Error("GetObjCarry('shield') should not find equipped items")
+	}
+}
+
+func TestGetObjWear(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+
+	idx1 := newTestObjIndex(2042)
+	idx1.Name = "iron sword"
+	sword := CreateObject(w, idx1, 1)
+	ObjToChar(sword, ch)
+
+	idx2 := newTestObjIndex(2043)
+	idx2.Name = "iron shield"
+	shield := CreateObject(w, idx2, 1)
+	EquipChar(ch, shield, types.WEAR_BODY)
+
+	// Should find shield (equipped)
+	found := GetObjWear(ch, "shield")
+	if found != shield {
+		t.Error("GetObjWear('shield') should find equipped shield")
+	}
+
+	// Should not find sword (in inventory, not equipped)
+	found = GetObjWear(ch, "sword")
+	if found != nil {
+		t.Error("GetObjWear('sword') should not find inventory items")
+	}
+}
+
+func TestGetObjHere(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3060)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+
+	// Object in room
+	idx1 := newTestObjIndex(2044)
+	idx1.Name = "gold coin"
+	coin := CreateObject(w, idx1, 1)
+	ObjToRoom(coin, room)
+
+	// Object in inventory
+	idx2 := newTestObjIndex(2045)
+	idx2.Name = "silver ring"
+	ring := CreateObject(w, idx2, 1)
+	ObjToChar(ring, ch)
+
+	// Find in room
+	found := GetObjHere(ch, "coin")
+	if found != coin {
+		t.Error("GetObjHere('coin') should find coin in room")
+	}
+
+	// Find in inventory
+	found = GetObjHere(ch, "ring")
+	if found != ring {
+		t.Error("GetObjHere('ring') should find ring in inventory")
+	}
+}
+
+func TestGetObjWorld(t *testing.T) {
+	w := newTestWorld()
+	room1 := newTestRoom(3070)
+	room2 := newTestRoom(3071)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room1)
+
+	idx := newTestObjIndex(2046)
+	idx.Name = "magic orb"
+	orb := CreateObject(w, idx, 1)
+	ObjToRoom(orb, room2)
+
+	found := GetObjWorld(w, ch, "orb")
+	if found != orb {
+		t.Error("GetObjWorld('orb') should find orb in different room")
+	}
+
+	found = GetObjWorld(w, ch, "dragon")
+	if found != nil {
+		t.Error("GetObjWorld('dragon') should return nil")
+	}
+}
+
 func TestInterpolate(t *testing.T) {
 	// Level 0 should return low
 	if v := interpolate(0, 100, -100); v != 100 {

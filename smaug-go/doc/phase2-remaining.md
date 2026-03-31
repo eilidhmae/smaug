@@ -2,7 +2,7 @@
 
 Phase 2 goal: "A playable game with full combat, inventory management, and basic spells."
 
-**Status**: Not started. Phase 1 complete. Foundation is solid: 406 mobs and 710 objects populate rooms, 325 skills loaded, player persistence works.
+**Status**: In progress. Handler layer and attribute tables complete. See `phase2-completed.md` for work done so far.
 
 **Prerequisites from Phase 1 (carry-over):**
 - GSN variable assignment (skill name → slot number mapping)
@@ -12,31 +12,13 @@ Phase 2 goal: "A playable game with full combat, inventory management, and basic
 
 ## Priority Order
 
-### 1. Handler Layer Completion (HIGH — everything else depends on this)
+### ~~1. Handler Layer Completion~~ — DONE
 
-The `handler/` package has `CreateMobile`, `CreateObject`, and basic placement. Phase 2 needs:
+See `phase2-completed.md`.
 
-- `ObjFromChar(obj)` — remove from carrying
-- `ObjFromRoom(obj)` — remove from room
-- `ObjFromObj(obj)` — remove from container
-- `UnequipChar(ch, obj)` — unequip from wear slot
-- `ExtractChar(ch)` — full removal with extraction queue (deferred cleanup)
-- `ExtractObj(obj)` — full removal with extraction queue
-- `AffectToChar(ch, aff)` — apply affect with stat modifiers
-- `AffectRemove(ch, aff)` — remove affect, reverse modifiers
-- `AffectStrip(ch, skillNum)` — remove all affects of a given skill
-- Find functions: `GetCharRoom(ch, name)`, `GetCharWorld(ch, name)`, `GetObjCarry(ch, name)`, `GetObjWear(ch, name)`, `GetObjHere(ch, name)`, `GetObjWorld(ch, name)`
+### ~~2. Attribute Bonus Tables~~ — DONE
 
-### 2. Attribute Bonus Tables (HIGH — combat formulas need these)
-
-Port from `const.c`:
-- `StrAppType` table — tohit, todam, carry weight, wielding weight
-- `IntAppType` table — learn rate
-- `WisAppType` table — practice rate
-- `DexAppType` table — defensive
-- `ConAppType` table — hp bonus, shock
-- `ChaAppType` table — (exists but minimal)
-- `LckAppType` table — (exists but minimal)
+See `phase2-completed.md`.
 
 ### 3. Object Commands (HIGH — item interaction)
 

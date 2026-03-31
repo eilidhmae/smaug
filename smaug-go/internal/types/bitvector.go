@@ -93,6 +93,21 @@ func (bv BitVector) And(other BitVector) BitVector {
 	}
 }
 
+// Not returns the bitwise complement of bv.
+func (bv BitVector) Not() BitVector {
+	return BitVector{^bv[0], ^bv[1], ^bv[2], ^bv[3]}
+}
+
+// AndNot returns bv with all bits in other cleared (bv &^ other).
+func (bv BitVector) AndNot(other BitVector) BitVector {
+	return BitVector{
+		bv[0] &^ other[0],
+		bv[1] &^ other[1],
+		bv[2] &^ other[2],
+		bv[3] &^ other[3],
+	}
+}
+
 // HasAny returns true if bv and other share any set bits.
 func (bv BitVector) HasAny(other BitVector) bool {
 	return (bv[0]&other[0])|(bv[1]&other[1])|(bv[2]&other[2])|(bv[3]&other[3]) != 0

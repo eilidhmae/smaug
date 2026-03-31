@@ -229,11 +229,12 @@ smaug-go/
 
 ### Current State (as of 2026-03-30)
 
-17 test files, ~3,636 lines, 352 test cases — all passing. 6 mutations tested and detected. All `internal/` packages have test coverage (only `cmd/smaug` has no tests — it's just wiring).
+18 test files, 383 test cases — all passing. 6 mutations tested and detected. All `internal/` packages have test coverage (only `cmd/smaug` has no tests — it's just wiring).
 
 | Test File | Package | Cases | Coverage |
 |-----------|---------|-------|----------|
 | `bitvector_test.go` | `types/` | ~60 | All BitVector methods, boundary bits, serialization |
+| `attributes_test.go` | `types/` | 8 | All 7 attribute bonus tables + length validation |
 | `strings_test.go` | `util/` | ~50 | All string functions, edge cases |
 | `dice_test.go` | `util/` | ~35 | Statistical distribution tests over 10k trials |
 | `color_test.go` | `net/` | ~40 | All color codes, ANSI on/off, escapes |
@@ -246,7 +247,7 @@ smaug-go/
 | `helps_test.go` | `persist/` | 1 | loadHelps: 3 entries, level/keyword/text |
 | `interpret_test.go` | `command/` | ~9 | Find (exact/prefix/trust), Interpret dispatch/position |
 | `world_test.go` | `world/` | ~6 | CRUD operations on World |
-| `handler_test.go` | `handler/` | 18 | CreateMobile, CreateObject, placement, ResetArea, door state |
+| `handler_test.go` | `handler/` | 49 | CreateMobile, CreateObject, placement, ResetArea, obj removal, extraction, affects, find functions |
 | `loop_test.go` | `game/` | 17 | isValidName, createNewCharacter, applyRaceBonuses, NewGameLoop |
 | `prompt_test.go` | `game/` | 5 | FormatPrompt: standard, all tokens, default, no PCData, unknown |
 | `info_test.go` | `act/` | 17 | DoLook, DoScore, DoSay, DoWho, DoInventory, DoEquipment, DoQuit, moveChar, showExits |
@@ -258,9 +259,11 @@ smaug-go/
 3. **Area load integration tests** (done) — 5 tests with testdata fixtures for objects, rooms, mobs, spell objects
 4. **Command output tests** (done) — `net.Pipe()` pattern capturing DoLook, DoScore, DoSay, DoWho, DoInventory, DoEquipment, moveChar, showExits
 5. **Entity creation tests** (done) — CreateMobile, CreateObject, CharToRoom/FromRoom, ObjToRoom/Char/Obj, EquipChar, ResetArea
-6. **Combat math** (Phase 2) — Fix RNG seed, verify `one_hit` calculations match C formulas exactly
-7. **MUD prog tests** (Phase 3) — Test `.are` files with known triggers, verify behavior
-8. **Stress tests** (Phase 4) — 100+ concurrent telnet connections, measure memory and latency
+6. **Handler tests** (done) — ObjFromChar/Room/Obj, UnequipChar, ExtractObj/Char, AffectToChar/Remove/Strip/Join/Modify, GetCharRoom/World, GetObjCarry/Wear/Here/World
+7. **Attribute table tests** (done) — All 7 bonus tables with spot-checks at key stat values
+8. **Combat math** (Phase 2) — Fix RNG seed, verify `one_hit` calculations match C formulas exactly
+9. **MUD prog tests** (Phase 3) — Test `.are` files with known triggers, verify behavior
+10. **Stress tests** (Phase 4) — 100+ concurrent telnet connections, measure memory and latency
 
 ### Mutation Verification
 
