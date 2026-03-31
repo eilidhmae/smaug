@@ -36,13 +36,14 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 
 ## Current Status
 
-**Phase 1 complete. Phase 2 in progress (9/10 done).** 55 source files, 27 test files, 450 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
+**Phase 1 complete. Phase 2 complete.** 55 source files, 27 test files, 455 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
 - Full login flow: returning players load from saved files with password verification
 - Character creation: new player flow with name confirm, password, sex/class/race selection
-- Player save on quit with automatic directory creation
+- Player save on quit with automatic directory creation, periodic autosave (every 5 min)
+- Player inventory, equipment, and affects saved/loaded from player file
 - Single-threaded game loop at 4 pulses/second
 - Command interpreter with prefix matching
 - Room navigation (10 directions) with auto-look through real loaded rooms
@@ -71,9 +72,8 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Magic system: 12 spells (3 heals, 2 damage, 3 buffs, 4 debuffs), cast command with mana/target/save, spell function registry
 - Test suite: 27 files, 450 cases covering types, util, net, persist, command, world, handler, game, act, combat, magic (mutation-verified)
 
-### What's next (Phase 2: Core Gameplay — remaining)
-1. Player persistence enhancement (save inventory/affects, autosave)
-2. See `smaug-go/doc/phase2-remaining.md` for full breakdown
+### What's next (Phase 3: Advanced Systems)
+See `smaug-go/doc/phases.md` for Phase 3 deliverables: MUD Progs, OLC, protocol support (MCCP/MSDP/MSSP), immortal commands, remaining spells/skills, clans, shops, quests, boards, pager.
 
 ## Building and Running the Go Port
 

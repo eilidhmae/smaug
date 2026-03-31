@@ -1,6 +1,7 @@
 package game
 
 import (
+	"os"
 	"testing"
 
 	"github.com/eilidhmae/smaug/internal/handler"
@@ -196,6 +197,58 @@ func TestObjUpdate_CorpseDecay(t *testing.T) {
 
 	if len(room.Contents) != 0 {
 		t.Errorf("room.Contents = %d, want 0 (corpse should have decayed)", len(room.Contents))
+	}
+}
+
+func TestAutosave(t *testing.T) {
+	dir := t.TempDir()
+	w := world.New(dir)
+	g := &GameLoop{world: w}
+
+	room := &types.RoomIndexData{Vnum: 9000, Name: "Temple"}
+	w.Rooms[9000] = room
+
+	ch := &types.CharData{
+		Name: "Autosavetest", Level: 5, Position: types.POS_STANDING,
+		Hit: 100, MaxHit: 100, Mana: 50, MaxMana: 50, Move: 80, MaxMove: 80,
+		PermStr: 15, PermInt: 13, PermWis: 12, PermDex: 14,
+		PermCon: 13, PermCha: 11, PermLck: 13,
+		PCData: &types.PCData{Pwd: "secret", PagerLen: 24},
+	}
+	handler.CharToRoom(ch, room)
+
+	d := &types.DescriptorData{Character: ch, Host: "localhost"}
+	ch.Desc = d
+	w.Descriptors = append(w.Descriptors, d)
+
+	g.autosave()
+
+	// Check that the player file was created
+	path := dir + "/player/a/Autosavetest"
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("autosave should create player file at %s: %v", path, err)
+	}
+}
+
+func TestAutosave_SkipsLowLevel(t *testing.T) {
+	dir := t.TempDir()
+	w := world.New(dir)
+	g := &GameLoop{world: w}
+
+	ch := &types.CharData{
+		Name: "Newbie", Level: 1, Position: types.POS_STANDING,
+		PCData: &types.PCData{Pwd: "pass", PagerLen: 24},
+	}
+	d := &types.DescriptorData{Character: ch, Host: "localhost"}
+	ch.Desc = d
+	w.Descriptors = append(w.Descriptors, d)
+
+	g.autosave()
+
+	// Level 1 should not be saved
+	path := dir + "/player/n/Newbie"
+	if _, err := os.Stat(path); err == nil {
+		t.Error("autosave should skip level 1 characters")
 	}
 }
 

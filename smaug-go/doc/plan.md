@@ -242,7 +242,7 @@ smaug-go/
 | `area_test.go` | `persist/` | 5 | Integration: objects, rooms, C-mobs, V-mobs, spell objects |
 | `classes_test.go` | `persist/` | 1 | LoadClasses with Warrior fixture |
 | `races_test.go` | `persist/` | 1 | LoadRaces with Human fixture |
-| `player_test.go` | `persist/` | 2 | LoadPlayer fixture + SaveLoadRoundTrip |
+| `player_test.go` | `persist/` | 7 | LoadPlayer fixture, SaveLoadRoundTrip, affect save/load, object save/load, container nesting |
 | `skills_test.go` | `persist/` | 1 | LoadSkills: fireball, backstab, sanctuary with affects |
 | `helps_test.go` | `persist/` | 1 | loadHelps: 3 entries, level/keyword/text |
 | `interpret_test.go` | `command/` | ~9 | Find (exact/prefix/trust), Interpret dispatch/position |

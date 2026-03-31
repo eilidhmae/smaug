@@ -6,9 +6,9 @@ This document records what has been implemented during Phase 2.
 
 Phase 2 goal: "A playable game with full combat, inventory management, and basic spells."
 
-**Status**: In progress. 9 of 10 task groups complete. Only player persistence enhancement remains.
+**Status**: Complete. All 10 task groups done.
 
-**Stats**: 55 source files, 27 test files, 450 test cases — all passing.
+**Stats**: 55 source files, 27 test files, 455 test cases — all passing.
 
 ---
 
@@ -215,11 +215,51 @@ All 4 door commands registered in main.go.
 
 **Saving throws**: `SavesSpellStaff`, `SavesPoisonDeath` — formula: 50 + (victim_level - caster_level - victim_saves) * 5, clamped 5-95%.
 
+### 10. Player Persistence Enhancement (persist/player.go, game/update.go)
+
+#### Object Save/Load
+
+Objects are written as `#OBJECT` sections after the `#PLAYER` `End` line, matching the C format:
+
+| Field | Written When | Purpose |
+|-------|-------------|---------|
+| `Nest` | nest > 0 | Container nesting level |
+| `Vnum` | always | Object template reference |
+| `Name`/`ShortDescr` | differs from template | Override names |
+| `ExtraFlags` | differs from template | Item flags |
+| `WearLoc` | not WEAR_NONE | Equipment slot |
+| `ItemType`/`Weight` | differs from template | Override properties |
+| `Level`/`Timer`/`Count` | non-zero/non-default | Object metadata |
+| `Values` | any non-zero | Type-specific values (weapon dice, etc.) |
+| `Affect` | present | Object magical affects |
+
+Container contents are written recursively with incrementing `Nest` values.
+
+`LoadPlayerWithWorld(r, filename, lookup)` reads objects back, using the `ObjIndexLookup` function to resolve vnums to templates. Falls back to `LoadPlayer` (skips objects) when no lookup is provided.
+
+#### Affect Save/Load
+
+Character affects are saved as `Affect` lines in the `#PLAYER` section:
+
+```
+Affect       <type> <duration> <modifier> <location> <bitvector>
+```
+
+Loaded back with full bitvector support (e.g., AFF_POISON, AFF_SANCTUARY preserved across save/load).
+
+#### Periodic Autosave
+
+`autosave()` in `game/update.go` runs on `PULSE_SAVE` (every 5 minutes). Saves all connected PCs at level 2+. Wired into the game loop pulse counter alongside existing violence/mobile/tick/area pulses.
+
+#### Game Loop Integration
+
+`LoadPlayerWithWorld` replaces `LoadPlayer` in the login flow (`loop.go`), passing `world.GetObjIndex` as the resolver so returning players get their inventory and equipment restored.
+
 ---
 
 ## Test Suite
 
-**27 test files, 450 test cases — all passing.**
+**27 test files, 455 test cases — all passing.**
 
 New/modified test files this phase:
 
@@ -234,4 +274,5 @@ New/modified test files this phase:
 | `act/move_test.go` | 6 | DoOpen (normal/locked), DoClose, DoUnlock, DoLock, MoveChar sitting |
 | `act/info2_test.go` | 6 | DoConsider (weaker/stronger/no-arg), DoWhere (found/not-found), DoTime |
 | `magic/magic_test.go` | 8 | SpellRegistry, CureLight, MagicMissile, Armor, Poison, Sanctuary, SavesSpellStaff, FindSpellByName |
-| `persist/player_test.go` | +3 | Position round-trip, on-disk +100 format, Style/Height/Weight round-trip |
+| `persist/player_test.go` | +8 | Position round-trip, on-disk +100 format, Style/Height/Weight round-trip, affect save/load, object save/load, container nesting |
+| `game/update_test.go` | +2 | Autosave (creates file), autosave skips low-level |

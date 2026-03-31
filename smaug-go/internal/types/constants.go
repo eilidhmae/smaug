@@ -68,6 +68,7 @@ const (
 	PULSE_AREA       = 60 * PULSE_PER_SECOND
 	PULSE_AUCTION    = 9 * PULSE_PER_SECOND
 	PULSE_CASINO     = 8 * PULSE_PER_SECOND
+	PULSE_SAVE       = 5 * 60 * PULSE_PER_SECOND // Autosave every 5 minutes
 )
 
 // Area versions.

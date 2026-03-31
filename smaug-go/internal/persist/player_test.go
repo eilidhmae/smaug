@@ -209,3 +209,243 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Errorf("MKills = %d, want %d", loaded.PCData.MKills, ch.PCData.MKills)
 	}
 }
+
+func TestSaveLoadAffects(t *testing.T) {
+	ch := &types.CharData{
+		Name:    "Afftest",
+		Level:   10,
+		Hit:     100,
+		MaxHit:  100,
+		Mana:    50,
+		MaxMana: 50,
+		Move:    80,
+		MaxMove: 80,
+		PermStr: 15, PermInt: 13, PermWis: 12, PermDex: 14,
+		PermCon: 13, PermCha: 11, PermLck: 13,
+		Position: types.POS_STANDING,
+		PCData:   &types.PCData{Pwd: "pass", PagerLen: 24},
+	}
+
+	// Add two affects
+	ch.Affects = []*types.AffectData{
+		{Type: 5, Duration: 24, Location: types.APPLY_AC, Modifier: -20},
+		{Type: 8, Duration: 10, Location: types.APPLY_STR, Modifier: -2},
+	}
+	ch.Affects[1].BitVector.Set(types.AFF_POISON)
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer failed: %v", err)
+	}
+
+	// Verify raw output contains Affect lines
+	saved := buf.String()
+	if !bytes.Contains([]byte(saved), []byte("Affect ")) {
+		t.Error("saved file should contain 'Affect' lines")
+	}
+
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Afftest")
+	if err != nil {
+		t.Fatalf("LoadPlayer failed: %v", err)
+	}
+
+	if len(loaded.Affects) != 2 {
+		t.Fatalf("Affects = %d, want 2", len(loaded.Affects))
+	}
+
+	aff := loaded.Affects[0]
+	if aff.Type != 5 || aff.Duration != 24 || aff.Location != types.APPLY_AC || aff.Modifier != -20 {
+		t.Errorf("Affect[0] = {%d %d %d %d}, want {5 24 %d -20}",
+			aff.Type, aff.Duration, aff.Location, aff.Modifier, types.APPLY_AC)
+	}
+
+	aff1 := loaded.Affects[1]
+	if aff1.Type != 8 || aff1.Duration != 10 || aff1.Location != types.APPLY_STR || aff1.Modifier != -2 {
+		t.Errorf("Affect[1] type/dur/loc/mod wrong")
+	}
+	if !aff1.BitVector.IsSet(types.AFF_POISON) {
+		t.Error("Affect[1] should have AFF_POISON set")
+	}
+}
+
+func TestSaveLoadObjects(t *testing.T) {
+	ch := &types.CharData{
+		Name:    "Objtest",
+		Level:   10,
+		Hit:     100,
+		MaxHit:  100,
+		Mana:    50,
+		MaxMana: 50,
+		Move:    80,
+		MaxMove: 80,
+		PermStr: 15, PermInt: 13, PermWis: 12, PermDex: 14,
+		PermCon: 13, PermCha: 11, PermLck: 13,
+		Position: types.POS_STANDING,
+		PCData:   &types.PCData{Pwd: "pass", PagerLen: 24},
+	}
+
+	// Sword in inventory (not equipped)
+	sword := &types.ObjData{
+		Name:       "a short sword",
+		ShortDescr: "a short sword",
+		ItemType:   types.ITEM_WEAPON,
+		WearLoc:    types.WEAR_NONE,
+		Weight:     5,
+		Level:      3,
+		Value:      [6]int{0, 4, 6, 0, 0, 0},
+		IndexData:  &types.ObjIndexData{Vnum: 1001},
+	}
+
+	// Shield equipped
+	shield := &types.ObjData{
+		Name:       "a wooden shield",
+		ShortDescr: "a wooden shield",
+		ItemType:   types.ITEM_ARMOR,
+		WearLoc:    types.WEAR_SHIELD,
+		Weight:     8,
+		Level:      2,
+		Value:      [6]int{5, 0, 0, 0, 0, 0},
+		IndexData:  &types.ObjIndexData{Vnum: 1002},
+	}
+
+	ch.Carrying = []*types.ObjData{sword, shield}
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer failed: %v", err)
+	}
+
+	saved := buf.String()
+	if !bytes.Contains([]byte(saved), []byte("#OBJECT")) {
+		t.Error("saved file should contain '#OBJECT' sections")
+	}
+	if !bytes.Contains([]byte(saved), []byte("Vnum         1001")) {
+		t.Error("saved file should contain sword vnum 1001")
+	}
+	if !bytes.Contains([]byte(saved), []byte("Vnum         1002")) {
+		t.Error("saved file should contain shield vnum 1002")
+	}
+	if !bytes.Contains([]byte(saved), []byte("WearLoc      11")) {
+		t.Errorf("saved file should contain 'WearLoc      11' for WEAR_SHIELD")
+	}
+
+	// Load back — objects need ObjIndex lookup so we provide a resolver
+	loaded, err := LoadPlayerWithWorld(bytes.NewReader(buf.Bytes()), "Objtest", func(vnum int) *types.ObjIndexData {
+		switch vnum {
+		case 1001:
+			return &types.ObjIndexData{
+				Vnum: 1001, Name: "a short sword", ShortDescr: "a short sword",
+				ItemType: types.ITEM_WEAPON, Weight: 5, Level: 3,
+				Value: [6]int{0, 4, 6, 0, 0, 0},
+			}
+		case 1002:
+			return &types.ObjIndexData{
+				Vnum: 1002, Name: "a wooden shield", ShortDescr: "a wooden shield",
+				ItemType: types.ITEM_ARMOR, Weight: 8, Level: 2,
+				Value: [6]int{5, 0, 0, 0, 0, 0},
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("LoadPlayerWithWorld failed: %v", err)
+	}
+
+	if len(loaded.Carrying) != 2 {
+		t.Fatalf("Carrying = %d, want 2", len(loaded.Carrying))
+	}
+
+	// Check sword
+	obj0 := loaded.Carrying[0]
+	if obj0.IndexData == nil || obj0.IndexData.Vnum != 1001 {
+		t.Errorf("obj[0] vnum wrong, got %v", obj0.IndexData)
+	}
+	if obj0.WearLoc != types.WEAR_NONE {
+		t.Errorf("obj[0] WearLoc = %d, want WEAR_NONE (%d)", obj0.WearLoc, types.WEAR_NONE)
+	}
+
+	// Check shield
+	obj1 := loaded.Carrying[1]
+	if obj1.IndexData == nil || obj1.IndexData.Vnum != 1002 {
+		t.Errorf("obj[1] vnum wrong, got %v", obj1.IndexData)
+	}
+	if obj1.WearLoc != types.WEAR_SHIELD {
+		t.Errorf("obj[1] WearLoc = %d, want WEAR_SHIELD (%d)", obj1.WearLoc, types.WEAR_SHIELD)
+	}
+}
+
+func TestSaveLoadObjectInContainer(t *testing.T) {
+	ch := &types.CharData{
+		Name:    "Containertest",
+		Level:   10,
+		Hit:     100, MaxHit: 100, Mana: 50, MaxMana: 50, Move: 80, MaxMove: 80,
+		PermStr: 15, PermInt: 13, PermWis: 12, PermDex: 14,
+		PermCon: 13, PermCha: 11, PermLck: 13,
+		Position: types.POS_STANDING,
+		PCData:   &types.PCData{Pwd: "pass", PagerLen: 24},
+	}
+
+	gem := &types.ObjData{
+		Name:       "a ruby gem",
+		ShortDescr: "a ruby gem",
+		ItemType:   types.ITEM_TREASURE,
+		WearLoc:    types.WEAR_NONE,
+		Weight:     1,
+		IndexData:  &types.ObjIndexData{Vnum: 2001},
+	}
+
+	bag := &types.ObjData{
+		Name:       "a leather bag",
+		ShortDescr: "a leather bag",
+		ItemType:   types.ITEM_CONTAINER,
+		WearLoc:    types.WEAR_NONE,
+		Weight:     3,
+		IndexData:  &types.ObjIndexData{Vnum: 2002},
+		Contents:   []*types.ObjData{gem},
+	}
+	gem.InObj = bag
+
+	ch.Carrying = []*types.ObjData{bag}
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer failed: %v", err)
+	}
+
+	saved := buf.String()
+	// Should have two #OBJECT sections (bag at nest 0, gem at nest 1)
+	if count := bytes.Count([]byte(saved), []byte("#OBJECT")); count != 2 {
+		t.Errorf("#OBJECT count = %d, want 2\n%s", count, saved)
+	}
+
+	loaded, err := LoadPlayerWithWorld(bytes.NewReader(buf.Bytes()), "Containertest", func(vnum int) *types.ObjIndexData {
+		switch vnum {
+		case 2001:
+			return &types.ObjIndexData{Vnum: 2001, Name: "a ruby gem", ShortDescr: "a ruby gem", ItemType: types.ITEM_TREASURE, Weight: 1}
+		case 2002:
+			return &types.ObjIndexData{Vnum: 2002, Name: "a leather bag", ShortDescr: "a leather bag", ItemType: types.ITEM_CONTAINER, Weight: 3}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("LoadPlayerWithWorld failed: %v", err)
+	}
+
+	if len(loaded.Carrying) != 1 {
+		t.Fatalf("Carrying = %d, want 1 (bag)", len(loaded.Carrying))
+	}
+	loadedBag := loaded.Carrying[0]
+	if loadedBag.IndexData == nil || loadedBag.IndexData.Vnum != 2002 {
+		t.Error("bag vnum wrong")
+	}
+	if len(loadedBag.Contents) != 1 {
+		t.Fatalf("bag Contents = %d, want 1 (gem)", len(loadedBag.Contents))
+	}
+	loadedGem := loadedBag.Contents[0]
+	if loadedGem.IndexData == nil || loadedGem.IndexData.Vnum != 2001 {
+		t.Error("gem vnum wrong")
+	}
+	if loadedGem.InObj != loadedBag {
+		t.Error("gem.InObj should point to bag")
+	}
+}

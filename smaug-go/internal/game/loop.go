@@ -52,6 +52,7 @@ type GameLoop struct {
 	pulseViolence int
 	pulseMobile   int
 	pulseTick     int
+	pulseSave     int
 }
 
 // NewGameLoop creates a new game loop.
@@ -117,6 +118,12 @@ func (g *GameLoop) pulse() {
 		g.pulseTick = types.PULSE_TICK
 		g.charUpdate()
 		g.objUpdate()
+	}
+
+	g.pulseSave--
+	if g.pulseSave <= 0 {
+		g.pulseSave = types.PULSE_SAVE
+		g.autosave()
 	}
 
 	// 4. Flush output for all descriptors
@@ -226,7 +233,7 @@ func (g *GameLoop) nannyGetName(d *types.DescriptorData, line string) {
 			d.WriteToBuffer("Error loading your character. Try again.\n\rName: ")
 			return
 		}
-		ch, err := persist.LoadPlayer(f, playerPath)
+		ch, err := persist.LoadPlayerWithWorld(f, playerPath, g.world.GetObjIndex)
 		f.Close()
 		if err != nil {
 			log.Printf("Error loading player %s: %v", name, err)

@@ -301,6 +301,15 @@ func (g *GameLoop) violenceUpdate() {
 	combat.ViolenceUpdate(g.world)
 }
 
+// autosave saves all connected player characters periodically.
+func (g *GameLoop) autosave() {
+	for _, d := range g.world.Descriptors {
+		if d.Character != nil && !d.Character.IsNPC() && d.Character.PCData != nil && d.Character.Level >= 2 {
+			g.SavePlayer(d.Character)
+		}
+	}
+}
+
 // areaUpdate runs periodic area resets.
 func (g *GameLoop) areaUpdate() {
 	// Area resets are already run at boot via handler.ResetAllAreas.
