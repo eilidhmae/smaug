@@ -33,6 +33,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - `smaug-go/doc/phase1-remaining.md` — Phase 1 status (complete)
 - `smaug-go/doc/phase2-completed.md` — Phase 2 record (completed work so far)
 - `smaug-go/doc/phase2-remaining.md` — Phase 2 task breakdown with priority order
+- `smaug-go/doc/phase3-plan.md` — Phase 3 implementation plan: 12 task groups with dependencies and execution order
 
 ## Current Status
 
@@ -73,7 +74,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Test suite: 27 files, 450 cases covering types, util, net, persist, command, world, handler, game, act, combat, magic (mutation-verified)
 
 ### What's next (Phase 3: Advanced Systems)
-See `smaug-go/doc/phases.md` for Phase 3 deliverables: MUD Progs, OLC, protocol support (MCCP/MSDP/MSSP), immortal commands, remaining spells/skills, clans, shops, quests, boards, pager.
+See `smaug-go/doc/phase3-plan.md` for the implementation plan: 12 task groups covering pager, Phase 2 deferred items, subsystem loaders, stat/immortal commands, shops, spells/skills, OLC, clans/boards, MUD Progs, protocol support, and area save.
 
 ## Building and Running the Go Port
 

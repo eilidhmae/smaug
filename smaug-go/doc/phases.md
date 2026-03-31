@@ -113,6 +113,8 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Goal:** Feature parity with C version for world interaction and building.
 
+**Status:** In progress. See `phase3-plan.md` for the 12-group implementation plan with dependencies and execution order.
+
 **Deliverables:**
 
 ### Protocol Support (`net/`)
