@@ -29,12 +29,13 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 
 - `smaug-go/doc/plan.md` — Full architectural plan: C architecture summary, Go design decisions, project structure, C→Go file mapping, data file mapping, testing strategy
 - `smaug-go/doc/phases.md` — All 4 implementation phases with detailed deliverables and verification criteria
-- `smaug-go/doc/phase1-completed.md` — What has been built so far (per-package breakdown with files, structs, functions, integration test results)
-- `smaug-go/doc/phase1-remaining.md` — What still needs to be done for Phase 1, with priority ordering
+- `smaug-go/doc/phase1-completed.md` — Phase 1 record (per-package breakdown with files, structs, functions, test results)
+- `smaug-go/doc/phase1-remaining.md` — Phase 1 status (complete)
+- `smaug-go/doc/phase2-remaining.md` — Phase 2 task breakdown with priority order
 
 ## Current Status
 
-**Phase 1 nearly complete.** 35 source files (~8,778 lines), 13 test files (~2,910 lines), 312 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 object templates, 406 mob instances, 710 object instances, 325 skills/spells, 17 classes, 15 races.
+**Phase 1 complete. Phase 2 next.** 36 source files (~8,891 lines), 17 test files (~3,636 lines), 352 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -57,11 +58,14 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Handler package: CreateMobile, CreateObject, CharToRoom/FromRoom, ObjToRoom/Char/Obj, EquipChar
 - Test suite: 13 files, 312 cases covering types, util, net, persist (scanner, area, classes, races, player, skills), command, world, handler (mutation-verified)
 
-### What's next (Phase 1 polish, then Phase 2)
-1. Help file loading (parse `#HELPS` sections)
-2. Prompt system (token substitution)
-3. System data loading
-4. **Phase 2**: Combat, items, skills, movement costs, object commands, communication
+### What's next (Phase 2: Core Gameplay)
+1. Handler layer completion (find functions, affect management, extraction queues)
+2. Attribute bonus tables (str_app, dex_app, etc. from const.c)
+3. Object commands (get, drop, wear, remove, eat, drink)
+4. Game updates (regen, mob AI, area resets on timer)
+5. Combat system (one_hit, damage, death, flee)
+6. Basic magic (~20 spells)
+7. See `smaug-go/doc/phase2-remaining.md` for full breakdown
 
 ## Building and Running the Go Port
 

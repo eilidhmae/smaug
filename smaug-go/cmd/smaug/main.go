@@ -128,6 +128,10 @@ func bootDB(w *world.World) error {
 		log.Printf("Loaded %d skills/spells.", len(w.Skills))
 	}
 
+	if len(w.Helps) > 0 {
+		log.Printf("Loaded %d help entries.", len(w.Helps))
+	}
+
 	log.Printf("Boot complete. %d rooms, %d mob templates, %d obj templates loaded.",
 		len(w.Rooms), len(w.MobIndex), len(w.ObjIndex))
 

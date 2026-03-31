@@ -149,6 +149,10 @@ func (g *GameLoop) processInput() {
 			if d.Connected == int(types.CON_PLAYING) {
 				if d.Character != nil {
 					g.cmdReg.Interpret(d.Character, line)
+					// Send prompt after command output
+					if d.Connected == int(types.CON_PLAYING) {
+						d.WriteToBuffer(FormatPrompt(d.Character))
+					}
 				}
 			} else {
 				g.nanny(d, line)
@@ -576,6 +580,9 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 			}
 		}
 	}
+
+	// Send initial prompt
+	d.WriteToBuffer(FormatPrompt(ch))
 }
 
 // SavePlayer saves a character's data to disk.

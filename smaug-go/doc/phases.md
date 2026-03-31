@@ -10,12 +10,12 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Goal:** Connect via telnet, log in, walk between rooms, see descriptions.
 
-**Status:** In progress. 32 source files (~7,667 lines), 11 test files (~2,369 lines), 293 test cases. Boot loads 1,909 rooms, 505 mobs, 821 objects, 4,299 exits, 17 classes, 15 races. Player save/load implemented (round-trip tested). Wiring into login flow, character creation, and mob/obj instantiation remain.
+**Status:** Complete. 36 source files (~8,891 lines), 17 test files (~3,636 lines), 352 test cases. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills, 17 classes, 15 races.
 
-**Deliverables:**
+**Deliverables (all complete):**
 - All core data structures ported from `mud.h` (`types/` package)
 - Utility functions (string manipulation, dice rolls, logging)
-- File format scanner and area file parser
+- File format scanner and area file parser (with `#HELPS` loading)
 - Class/race/skills data file loaders
 - World state container replacing C globals
 - TCP server with goroutine-per-connection architecture
@@ -23,21 +23,22 @@ This document defines all phases of the SMAUG C-to-Go port.
 - ANSI color code processing
 - Pulse-based game loop (4 Hz, single goroutine)
 - Command interpreter with prefix matching
-- Login state machine (name → password → MOTD → enter game)
-- Character creation flow (name, sex, race, class)
-- Player file save/load in existing SMAUG format
-- Area resets (mob/object instantiation)
+- Full login state machine: returning players (load + password verify) and new players (character creation with sex/race/class)
+- Player file save/load in existing SMAUG format (save on quit, auto-create directories)
+- Area resets (mob/object instantiation via handler package)
+- Help file system (1,603 entries from area files)
+- Prompt system with token substitution (`%h/%H`, `%m/%M`, `%v/%V`, `%g`, `%a`, `%x`, `%r`)
 - Basic commands: look, quit, say, score, who, help, commands, inventory, equipment, movement (10 directions)
 
-**Verification:** Telnet in, create or load a character, walk around rooms loaded from real `.are` files, see room descriptions and NPCs, save/quit/reload.
-
-**Status:** Core skeleton working. Area loading, player persistence, character creation, mob instantiation still needed.
+**Verification:** Telnet in, create a new character (name/password/sex/class/race) or load an existing one, walk around rooms loaded from real `.are` files, see room descriptions with NPCs and objects, use help system, save/quit/reload with all state preserved.
 
 ---
 
 ## Phase 2: Core Gameplay — Combat, Items, Skills
 
 **Goal:** A playable game with full combat, inventory management, and basic spells.
+
+**Status:** Not started. See `phase2-remaining.md` for detailed task breakdown and priority order.
 
 **Deliverables:**
 

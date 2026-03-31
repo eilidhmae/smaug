@@ -229,7 +229,7 @@ smaug-go/
 
 ### Current State (as of 2026-03-30)
 
-11 test files, ~2,369 lines, 293 test cases — all passing. 6 mutations tested and detected.
+17 test files, ~3,636 lines, 352 test cases — all passing. 6 mutations tested and detected. All `internal/` packages have test coverage (only `cmd/smaug` has no tests — it's just wiring).
 
 | Test File | Package | Cases | Coverage |
 |-----------|---------|-------|----------|
@@ -242,18 +242,25 @@ smaug-go/
 | `classes_test.go` | `persist/` | 1 | LoadClasses with Warrior fixture |
 | `races_test.go` | `persist/` | 1 | LoadRaces with Human fixture |
 | `player_test.go` | `persist/` | 2 | LoadPlayer fixture + SaveLoadRoundTrip |
+| `skills_test.go` | `persist/` | 1 | LoadSkills: fireball, backstab, sanctuary with affects |
+| `helps_test.go` | `persist/` | 1 | loadHelps: 3 entries, level/keyword/text |
 | `interpret_test.go` | `command/` | ~9 | Find (exact/prefix/trust), Interpret dispatch/position |
 | `world_test.go` | `world/` | ~6 | CRUD operations on World |
+| `handler_test.go` | `handler/` | 18 | CreateMobile, CreateObject, placement, ResetArea, door state |
+| `loop_test.go` | `game/` | 17 | isValidName, createNewCharacter, applyRaceBonuses, NewGameLoop |
+| `prompt_test.go` | `game/` | 5 | FormatPrompt: standard, all tokens, default, no PCData, unknown |
+| `info_test.go` | `act/` | 17 | DoLook, DoScore, DoSay, DoWho, DoInventory, DoEquipment, DoQuit, moveChar, showExits |
 
-### Test Types (planned)
+### Test Types
 
-1. **Unit tests** (done) — BitVector ops, file scanner, string utils, dice rolls, color processing, command registry, world CRUD
-2. **File round-trip tests** (future) — Load C-saved player file → save from Go → diff (byte-identical)
-3. **Area load integration tests** (future) — Load real `.are` files as testdata fixtures, verify room/mob/obj counts and field values
-4. **Command output tests** (future) — Use `net.Pipe()` pattern from `interpret_test.go` to capture and verify command output
-5. **Combat math** (Phase 2) — Fix RNG seed, verify `one_hit` calculations match C formulas exactly
-6. **MUD prog tests** (Phase 3) — Test `.are` files with known triggers, verify behavior
-7. **Stress tests** (Phase 4) — 100+ concurrent telnet connections, measure memory and latency
+1. **Unit tests** (done) — BitVector ops, file scanner, string utils, dice rolls, color processing, command registry, world CRUD, prompt formatting, name validation
+2. **File round-trip tests** (done) — Player SaveLoadRoundTrip
+3. **Area load integration tests** (done) — 5 tests with testdata fixtures for objects, rooms, mobs, spell objects
+4. **Command output tests** (done) — `net.Pipe()` pattern capturing DoLook, DoScore, DoSay, DoWho, DoInventory, DoEquipment, moveChar, showExits
+5. **Entity creation tests** (done) — CreateMobile, CreateObject, CharToRoom/FromRoom, ObjToRoom/Char/Obj, EquipChar, ResetArea
+6. **Combat math** (Phase 2) — Fix RNG seed, verify `one_hit` calculations match C formulas exactly
+7. **MUD prog tests** (Phase 3) — Test `.are` files with known triggers, verify behavior
+8. **Stress tests** (Phase 4) — 100+ concurrent telnet connections, measure memory and latency
 
 ### Mutation Verification
 

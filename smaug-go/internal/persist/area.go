@@ -174,7 +174,10 @@ func loadAreaFile(w *world.World, filename string) error {
 				sc.ReadNumber()
 			}
 
-		case "CLIMATE", "NEIGHBOR", "HELPS", "MUDPROGS", "OBJPROGS",
+		case "HELPS":
+			loadHelps(sc, w)
+
+		case "CLIMATE", "NEIGHBOR", "MUDPROGS", "OBJPROGS",
 			"CREDITS", "CONTINENT":
 			// Skip unsupported sections by reading to the next '#' marker.
 			skipSection(sc, word)
@@ -1204,5 +1207,27 @@ func mprogNameToType(name string) int {
 	default:
 		util.Bug("mprogNameToType: unknown prog type '%s'", name)
 		return 0
+	}
+}
+
+// loadHelps reads a #HELPS section from an area file.
+// Format: <level> <keyword>~\n<text>~\n repeated until keyword is "$".
+func loadHelps(sc *Scanner, w *world.World) {
+	for {
+		level := sc.ReadNumber()
+		keyword := sc.ReadString()
+
+		if keyword == "$" {
+			break
+		}
+
+		text := sc.ReadString()
+
+		help := &types.HelpData{
+			Level:   level,
+			Keyword: keyword,
+			Text:    text,
+		}
+		w.Helps = append(w.Helps, help)
 	}
 }
