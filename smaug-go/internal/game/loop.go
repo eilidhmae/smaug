@@ -3,10 +3,13 @@ package game
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/eilidhmae/smaug/internal/command"
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -160,57 +163,317 @@ func (g *GameLoop) processInput() {
 func (g *GameLoop) nanny(d *types.DescriptorData, line string) {
 	switch d.Connected {
 	case types.CON_GET_NAME:
-		name := strings.TrimSpace(line)
-		if name == "" {
-			d.WriteToBuffer("By what name do you wish to be known? ")
-			return
-		}
-		// Capitalize the name
-		if len(name) > 0 {
-			name = strings.ToUpper(name[:1]) + strings.ToLower(name[1:])
-		}
-		d.User = name
-
-		// TODO: check for existing player file, load it
-		// For now, skip password and go straight to MOTD
-		_, _ = d.Conn.Write(telnetEchoOff)
-		d.WriteToBuffer("Password: ")
-		d.Connected = int(types.CON_GET_OLD_PASSWORD)
-
+		g.nannyGetName(d, line)
 	case types.CON_GET_OLD_PASSWORD:
-		// Turn echo back on
-		_, _ = d.Conn.Write(telnetEchoOn)
-		d.WriteToBuffer("\n\r")
-
-		// TODO: validate password against saved player file
-		// For now, accept any password and show MOTD
-		d.WriteToBuffer(motd)
-		d.Connected = int(types.CON_READ_MOTD)
-
+		g.nannyGetOldPassword(d, line)
+	case types.CON_CONFIRM_NEW_NAME:
+		g.nannyConfirmNewName(d, line)
+	case types.CON_GET_NEW_PASSWORD:
+		g.nannyGetNewPassword(d, line)
+	case types.CON_CONFIRM_NEW_PASSWORD:
+		g.nannyConfirmNewPassword(d, line)
+	case types.CON_GET_NEW_SEX:
+		g.nannyGetNewSex(d, line)
+	case types.CON_GET_NEW_CLASS:
+		g.nannyGetNewClass(d, line)
+	case types.CON_GET_NEW_RACE:
+		g.nannyGetNewRace(d, line)
 	case types.CON_READ_MOTD:
-		// Player pressed enter after MOTD — enter the game
 		g.enterGame(d)
-
 	default:
 		d.WriteToBuffer("Unexpected state. Disconnecting.\n\r")
 		d.Connected = -1
 	}
 }
 
-// enterGame creates a character and places them in the world.
-func (g *GameLoop) enterGame(d *types.DescriptorData) {
-	// Create a new character for this connection
+// nannyGetName handles name entry at login.
+func (g *GameLoop) nannyGetName(d *types.DescriptorData, line string) {
+	name := strings.TrimSpace(line)
+	if name == "" {
+		d.WriteToBuffer("By what name do you wish to be known? ")
+		return
+	}
+
+	// Validate name: letters only, 3-12 characters
+	if !isValidName(name) {
+		d.WriteToBuffer("Illegal name, try another.\n\rName: ")
+		return
+	}
+
+	// Capitalize
+	name = strings.ToUpper(name[:1]) + strings.ToLower(name[1:])
+	d.User = name
+
+	// Check if already playing
+	for _, od := range g.world.Descriptors {
+		if od != d && od.Character != nil && strings.EqualFold(od.Character.Name, name) {
+			d.WriteToBuffer("That character is already playing. Try another name.\n\rName: ")
+			return
+		}
+	}
+
+	// Check for existing player file
+	playerPath := persist.PlayerFilePath(g.world.DataDir, name)
+	if _, err := os.Stat(playerPath); err == nil {
+		// Existing player — load and ask for password
+		f, err := os.Open(playerPath)
+		if err != nil {
+			log.Printf("Error opening player file %s: %v", playerPath, err)
+			d.WriteToBuffer("Error loading your character. Try again.\n\rName: ")
+			return
+		}
+		ch, err := persist.LoadPlayer(f, playerPath)
+		f.Close()
+		if err != nil {
+			log.Printf("Error loading player %s: %v", name, err)
+			d.WriteToBuffer("Error loading your character. Try again.\n\rName: ")
+			return
+		}
+		d.Character = ch
+		ch.Desc = d
+		_, _ = d.Conn.Write(telnetEchoOff)
+		d.WriteToBuffer("Password: ")
+		d.Connected = int(types.CON_GET_OLD_PASSWORD)
+	} else {
+		// New player — confirm the name
+		d.WriteToBufferf("Did I get that right, %s (Y/N)? ", name)
+		d.Connected = int(types.CON_CONFIRM_NEW_NAME)
+	}
+}
+
+// nannyGetOldPassword verifies password for returning players.
+func (g *GameLoop) nannyGetOldPassword(d *types.DescriptorData, line string) {
+	_, _ = d.Conn.Write(telnetEchoOn)
+	d.WriteToBuffer("\n\r")
+
+	if d.Character == nil || d.Character.PCData == nil {
+		d.WriteToBuffer("Error: no character data. Disconnecting.\n\r")
+		d.Connected = -1
+		return
+	}
+
+	// NOCRYPT mode: plaintext password comparison (matches C #define NOCRYPT)
+	if line != d.Character.PCData.Pwd {
+		d.WriteToBuffer("Wrong password.\n\r")
+		log.Printf("Bad password for %s from %s", d.User, d.Host)
+		d.Character = nil
+		d.Connected = -1
+		return
+	}
+
+	// Record the login site
+	d.Character.PCData.RecentSite = d.Host
+
+	d.WriteToBuffer(motd)
+	d.Connected = int(types.CON_READ_MOTD)
+}
+
+// nannyConfirmNewName handles "Did I get that right, Gandalf (Y/N)?"
+func (g *GameLoop) nannyConfirmNewName(d *types.DescriptorData, line string) {
+	line = strings.TrimSpace(line)
+	if len(line) == 0 {
+		d.WriteToBufferf("Did I get that right, %s (Y/N)? ", d.User)
+		return
+	}
+
+	switch strings.ToUpper(line[:1]) {
+	case "Y":
+		_, _ = d.Conn.Write(telnetEchoOff)
+		d.WriteToBuffer("New character.\n\rGive me a password for this character: ")
+		d.Connected = int(types.CON_GET_NEW_PASSWORD)
+	case "N":
+		d.WriteToBuffer("Ok, what IS it, then? ")
+		d.User = ""
+		d.Connected = int(types.CON_GET_NAME)
+	default:
+		d.WriteToBuffer("Please type Yes or No: ")
+	}
+}
+
+// nannyGetNewPassword handles initial password entry for new characters.
+func (g *GameLoop) nannyGetNewPassword(d *types.DescriptorData, line string) {
+	d.WriteToBuffer("\n\r")
+
+	if len(line) < 5 {
+		d.WriteToBuffer("Password must be at least five characters long.\n\rPassword: ")
+		return
+	}
+
+	if strings.Contains(line, "~") {
+		d.WriteToBuffer("New password not acceptable, try again.\n\rPassword: ")
+		return
+	}
+
+	// Create the character now with the password
+	ch := g.createNewCharacter(d.User)
+	ch.PCData.Pwd = line // NOCRYPT: store plaintext
+	ch.Desc = d
+	d.Character = ch
+
+	d.WriteToBuffer("Please retype the password to confirm: ")
+	d.Connected = int(types.CON_CONFIRM_NEW_PASSWORD)
+}
+
+// nannyConfirmNewPassword handles password confirmation.
+func (g *GameLoop) nannyConfirmNewPassword(d *types.DescriptorData, line string) {
+	_, _ = d.Conn.Write(telnetEchoOn)
+	d.WriteToBuffer("\n\r")
+
+	if d.Character == nil || d.Character.PCData == nil {
+		d.WriteToBuffer("Error: no character. Disconnecting.\n\r")
+		d.Connected = -1
+		return
+	}
+
+	if line != d.Character.PCData.Pwd {
+		d.WriteToBuffer("Passwords don't match.\n\rRetype password: ")
+		_, _ = d.Conn.Write(telnetEchoOff)
+		d.Connected = int(types.CON_GET_NEW_PASSWORD)
+		return
+	}
+
+	d.WriteToBuffer("\n\rWhich gender will your character be?\n\r (M)ale\n\r (F)emale\n\r (N)eutral\n\rPlease select: ")
+	d.Connected = int(types.CON_GET_NEW_SEX)
+}
+
+// nannyGetNewSex handles sex selection for new characters.
+func (g *GameLoop) nannyGetNewSex(d *types.DescriptorData, line string) {
+	line = strings.TrimSpace(line)
+	if len(line) == 0 {
+		d.WriteToBuffer("Please select (M)ale, (F)emale, or (N)eutral: ")
+		return
+	}
+
+	switch strings.ToUpper(line[:1]) {
+	case "M":
+		d.Character.Sex = types.SEX_MALE
+	case "F":
+		d.Character.Sex = types.SEX_FEMALE
+	case "N":
+		d.Character.Sex = types.SEX_NEUTRAL
+	default:
+		d.WriteToBuffer("That's not a valid selection.\n\rPlease select (M)ale, (F)emale, or (N)eutral: ")
+		return
+	}
+
+	g.showClassMenu(d)
+	d.Connected = int(types.CON_GET_NEW_CLASS)
+}
+
+// nannyGetNewClass handles class selection for new characters.
+func (g *GameLoop) nannyGetNewClass(d *types.DescriptorData, line string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		g.showClassMenu(d)
+		return
+	}
+
+	classIdx := -1
+	for i, c := range g.world.Classes {
+		if c == nil || c.WhoName == "" || strings.EqualFold(c.WhoName, "unused") {
+			continue
+		}
+		if strings.EqualFold(c.WhoName, line) || (len(line) >= 1 && strings.HasPrefix(strings.ToLower(c.WhoName), strings.ToLower(line))) {
+			classIdx = i
+			break
+		}
+	}
+
+	if classIdx < 0 {
+		d.WriteToBuffer("That's not a valid class.\n\r")
+		g.showClassMenu(d)
+		return
+	}
+
+	d.Character.Class = classIdx
+
+	g.showRaceMenu(d)
+	d.Connected = int(types.CON_GET_NEW_RACE)
+}
+
+// nannyGetNewRace handles race selection for new characters.
+func (g *GameLoop) nannyGetNewRace(d *types.DescriptorData, line string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		g.showRaceMenu(d)
+		return
+	}
+
+	raceIdx := -1
+	for i, r := range g.world.Races {
+		if r == nil || r.Name == "" || strings.EqualFold(r.Name, "unused") {
+			continue
+		}
+		if strings.EqualFold(r.Name, line) || (len(line) >= 1 && strings.HasPrefix(strings.ToLower(r.Name), strings.ToLower(line))) {
+			// Check class restriction
+			if r.ClassRestriction != 0 && (r.ClassRestriction&(1<<d.Character.Class)) != 0 {
+				d.WriteToBuffer("That race is not available for your class.\n\r")
+				g.showRaceMenu(d)
+				return
+			}
+			raceIdx = i
+			break
+		}
+	}
+
+	if raceIdx < 0 {
+		d.WriteToBuffer("That's not a valid race.\n\r")
+		g.showRaceMenu(d)
+		return
+	}
+
+	d.Character.Race = raceIdx
+
+	// Apply race stat bonuses
+	g.applyRaceBonuses(d.Character, g.world.Races[raceIdx])
+
+	log.Printf("%s@%s new %s %s.",
+		d.Character.Name, d.Host,
+		g.world.Races[raceIdx].Name,
+		g.world.Classes[d.Character.Class].WhoName)
+
+	d.WriteToBuffer(motd)
+	d.Connected = int(types.CON_READ_MOTD)
+}
+
+// showClassMenu displays available classes.
+func (g *GameLoop) showClassMenu(d *types.DescriptorData) {
+	d.WriteToBuffer("\n\rSelect a class:\n\r")
+	for _, c := range g.world.Classes {
+		if c == nil || c.WhoName == "" || strings.EqualFold(c.WhoName, "unused") {
+			continue
+		}
+		d.WriteToBufferf("  %s\n\r", c.WhoName)
+	}
+	d.WriteToBuffer("Choice: ")
+}
+
+// showRaceMenu displays available races (filtered by class restriction).
+func (g *GameLoop) showRaceMenu(d *types.DescriptorData) {
+	d.WriteToBuffer("\n\rSelect a race:\n\r")
+	for _, r := range g.world.Races {
+		if r == nil || r.Name == "" || strings.EqualFold(r.Name, "unused") {
+			continue
+		}
+		// Skip races restricted for this class
+		if r.ClassRestriction != 0 && (r.ClassRestriction&(1<<d.Character.Class)) != 0 {
+			continue
+		}
+		d.WriteToBufferf("  %s\n\r", r.Name)
+	}
+	d.WriteToBuffer("Choice: ")
+}
+
+// createNewCharacter builds a fresh CharData for a new player.
+func (g *GameLoop) createNewCharacter(name string) *types.CharData {
 	ch := &types.CharData{
-		Name:       d.User,
-		ShortDescr: d.User,
-		LongDescr:  d.User + " is here.\n\r",
+		Name:       name,
+		ShortDescr: name,
+		LongDescr:  name + " is here.\n\r",
 		Level:      1,
-		Sex:        types.SEX_NEUTRAL,
-		Class:      types.CLASS_WARRIOR,
-		Race:       types.RACE_HUMAN,
 		Position:   types.POS_STANDING,
-		Hit:        100,
-		MaxHit:     100,
+		Hit:        20,
+		MaxHit:     20,
 		Mana:       100,
 		MaxMana:    100,
 		Move:       100,
@@ -222,29 +485,62 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 		PermCon:    13,
 		PermCha:    13,
 		PermLck:    13,
-		Gold:       500,
-		Desc:       d,
+		Gold:       0,
+		Armor:      100,
 		PCData: &types.PCData{
-			Title:    "the newbie",
-			Prompt:   "<%hhp %mm %vmv> ",
-			Filename: strings.ToLower(d.User),
+			Title:     "the newbie",
+			Prompt:    "<%hhp %mm %vmv> ",
+			Filename:  strings.ToLower(name),
+			PagerLen:  24,
+			Condition: [4]int{48, 48, 48, 0}, // full food/drink/blood
 		},
 	}
-
-	// Set ACT flags for player (not NPC)
-	// PLR_IS_NPC is bit 0 — do NOT set it for players
 	ch.Act.Set(types.PLR_AUTOEXIT)
 	ch.Act.Set(types.PLR_ANSI)
+	return ch
+}
 
-	d.Character = ch
+// applyRaceBonuses applies racial stat modifiers to a new character.
+func (g *GameLoop) applyRaceBonuses(ch *types.CharData, race *types.RaceData) {
+	ch.PermStr += race.StrPlus
+	ch.PermDex += race.DexPlus
+	ch.PermWis += race.WisPlus
+	ch.PermInt += race.IntPlus
+	ch.PermCon += race.ConPlus
+	ch.PermCha += race.ChaPlus
+	ch.PermLck += race.LckPlus
+	ch.AffectedBy = ch.AffectedBy.Or(race.Affected)
+	ch.Resistant = race.Resist
+	ch.Susceptible = race.Suscept
+}
+
+// enterGame places a character into the game world.
+// For returning players, d.Character is already loaded from the save file.
+// For new players, d.Character was built during character creation.
+func (g *GameLoop) enterGame(d *types.DescriptorData) {
+	ch := d.Character
+	if ch == nil {
+		// Should not happen, but guard against it
+		d.WriteToBuffer("Error: no character data. Disconnecting.\n\r")
+		d.Connected = -1
+		return
+	}
+
 	ch.Desc = d
 	d.Connected = int(types.CON_PLAYING)
 
 	// Add to world character list
 	g.world.AddChar(ch)
 
-	// Place in starting room
-	startRoom := g.world.GetRoom(types.ROOM_VNUM_TEMPLE)
+	// Determine starting room
+	startVnum := types.ROOM_VNUM_TEMPLE
+	if ch.HomeVnum != 0 {
+		startVnum = ch.HomeVnum
+	}
+	startRoom := g.world.GetRoom(startVnum)
+	if startRoom == nil {
+		startRoom = g.world.GetRoom(types.ROOM_VNUM_TEMPLE)
+	}
 	if startRoom == nil {
 		// Fallback: find any room
 		for _, r := range g.world.Rooms {
@@ -257,13 +553,14 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 		startRoom.People = append(startRoom.People, ch)
 	}
 
+	ch.Position = types.POS_STANDING
+
 	log.Printf("%s has entered the game from %s", ch.Name, d.Host)
 
 	d.WriteToBuffer("\n\rWelcome to SMAUG!\n\r\n\r")
 
 	// Auto-look
 	if ch.InRoom != nil {
-		// Inline a basic look since we can't easily call act.DoLook from here
 		d.WriteToBufferf("%s\n\r", ch.InRoom.Name)
 		if ch.InRoom.Description != "" {
 			d.WriteToBuffer(ch.InRoom.Description)
@@ -279,6 +576,48 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 			}
 		}
 	}
+}
+
+// SavePlayer saves a character's data to disk.
+func (g *GameLoop) SavePlayer(ch *types.CharData) {
+	if ch == nil || ch.PCData == nil || ch.IsNPC() {
+		return
+	}
+	playerPath := persist.PlayerFilePath(g.world.DataDir, ch.Name)
+	if playerPath == "" {
+		return
+	}
+
+	// Ensure the directory exists
+	dir := filepath.Dir(playerPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("Error creating player directory %s: %v", dir, err)
+		return
+	}
+
+	f, err := os.Create(playerPath)
+	if err != nil {
+		log.Printf("Error saving player %s: %v", ch.Name, err)
+		return
+	}
+	defer f.Close()
+
+	if err := persist.SavePlayer(f, ch); err != nil {
+		log.Printf("Error writing player %s: %v", ch.Name, err)
+	}
+}
+
+// isValidName checks if a name is acceptable for a player character.
+func isValidName(name string) bool {
+	if len(name) < 3 || len(name) > 12 {
+		return false
+	}
+	for _, c := range name {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 // flushOutput sends buffered output for all descriptors.

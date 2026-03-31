@@ -48,6 +48,11 @@ func main() {
 	// Create game loop
 	gameLoop := game.NewGameLoop(w, cmdReg, server.Incoming)
 
+	// Wire save function for quit command
+	act.SaveFunc = func(ch *types.CharData) {
+		gameLoop.SavePlayer(ch)
+	}
+
 	// Start network server
 	if err := server.Start(*port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

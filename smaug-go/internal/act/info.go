@@ -166,12 +166,23 @@ func plural(n int) string {
 	return "s"
 }
 
+// SaveFunc is set by main to allow saving players from the act package.
+// This avoids a circular dependency between act and game.
+var SaveFunc func(ch *types.CharData)
+
 // DoQuit implements the 'quit' command.
 func DoQuit(ch *types.CharData, argument string) {
 	if ch.Position == types.POS_FIGHTING {
 		ch.Send("No way! You are fighting.\n\r")
 		return
 	}
+
+	// Save the player before quitting
+	if SaveFunc != nil {
+		SaveFunc(ch)
+		ch.Send("Your character has been saved.\n\r")
+	}
+
 	ch.Send("Your surroundings begin to fade as you slowly slip into a deep sleep ...\n\r")
 	// The game loop will handle the actual disconnection
 	if ch.Desc != nil {
