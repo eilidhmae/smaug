@@ -1,0 +1,83 @@
+#PLAYER
+Version    2
+Name       Testfull~
+Description A fully loaded test character.
+~
+Sex        1
+Class      5
+Race       3
+Languages  7 1
+Level      50
+Played     7200
+Room       3001
+HpManaMove 500 600 200 300 150 200
+Stance     2
+Stances    10 20 30 40 50 60 70 80 90 100 110 120
+Gold       10000
+Silver     500
+Copper     200
+Exp        999999
+Height     70
+Weight     175
+Act        1 0 0 0
+AffectedBy 2 0 0 0
+NoAffectedBy 4 0 0 0
+Position   112
+Style      2
+Practice   15
+Alignment  1000
+SavingThrows -5 -3 -2 -4 -1
+Favor      100
+Honour     50
+Hitroll    12
+Damroll    15
+Armor      -50
+Wimpy      50
+Deaf       8 0 0 0
+Resistant  4
+Immune     2
+Susceptible 8
+NoResistant 16
+NoImmune   32
+NoSusceptible 64
+Mentalstate -10
+AttrPerm   18 16 14 20 15 12 17
+AttrMod    2 1 0 3 -1 0 1
+Condition  48 48 48 0
+Password   s3cret~
+Rank       Lord~
+Bestowments all~
+Title      the Magnificent~
+Homepage   http://mud.org~
+Email      test@mud.org~
+Bio        A test character bio.~
+AuthedBy   Admin~
+Minsnoop   55
+Prompt     <%hhp %mmana> ~
+FPrompt    <%hhp %mmana %vmv> ~
+Pagerlen   30
+Trust      60
+WizInvis   60
+Bamfin     appears in a flash of light~
+Bamfout    vanishes in a puff of smoke~
+Flags      5
+PKills     3
+PDeaths    1
+MKills     500
+MDeaths    20
+IllegalPK  1
+Site       10.0.0.1
+Clan       Guild of Heroes~
+Council    Council of Elders~
+Deity      Mota~
+Locale     en~
+Spouse     Arwen~
+Skill      90 backstab~
+Spell      85 magic missile~
+Weapon     75 sword~
+Tongue     50 common~
+Killed     3400 5
+Coordinates 100 200 1
+Affect       5 24 -20 17 0 0 0 0
+End
+

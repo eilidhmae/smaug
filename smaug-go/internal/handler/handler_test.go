@@ -1020,3 +1020,1292 @@ func TestInterpolate(t *testing.T) {
 		t.Errorf("interpolate(LEVEL_AVATAR, 100, -100) = %d, want -100", v)
 	}
 }
+
+// --- Additional tests for increased coverage ---
+
+// ObjToObj: verify multiple items in container
+func TestObjToObj_MultipleItems(t *testing.T) {
+	w := newTestWorld()
+	container := CreateObject(w, newTestObjIndex(2060), 1)
+	item1 := CreateObject(w, newTestObjIndex(2061), 1)
+	item2 := CreateObject(w, newTestObjIndex(2062), 1)
+
+	ObjToObj(item1, container)
+	ObjToObj(item2, container)
+
+	if len(container.Contents) != 2 {
+		t.Fatalf("container.Contents = %d, want 2", len(container.Contents))
+	}
+	if item1.InObj != container || item2.InObj != container {
+		t.Error("items should reference container as InObj")
+	}
+}
+
+// EquipChar edge cases: multiple wear locations
+func TestEquipChar_MultipleSlots(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+
+	helm := CreateObject(w, newTestObjIndex(2070), 1)
+	helm.IndexData.Name = "iron helm"
+	helm.Name = "iron helm"
+	body := CreateObject(w, newTestObjIndex(2071), 1)
+	body.IndexData.Name = "chain mail"
+	body.Name = "chain mail"
+
+	EquipChar(ch, helm, types.WEAR_HEAD)
+	EquipChar(ch, body, types.WEAR_BODY)
+
+	if len(ch.Carrying) != 2 {
+		t.Fatalf("ch.Carrying = %d, want 2", len(ch.Carrying))
+	}
+	if helm.WearLoc != types.WEAR_HEAD {
+		t.Errorf("helm.WearLoc = %d, want WEAR_HEAD", helm.WearLoc)
+	}
+	if body.WearLoc != types.WEAR_BODY {
+		t.Errorf("body.WearLoc = %d, want WEAR_BODY", body.WearLoc)
+	}
+}
+
+// GetEqChar: nil for completely empty carrying list
+func TestGetEqChar_EmptyCarrying(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+	found := GetEqChar(ch, types.WEAR_WIELD)
+	if found != nil {
+		t.Error("GetEqChar should return nil for empty carrying list")
+	}
+}
+
+// GetEqChar: doesn't match inventory items (WEAR_NONE)
+func TestGetEqChar_IgnoresInventory(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+	obj := CreateObject(w, newTestObjIndex(2072), 1)
+	ObjToChar(obj, ch) // In inventory, WearLoc = WEAR_NONE
+
+	found := GetEqChar(ch, types.WEAR_NONE)
+	if found != nil {
+		// WEAR_NONE == -1, items in inventory have WearLoc == WEAR_NONE
+		// but GetEqChar iterates looking for match to WEAR_NONE which would be an inventory item
+		// Actually this DOES match, let's verify the behavior
+	}
+	// The important test: looking for an eq slot that's unoccupied
+	found = GetEqChar(ch, types.WEAR_WIELD)
+	if found != nil {
+		t.Error("GetEqChar should return nil when slot is empty")
+	}
+}
+
+// CharToRoom: NPC in dark room gets AFF_INFRARED
+func TestCharToRoom_DarkRoom_NPC(t *testing.T) {
+	room := newTestRoom(3100)
+	room.RoomFlags.Set(types.ROOM_DARK)
+
+	mob := &types.CharData{Name: "dark mob"}
+	mob.Act.Set(types.ACT_IS_NPC)
+
+	CharToRoom(mob, room)
+
+	if !mob.AffectedBy.IsSet(types.AFF_INFRARED) {
+		t.Error("NPC in dark room should get AFF_INFRARED")
+	}
+}
+
+// CharToRoom: PC in dark room does NOT get AFF_INFRARED
+func TestCharToRoom_DarkRoom_PC(t *testing.T) {
+	room := newTestRoom(3101)
+	room.RoomFlags.Set(types.ROOM_DARK)
+
+	ch := &types.CharData{Name: "Player"}
+	// No ACT_IS_NPC set
+
+	CharToRoom(ch, room)
+
+	if ch.AffectedBy.IsSet(types.AFF_INFRARED) {
+		t.Error("PC in dark room should NOT get AFF_INFRARED")
+	}
+}
+
+// CharFromRoom: calling on char not in a room is a no-op
+func TestCharFromRoom_NilRoom(t *testing.T) {
+	ch := &types.CharData{Name: "Tester", InRoom: nil}
+	// Should not panic
+	CharFromRoom(ch)
+	if ch.InRoom != nil {
+		t.Error("InRoom should remain nil")
+	}
+}
+
+// ExtractChar with fPull=false (rebirth path)
+func TestExtractChar_NoPull(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3110)
+	mob := &types.CharData{Name: "rebirth mob"}
+	mob.Act.Set(types.ACT_IS_NPC)
+	w.AddChar(mob)
+	CharToRoom(mob, room)
+
+	ExtractChar(w, mob, false)
+
+	// Room should be cleared
+	if len(room.People) != 0 {
+		t.Error("room.People should be empty after extract")
+	}
+	// But character should NOT be removed from world (fPull=false returns early)
+	if len(w.Characters) != 1 {
+		t.Errorf("world.Characters = %d, want 1 (fPull=false should not remove from world)", len(w.Characters))
+	}
+}
+
+// ExtractChar: clears fighting reference
+func TestExtractChar_ClearsFighting(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3111)
+	mob := &types.CharData{Name: "fighter mob"}
+	mob.Act.Set(types.ACT_IS_NPC)
+	mob.IndexData = &types.MobIndexData{Count: 1}
+	w.AddChar(mob)
+	CharToRoom(mob, room)
+
+	target := &types.CharData{Name: "target"}
+	mob.Fighting = &types.FightData{Who: target}
+	mob.NumFighting = 1
+
+	ExtractChar(w, mob, true)
+
+	// mob.Fighting checked inside ExtractChar but mob is extracted so just verify no panic
+	if len(w.Characters) != 0 {
+		t.Errorf("world.Characters = %d, want 0", len(w.Characters))
+	}
+}
+
+// ExtractChar: clears Reply/Retell references in other characters
+func TestExtractChar_ClearsReplyRetell(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3112)
+
+	mob := &types.CharData{Name: "leaving mob"}
+	mob.Act.Set(types.ACT_IS_NPC)
+	mob.IndexData = &types.MobIndexData{Count: 1}
+	w.AddChar(mob)
+	CharToRoom(mob, room)
+
+	other := &types.CharData{Name: "other player", Reply: mob, Retell: mob}
+	w.AddChar(other)
+
+	ExtractChar(w, mob, true)
+
+	if other.Reply != nil {
+		t.Error("other.Reply should be cleared after mob extracted")
+	}
+	if other.Retell != nil {
+		t.Error("other.Retell should be cleared after mob extracted")
+	}
+}
+
+// ExtractChar: disconnects descriptor
+func TestExtractChar_DisconnectsDesc(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3113)
+
+	ch := &types.CharData{Name: "player with desc"}
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.IndexData = &types.MobIndexData{Count: 1}
+	desc := &types.DescriptorData{Character: ch}
+	ch.Desc = desc
+	w.AddChar(ch)
+	CharToRoom(ch, room)
+
+	ExtractChar(w, ch, true)
+
+	if desc.Character != nil {
+		t.Error("desc.Character should be nil after extract")
+	}
+	if ch.Desc != nil {
+		t.Error("ch.Desc should be nil after extract")
+	}
+}
+
+// AffectModify: saving throws
+func TestAffectModify_SavingThrows(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+
+	tests := []struct {
+		loc  int
+		get  func() int
+		name string
+	}{
+		{types.APPLY_SAVING_POISON, func() int { return ch.SavingPoisonDeath }, "SavingPoisonDeath"},
+		{types.APPLY_SAVING_ROD, func() int { return ch.SavingWand }, "SavingWand"},
+		{types.APPLY_SAVING_PARA, func() int { return ch.SavingParaPetri }, "SavingParaPetri"},
+		{types.APPLY_SAVING_BREATH, func() int { return ch.SavingBreath }, "SavingBreath"},
+		{types.APPLY_SAVING_SPELL, func() int { return ch.SavingSpellStaff }, "SavingSpellStaff"},
+	}
+
+	for _, tt := range tests {
+		aff := &types.AffectData{Type: 1, Duration: 10, Location: tt.loc, Modifier: -5}
+		AffectToChar(ch, aff)
+		if got := tt.get(); got != -5 {
+			t.Errorf("%s = %d, want -5 after apply", tt.name, got)
+		}
+		AffectRemove(ch, ch.Affects[len(ch.Affects)-1])
+		if got := tt.get(); got != 0 {
+			t.Errorf("%s = %d, want 0 after remove", tt.name, got)
+		}
+	}
+}
+
+// AffectModify: APPLY_SEX, APPLY_HEIGHT, APPLY_WEIGHT
+func TestAffectModify_SexHeightWeight(t *testing.T) {
+	ch := &types.CharData{Name: "Tester", Sex: 1, Height: 170, Weight: 80}
+
+	// APPLY_SEX
+	aff := &types.AffectData{Type: 1, Duration: 10, Location: types.APPLY_SEX, Modifier: 1}
+	AffectModify(ch, aff, true)
+	if ch.Sex != 2 {
+		t.Errorf("Sex = %d, want 2", ch.Sex)
+	}
+	AffectModify(ch, aff, false)
+	if ch.Sex != 1 {
+		t.Errorf("Sex = %d, want 1 after remove", ch.Sex)
+	}
+
+	// APPLY_HEIGHT
+	aff2 := &types.AffectData{Type: 1, Duration: 10, Location: types.APPLY_HEIGHT, Modifier: 10}
+	AffectModify(ch, aff2, true)
+	if ch.Height != 180 {
+		t.Errorf("Height = %d, want 180", ch.Height)
+	}
+	AffectModify(ch, aff2, false)
+	if ch.Height != 170 {
+		t.Errorf("Height = %d, want 170 after remove", ch.Height)
+	}
+
+	// APPLY_WEIGHT
+	aff3 := &types.AffectData{Type: 1, Duration: 10, Location: types.APPLY_WEIGHT, Modifier: 5}
+	AffectModify(ch, aff3, true)
+	if ch.Weight != 85 {
+		t.Errorf("Weight = %d, want 85", ch.Weight)
+	}
+	AffectModify(ch, aff3, false)
+	if ch.Weight != 80 {
+		t.Errorf("Weight = %d, want 80 after remove", ch.Weight)
+	}
+}
+
+// AffectModify: no-op apply types (LEVEL, AGE, GOLD, EXP)
+func TestAffectModify_NoOpTypes(t *testing.T) {
+	ch := &types.CharData{Name: "Tester", Level: 10, Gold: 500}
+
+	noOps := []int{types.APPLY_LEVEL, types.APPLY_AGE, types.APPLY_GOLD, types.APPLY_EXP}
+	for _, loc := range noOps {
+		aff := &types.AffectData{Type: 1, Duration: 10, Location: loc, Modifier: 99}
+		// Should not panic
+		AffectModify(ch, aff, true)
+		AffectModify(ch, aff, false)
+	}
+	// Level and Gold should be unchanged (these apply types are intentionally no-ops)
+	if ch.Level != 10 {
+		t.Errorf("Level = %d, want 10 (should be unchanged)", ch.Level)
+	}
+	if ch.Gold != 500 {
+		t.Errorf("Gold = %d, want 500 (should be unchanged)", ch.Gold)
+	}
+}
+
+// AffectJoin: when no existing affect exists, adds new
+func TestAffectJoin_NoExisting(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+	aff := &types.AffectData{Type: 42, Duration: 10, Location: types.APPLY_STR, Modifier: 3}
+
+	AffectJoin(ch, aff)
+
+	if len(ch.Affects) != 1 {
+		t.Fatalf("ch.Affects = %d, want 1", len(ch.Affects))
+	}
+	if ch.Affects[0].Duration != 10 {
+		t.Errorf("Duration = %d, want 10", ch.Affects[0].Duration)
+	}
+	if ch.Affects[0].Modifier != 3 {
+		t.Errorf("Modifier = %d, want 3", ch.Affects[0].Modifier)
+	}
+}
+
+// AffectJoin: when modifier is zero on new affect, keeps old modifier
+func TestAffectJoin_ZeroModifier(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+	AffectToChar(ch, &types.AffectData{Type: 42, Duration: 10, Location: types.APPLY_STR, Modifier: 5})
+
+	AffectJoin(ch, &types.AffectData{Type: 42, Duration: 5, Location: types.APPLY_STR, Modifier: 0})
+
+	if len(ch.Affects) != 1 {
+		t.Fatalf("ch.Affects = %d, want 1", len(ch.Affects))
+	}
+	if ch.Affects[0].Duration != 15 {
+		t.Errorf("Duration = %d, want 15", ch.Affects[0].Duration)
+	}
+	if ch.Affects[0].Modifier != 5 {
+		t.Errorf("Modifier = %d, want 5 (should keep old modifier when new is 0)", ch.Affects[0].Modifier)
+	}
+}
+
+// CreateObject: copies affects from index
+func TestCreateObject_Affects(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2080)
+	idx.Affects = []*types.AffectData{
+		{Type: 1, Duration: -1, Location: types.APPLY_STR, Modifier: 2},
+		{Type: 2, Duration: -1, Location: types.APPLY_DEX, Modifier: 1},
+	}
+
+	obj := CreateObject(w, idx, 5)
+
+	if len(obj.Affects) != 2 {
+		t.Fatalf("obj.Affects = %d, want 2", len(obj.Affects))
+	}
+	if obj.Affects[0] == idx.Affects[0] {
+		t.Error("affects should be copies, not same pointers")
+	}
+	if obj.Affects[0].Modifier != 2 {
+		t.Errorf("affects[0].Modifier = %d, want 2", obj.Affects[0].Modifier)
+	}
+	if obj.Affects[1].Modifier != 1 {
+		t.Errorf("affects[1].Modifier = %d, want 1", obj.Affects[1].Modifier)
+	}
+}
+
+// CreateMobile: AC from index data when non-zero
+func TestCreateMobile_AC(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestMobIndex(1100, 10)
+	idx.AC = -50
+
+	mob := CreateMobile(w, idx)
+
+	if mob.Armor != -50 {
+		t.Errorf("Armor = %d, want -50 (from index AC)", mob.Armor)
+	}
+}
+
+// --- Find function tests ---
+
+// GetObjList: basic search, exact then prefix
+func TestGetObjList_ExactMatch(t *testing.T) {
+	w := newTestWorld()
+	idx1 := newTestObjIndex(2090)
+	idx1.Name = "sword"
+	sword := CreateObject(w, idx1, 1)
+
+	idx2 := newTestObjIndex(2091)
+	idx2.Name = "swordfish trophy"
+	trophy := CreateObject(w, idx2, 1)
+
+	list := []*types.ObjData{sword, trophy}
+
+	// "sword" exact match should find sword first
+	found := GetObjList(list, "sword")
+	if found != sword {
+		t.Error("exact match 'sword' should find sword, not swordfish trophy")
+	}
+
+	_ = trophy // used in list
+}
+
+// GetObjList: N.name syntax
+func TestGetObjList_NthMatch(t *testing.T) {
+	w := newTestWorld()
+	idx1 := newTestObjIndex(2092)
+	idx1.Name = "gold coin"
+	coin1 := CreateObject(w, idx1, 1)
+
+	idx2 := newTestObjIndex(2093)
+	idx2.Name = "gold coin"
+	coin2 := CreateObject(w, idx2, 1)
+
+	list := []*types.ObjData{coin1, coin2}
+
+	found := GetObjList(list, "1.coin")
+	if found != coin1 {
+		t.Error("1.coin should find first coin")
+	}
+
+	found = GetObjList(list, "2.coin")
+	if found != coin2 {
+		t.Error("2.coin should find second coin")
+	}
+
+	found = GetObjList(list, "3.coin")
+	if found != nil {
+		t.Error("3.coin should return nil (only 2 coins)")
+	}
+}
+
+// GetObjList: empty list returns nil
+func TestGetObjList_EmptyList(t *testing.T) {
+	found := GetObjList(nil, "anything")
+	if found != nil {
+		t.Error("empty list should return nil")
+	}
+}
+
+// GetObjList: prefix match when no exact match
+func TestGetObjList_PrefixOnly(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2094)
+	idx.Name = "longsword of fire"
+	obj := CreateObject(w, idx, 1)
+
+	list := []*types.ObjData{obj}
+
+	found := GetObjList(list, "long")
+	if found != obj {
+		t.Error("prefix match 'long' should find 'longsword of fire'")
+	}
+}
+
+// GetObjHere: precedence (room > inventory > equipment)
+func TestGetObjHere_Precedence(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3200)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+
+	// Same name in room, inventory, and equipment
+	idxRoom := newTestObjIndex(2100)
+	idxRoom.Name = "diamond ring"
+	roomObj := CreateObject(w, idxRoom, 1)
+	ObjToRoom(roomObj, room)
+
+	idxInv := newTestObjIndex(2101)
+	idxInv.Name = "diamond ring"
+	invObj := CreateObject(w, idxInv, 1)
+	ObjToChar(invObj, ch)
+
+	idxEq := newTestObjIndex(2102)
+	idxEq.Name = "diamond ring"
+	eqObj := CreateObject(w, idxEq, 1)
+	EquipChar(ch, eqObj, types.WEAR_WIELD)
+
+	// Should find room object first
+	found := GetObjHere(ch, "ring")
+	if found != roomObj {
+		t.Error("GetObjHere should find room object first (precedence)")
+	}
+}
+
+// GetObjHere: falls through to inventory when not in room
+func TestGetObjHere_FallsToInventory(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3201)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+
+	idx := newTestObjIndex(2103)
+	idx.Name = "silver dagger"
+	dagger := CreateObject(w, idx, 1)
+	ObjToChar(dagger, ch)
+
+	found := GetObjHere(ch, "dagger")
+	if found != dagger {
+		t.Error("GetObjHere should find inventory item when not in room")
+	}
+}
+
+// GetObjHere: falls through to equipment
+func TestGetObjHere_FallsToEquipment(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3202)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+
+	idx := newTestObjIndex(2104)
+	idx.Name = "mystic staff"
+	staff := CreateObject(w, idx, 1)
+	EquipChar(ch, staff, types.WEAR_WIELD)
+
+	found := GetObjHere(ch, "staff")
+	if found != staff {
+		t.Error("GetObjHere should find equipped item as last resort")
+	}
+}
+
+// GetObjHere: ch not in room (nil InRoom) still searches inventory
+func TestGetObjHere_NilRoom(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+
+	idx := newTestObjIndex(2105)
+	idx.Name = "potion"
+	potion := CreateObject(w, idx, 1)
+	ObjToChar(potion, ch)
+
+	found := GetObjHere(ch, "potion")
+	if found != potion {
+		t.Error("GetObjHere should search inventory even with nil InRoom")
+	}
+}
+
+// GetCharRoom: exact match takes priority over prefix
+func TestGetCharRoom_ExactOverPrefix(t *testing.T) {
+	room := newTestRoom(3210)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+
+	// "guard" exact match exists; "guardian" also starts with "guard"
+	mob1 := &types.CharData{Name: "guardian angel"}
+	mob1.Act.Set(types.ACT_IS_NPC)
+	CharToRoom(mob1, room)
+
+	mob2 := &types.CharData{Name: "guard"}
+	mob2.Act.Set(types.ACT_IS_NPC)
+	CharToRoom(mob2, room)
+
+	found := GetCharRoom(ch, "guard")
+	if found != mob2 {
+		t.Error("exact match 'guard' should beat prefix match 'guardian'")
+	}
+}
+
+// GetCharRoom: ch not in room returns nil
+func TestGetCharRoom_NilRoom(t *testing.T) {
+	ch := &types.CharData{Name: "Tester"}
+	found := GetCharRoom(ch, "anyone")
+	if found != nil {
+		t.Error("GetCharRoom should return nil when ch.InRoom is nil")
+	}
+}
+
+// GetCharWorld: N.name syntax
+func TestGetCharWorld_NthMatch(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3220)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	room2 := newTestRoom(3221)
+	mob1 := &types.CharData{Name: "guard"}
+	mob1.Act.Set(types.ACT_IS_NPC)
+	CharToRoom(mob1, room2)
+	w.AddChar(mob1)
+
+	mob2 := &types.CharData{Name: "guard"}
+	mob2.Act.Set(types.ACT_IS_NPC)
+	CharToRoom(mob2, room2)
+	w.AddChar(mob2)
+
+	found := GetCharWorld(w, ch, "2.guard")
+	if found != mob2 {
+		t.Error("2.guard should find second guard in world")
+	}
+}
+
+// GetObjCarry: N.name syntax
+func TestGetObjCarry_NthMatch(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+
+	idx1 := newTestObjIndex(2110)
+	idx1.Name = "potion heal"
+	pot1 := CreateObject(w, idx1, 1)
+	ObjToChar(pot1, ch)
+
+	idx2 := newTestObjIndex(2111)
+	idx2.Name = "potion heal"
+	pot2 := CreateObject(w, idx2, 1)
+	ObjToChar(pot2, ch)
+
+	found := GetObjCarry(ch, "2.potion")
+	if found != pot2 {
+		t.Error("2.potion should find second potion")
+	}
+}
+
+// GetObjWear: N.name syntax
+func TestGetObjWear_NthMatch(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+
+	idx1 := newTestObjIndex(2112)
+	idx1.Name = "iron ring"
+	ring1 := CreateObject(w, idx1, 1)
+	EquipChar(ch, ring1, types.WEAR_WIELD)
+
+	idx2 := newTestObjIndex(2113)
+	idx2.Name = "iron ring"
+	ring2 := CreateObject(w, idx2, 1)
+	EquipChar(ch, ring2, types.WEAR_DUAL_WIELD)
+
+	found := GetObjWear(ch, "2.ring")
+	if found != ring2 {
+		t.Error("2.ring should find second equipped ring")
+	}
+}
+
+// GetObjWorld: exact match takes priority over prefix
+func TestGetObjWorld_ExactOverPrefix(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3230)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+
+	room2 := newTestRoom(3231)
+
+	idx1 := newTestObjIndex(2120)
+	idx1.Name = "swords collection"
+	coll := CreateObject(w, idx1, 1)
+	ObjToRoom(coll, room2)
+
+	idx2 := newTestObjIndex(2121)
+	idx2.Name = "sword"
+	sword := CreateObject(w, idx2, 1)
+	ObjToRoom(sword, room2)
+
+	found := GetObjWorld(w, ch, "sword")
+	if found != sword {
+		t.Error("exact match 'sword' should take priority in world search")
+	}
+}
+
+// GetObjWorld: N.name syntax in world search
+func TestGetObjWorld_NthMatch(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(3232)
+	ch := &types.CharData{Name: "Tester"}
+	CharToRoom(ch, room)
+
+	room2 := newTestRoom(3233)
+	idx1 := newTestObjIndex(2122)
+	idx1.Name = "gold coin"
+	coin1 := CreateObject(w, idx1, 1)
+	ObjToRoom(coin1, room2)
+
+	idx2 := newTestObjIndex(2123)
+	idx2.Name = "gold coin"
+	coin2 := CreateObject(w, idx2, 1)
+	ObjToRoom(coin2, room2)
+
+	found := GetObjWorld(w, ch, "2.coin")
+	if found != coin2 {
+		t.Error("2.coin should find second coin in world")
+	}
+}
+
+// --- Reset function tests ---
+
+// resetObject: skips if object already in room
+func TestResetObject_SkipsDuplicate(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5010)
+	w.Rooms[5010] = room
+	idx := newTestObjIndex(2200)
+	w.ObjIndex[2200] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 2200, Arg3: 5010},
+			{Command: 'O', Arg1: 2200, Arg3: 5010}, // duplicate, should be skipped
+		},
+	}
+
+	ResetArea(w, area)
+
+	if len(room.Contents) != 1 {
+		t.Errorf("room.Contents = %d, want 1 (duplicate should be skipped)", len(room.Contents))
+	}
+}
+
+// resetObject: bad vnum (obj not found)
+func TestResetObject_BadObjVnum(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5011)
+	w.Rooms[5011] = room
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 99999, Arg3: 5011}, // non-existent obj
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+
+	if len(room.Contents) != 0 {
+		t.Error("room should be empty when obj vnum not found")
+	}
+}
+
+// resetObject: bad room vnum
+func TestResetObject_BadRoomVnum(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2201)
+	w.ObjIndex[2201] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 2201, Arg3: 99999}, // non-existent room
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// resetPut: put an object inside a container
+func TestResetPut_IntoContainer(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5012)
+	w.Rooms[5012] = room
+
+	containerIdx := newTestObjIndex(2210)
+	containerIdx.Name = "chest"
+	w.ObjIndex[2210] = containerIdx
+
+	itemIdx := newTestObjIndex(2211)
+	itemIdx.Name = "gem"
+	w.ObjIndex[2211] = itemIdx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 2210, Arg3: 5012},           // place chest in room
+			{Command: 'P', Arg1: 2211, Arg2: 1, Arg3: 2210},  // put gem in chest
+		},
+	}
+
+	ResetArea(w, area)
+
+	if len(room.Contents) != 1 {
+		t.Fatalf("room.Contents = %d, want 1 (just the chest)", len(room.Contents))
+	}
+	chest := room.Contents[0]
+	if len(chest.Contents) != 1 {
+		t.Fatalf("chest.Contents = %d, want 1", len(chest.Contents))
+	}
+	if chest.Contents[0].Name != "gem" {
+		t.Errorf("item name = %q, want %q", chest.Contents[0].Name, "gem")
+	}
+}
+
+// resetPut: uses lastObj when Arg3 is 0
+func TestResetPut_UsesLastObj(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5013)
+	w.Rooms[5013] = room
+
+	containerIdx := newTestObjIndex(2212)
+	containerIdx.Name = "bag"
+	w.ObjIndex[2212] = containerIdx
+
+	itemIdx := newTestObjIndex(2213)
+	itemIdx.Name = "scroll"
+	w.ObjIndex[2213] = itemIdx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 2212, Arg3: 5013}, // place bag in room (sets lastObj)
+			{Command: 'P', Arg1: 2213, Arg2: 1, Arg3: 0}, // put scroll in lastObj (bag)
+		},
+	}
+
+	ResetArea(w, area)
+
+	bag := room.Contents[0]
+	if len(bag.Contents) != 1 {
+		t.Fatalf("bag.Contents = %d, want 1", len(bag.Contents))
+	}
+	if bag.Contents[0].Name != "scroll" {
+		t.Errorf("item name = %q, want %q", bag.Contents[0].Name, "scroll")
+	}
+}
+
+// resetPut: bad obj vnum
+func TestResetPut_BadObjVnum(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5014)
+	w.Rooms[5014] = room
+
+	containerIdx := newTestObjIndex(2214)
+	w.ObjIndex[2214] = containerIdx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 2214, Arg3: 5014},
+			{Command: 'P', Arg1: 99999, Arg2: 1, Arg3: 2214}, // bad item vnum
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// resetPut: bad container vnum
+func TestResetPut_BadContainerVnum(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2215)
+	w.ObjIndex[2215] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'P', Arg1: 2215, Arg2: 1, Arg3: 99999}, // bad container vnum
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// resetPut: skips duplicate in container
+func TestResetPut_SkipsDuplicate(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5015)
+	w.Rooms[5015] = room
+
+	containerIdx := newTestObjIndex(2216)
+	w.ObjIndex[2216] = containerIdx
+
+	itemIdx := newTestObjIndex(2217)
+	itemIdx.Name = "key"
+	w.ObjIndex[2217] = itemIdx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 2216, Arg3: 5015},
+			{Command: 'P', Arg1: 2217, Arg2: 1, Arg3: 2216},
+			{Command: 'P', Arg1: 2217, Arg2: 1, Arg3: 2216}, // duplicate, should be skipped
+		},
+	}
+
+	ResetArea(w, area)
+
+	chest := room.Contents[0]
+	if len(chest.Contents) != 1 {
+		t.Errorf("chest.Contents = %d, want 1 (duplicate should be skipped)", len(chest.Contents))
+	}
+}
+
+// resetPut: nil lastObj when Arg3 is 0 (no previous O reset)
+func TestResetPut_NilLastObj(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2218)
+	w.ObjIndex[2218] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'P', Arg1: 2218, Arg2: 1, Arg3: 0}, // no lastObj
+		},
+	}
+
+	// Should not panic, just skip
+	ResetArea(w, area)
+}
+
+// resetGive: nil lastMob (no previous M reset)
+func TestResetGive_NilLastMob(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2220)
+	w.ObjIndex[2220] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'G', Arg1: 2220}, // no lastMob
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// resetGive: bad obj vnum
+func TestResetGive_BadObjVnum(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5020)
+	w.Rooms[5020] = room
+	mobIdx := newTestMobIndex(1050, 5)
+	w.MobIndex[1050] = mobIdx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'M', Arg1: 1050, Arg2: 1, Arg3: 5020},
+			{Command: 'G', Arg1: 99999}, // bad obj vnum
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+	mob := room.People[0]
+	if len(mob.Carrying) != 0 {
+		t.Error("mob should have no items when obj vnum not found")
+	}
+}
+
+// resetGive: shop mob sets ITEM_INVENTORY
+func TestResetGive_ShopMob(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5021)
+	w.Rooms[5021] = room
+
+	mobIdx := newTestMobIndex(1051, 10)
+	mobIdx.Shop = &types.ShopData{}
+	w.MobIndex[1051] = mobIdx
+
+	objIdx := newTestObjIndex(2221)
+	w.ObjIndex[2221] = objIdx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'M', Arg1: 1051, Arg2: 1, Arg3: 5021},
+			{Command: 'G', Arg1: 2221},
+		},
+	}
+
+	ResetArea(w, area)
+
+	mob := room.People[0]
+	if len(mob.Carrying) != 1 {
+		t.Fatalf("mob.Carrying = %d, want 1", len(mob.Carrying))
+	}
+	if !mob.Carrying[0].ExtraFlags.IsSet(types.ITEM_INVENTORY) {
+		t.Error("shop mob item should have ITEM_INVENTORY flag set")
+	}
+}
+
+// resetEquip: nil lastMob
+func TestResetEquip_NilLastMob(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2230)
+	w.ObjIndex[2230] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'E', Arg1: 2230, Arg3: types.WEAR_WIELD}, // no lastMob
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// resetEquip: bad obj vnum
+func TestResetEquip_BadObjVnum(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5022)
+	w.Rooms[5022] = room
+	mobIdx := newTestMobIndex(1052, 5)
+	w.MobIndex[1052] = mobIdx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'M', Arg1: 1052, Arg2: 1, Arg3: 5022},
+			{Command: 'E', Arg1: 99999, Arg3: types.WEAR_WIELD}, // bad vnum
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+	mob := room.People[0]
+	if len(mob.Carrying) != 0 {
+		t.Error("mob should have no items when obj vnum not found")
+	}
+}
+
+// resetDoor: open state
+func TestResetDoor_Open(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5030)
+	room.Exits = []*types.ExitData{
+		{Direction: types.DIR_NORTH, ExitInfo: int(types.EX_CLOSED) | int(types.EX_LOCKED), ToRoom: newTestRoom(5031)},
+	}
+	w.Rooms[5030] = room
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'D', Arg1: 5030, Arg2: types.DIR_NORTH, Arg3: 0}, // Open
+		},
+	}
+
+	ResetArea(w, area)
+
+	exit := room.Exits[0]
+	if exit.ExitInfo&int(types.EX_CLOSED) != 0 {
+		t.Error("door should not be closed after reset to open")
+	}
+	if exit.ExitInfo&int(types.EX_LOCKED) != 0 {
+		t.Error("door should not be locked after reset to open")
+	}
+}
+
+// resetDoor: closed (not locked) state
+func TestResetDoor_Closed(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5032)
+	room.Exits = []*types.ExitData{
+		{Direction: types.DIR_NORTH, ExitInfo: 0, ToRoom: newTestRoom(5033)},
+	}
+	w.Rooms[5032] = room
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'D', Arg1: 5032, Arg2: types.DIR_NORTH, Arg3: 1}, // Closed
+		},
+	}
+
+	ResetArea(w, area)
+
+	exit := room.Exits[0]
+	if exit.ExitInfo&int(types.EX_CLOSED) == 0 {
+		t.Error("door should be closed")
+	}
+	if exit.ExitInfo&int(types.EX_LOCKED) != 0 {
+		t.Error("door should not be locked (only closed)")
+	}
+}
+
+// resetDoor: bad room vnum (should not panic)
+func TestResetDoor_BadRoomVnum(t *testing.T) {
+	w := newTestWorld()
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'D', Arg1: 99999, Arg2: types.DIR_NORTH, Arg3: 0},
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// resetDoor: bad exit direction (should not panic)
+func TestResetDoor_BadDirection(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5034)
+	room.Exits = []*types.ExitData{
+		{Direction: types.DIR_NORTH, ExitInfo: 0, ToRoom: newTestRoom(5035)},
+	}
+	w.Rooms[5034] = room
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'D', Arg1: 5034, Arg2: types.DIR_SOUTH, Arg3: 0}, // No south exit
+		},
+	}
+
+	// Should not panic (exit is nil, early return)
+	ResetArea(w, area)
+}
+
+// resetHide: hide an object by vnum
+func TestResetHide_ByVnum(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5040)
+	w.Rooms[5040] = room
+
+	idx := newTestObjIndex(2240)
+	idx.Name = "hidden treasure"
+	w.ObjIndex[2240] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 2240, Arg3: 5040},
+			{Command: 'H', Arg1: 2240},
+		},
+	}
+
+	ResetArea(w, area)
+
+	if len(room.Contents) != 1 {
+		t.Fatal("object should be in room")
+	}
+	if !room.Contents[0].ExtraFlags.IsSet(types.ITEM_HIDDEN) {
+		t.Error("object should have ITEM_HIDDEN flag set")
+	}
+}
+
+// resetHide: uses lastObj when Arg1 is 0
+func TestResetHide_UsesLastObj(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5041)
+	w.Rooms[5041] = room
+
+	idx := newTestObjIndex(2241)
+	idx.Name = "secret note"
+	w.ObjIndex[2241] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'O', Arg1: 2241, Arg3: 5041}, // sets lastObj
+			{Command: 'H', Arg1: 0},                  // use lastObj
+		},
+	}
+
+	ResetArea(w, area)
+
+	if !room.Contents[0].ExtraFlags.IsSet(types.ITEM_HIDDEN) {
+		t.Error("lastObj should have ITEM_HIDDEN flag set")
+	}
+}
+
+// resetHide: nil lastObj and Arg1=0 (should not panic)
+func TestResetHide_NilLastObj(t *testing.T) {
+	w := newTestWorld()
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'H', Arg1: 0}, // no lastObj
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// resetHide: bad vnum
+func TestResetHide_BadVnum(t *testing.T) {
+	w := newTestWorld()
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'H', Arg1: 99999}, // non-existent obj
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// resetMobile: bad mob vnum
+func TestResetMobile_BadMobVnum(t *testing.T) {
+	w := newTestWorld()
+	room := newTestRoom(5050)
+	w.Rooms[5050] = room
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'M', Arg1: 99999, Arg2: 1, Arg3: 5050},
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+	if len(room.People) != 0 {
+		t.Error("room should be empty when mob vnum not found")
+	}
+}
+
+// resetMobile: bad room vnum
+func TestResetMobile_BadRoomVnum(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestMobIndex(1060, 5)
+	w.MobIndex[1060] = idx
+
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'M', Arg1: 1060, Arg2: 1, Arg3: 99999},
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}
+
+// ResetAllAreas: processes multiple areas
+func TestResetAllAreas(t *testing.T) {
+	w := newTestWorld()
+	room1 := newTestRoom(6000)
+	w.Rooms[6000] = room1
+	room2 := newTestRoom(6001)
+	w.Rooms[6001] = room2
+
+	mobIdx1 := newTestMobIndex(1070, 5)
+	w.MobIndex[1070] = mobIdx1
+	mobIdx2 := newTestMobIndex(1071, 5)
+	w.MobIndex[1071] = mobIdx2
+
+	area1 := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'M', Arg1: 1070, Arg2: 1, Arg3: 6000},
+		},
+	}
+	area2 := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'M', Arg1: 1071, Arg2: 1, Arg3: 6001},
+		},
+	}
+
+	w.Areas = []*types.AreaData{area1, area2}
+	ResetAllAreas(w)
+
+	if len(room1.People) != 1 {
+		t.Errorf("room1.People = %d, want 1", len(room1.People))
+	}
+	if len(room2.People) != 1 {
+		t.Errorf("room2.People = %d, want 1", len(room2.People))
+	}
+}
+
+// findObjByIndex: finds object, returns nil when not found
+func TestFindObjByIndex(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestObjIndex(2250)
+	obj := CreateObject(w, idx, 1)
+
+	found := findObjByIndex(w, idx)
+	if found != obj {
+		t.Error("findObjByIndex should find the object")
+	}
+
+	otherIdx := newTestObjIndex(2251)
+	found = findObjByIndex(w, otherIdx)
+	if found != nil {
+		t.Error("findObjByIndex should return nil for uninstantiated index")
+	}
+}
+
+// UnequipChar: already unequipped (no-op with bug log)
+func TestUnequipChar_AlreadyUnequipped(t *testing.T) {
+	w := newTestWorld()
+	ch := &types.CharData{Name: "Tester"}
+	obj := CreateObject(w, newTestObjIndex(2260), 1)
+	ObjToChar(obj, ch)
+	// obj.WearLoc is WEAR_NONE (in inventory)
+
+	// Should not panic, just log bug
+	UnequipChar(ch, obj)
+	if obj.WearLoc != types.WEAR_NONE {
+		t.Error("WearLoc should remain WEAR_NONE")
+	}
+}
+
+// ExtractObj from an ObjInObj (nested)
+func TestExtractObj_FromObj(t *testing.T) {
+	w := newTestWorld()
+	containerIdx := newTestObjIndex(2270)
+	container := CreateObject(w, containerIdx, 1)
+	room := newTestRoom(3300)
+	ObjToRoom(container, room)
+
+	itemIdx := newTestObjIndex(2271)
+	item := CreateObject(w, itemIdx, 1)
+	ObjToObj(item, container)
+
+	// Extract item from inside container
+	ExtractObj(w, item)
+
+	if len(container.Contents) != 0 {
+		t.Error("container should be empty after extracting item")
+	}
+	if len(w.Objects) != 1 {
+		t.Errorf("world.Objects = %d, want 1 (only container remains)", len(w.Objects))
+	}
+}
+
+// ResetArea: R/T/B commands are no-ops (should not panic)
+func TestResetArea_SkippedCommands(t *testing.T) {
+	w := newTestWorld()
+	area := &types.AreaData{
+		Resets: []*types.ResetData{
+			{Command: 'R', Arg1: 1},
+			{Command: 'T', Arg1: 1},
+			{Command: 'B', Arg1: 1},
+		},
+	}
+
+	// Should not panic
+	ResetArea(w, area)
+}

@@ -244,6 +244,59 @@ func TestBitVector_And(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// 5b. Not
+// ---------------------------------------------------------------------------
+
+func TestBitVector_Not(t *testing.T) {
+	tests := []struct {
+		name   string
+		bv     BitVector
+		expect BitVector
+	}{
+		{"zero vector", BitVector{}, BitVector{0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}},
+		{"all ones", BitVector{0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}, BitVector{}},
+		{"mixed", BitVector{0x0F0F0F0F, 0, 0xFFFFFFFF, 0}, BitVector{0xF0F0F0F0, 0xFFFFFFFF, 0, 0xFFFFFFFF}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.bv.Not()
+			if got != tc.expect {
+				t.Errorf("Not() = %v, want %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 5c. AndNot
+// ---------------------------------------------------------------------------
+
+func TestBitVector_AndNot(t *testing.T) {
+	tests := []struct {
+		name   string
+		a, b   BitVector
+		expect BitVector
+	}{
+		{"both zero", BitVector{}, BitVector{}, BitVector{}},
+		{"clear nothing", BitVector{0xFF, 0, 0, 0}, BitVector{}, BitVector{0xFF, 0, 0, 0}},
+		{"clear all", BitVector{0xFF, 0xFF, 0xFF, 0xFF}, BitVector{0xFF, 0xFF, 0xFF, 0xFF}, BitVector{}},
+		{"clear subset", BitVector{0xFF, 0, 0, 0}, BitVector{0x0F, 0, 0, 0}, BitVector{0xF0, 0, 0, 0}},
+		{"across elements",
+			BitVector{0xFF, 0xFF, 0xFF, 0xFF},
+			BitVector{0x0F, 0xF0, 0x33, 0xCC},
+			BitVector{0xF0, 0x0F, 0xCC, 0x33}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.a.AndNot(tc.b)
+			if got != tc.expect {
+				t.Errorf("AndNot() = %v, want %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // 6. HasAny
 // ---------------------------------------------------------------------------
 

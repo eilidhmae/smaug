@@ -211,7 +211,7 @@ All require `LEVEL_IMMORTAL` trust.
 - **`DoHolylight`** — toggle see-all mode (PLR_HOLYLIGHT).
 - **`DoFreeze`** — toggle PLR_FREEZE on a player (prevents all actions).
 - **`DoSilence`** — toggle PLR_SILENCE on a player (blocks channels).
-- **`DoSnoop`** — watch another player's output. Self-targeted cancels all snoops.
+- **`DoSnoop`** (`act/clan.go`) — watch another player's output. Self-targeted cancels all snoops.
 
 ### System
 
@@ -230,7 +230,7 @@ All require `LEVEL_IMMORTAL` trust.
 |-------|--------|
 | backstab | Weapon damage × level/10 multiplier; requires wield, out of combat |
 | bash | 1-level damage, knocks victim to sitting, 2×PULSE_VIOLENCE stun |
-| kick | 1-level damage while in combat |
+| kick | 1-level damage while in combat (func `DoKickSkill`) |
 | disarm | Knocks weapon from victim's grasp to ground |
 | rescue | Swaps fighting targets to protect an ally |
 | sneak | AFF_SNEAK affect for level duration |

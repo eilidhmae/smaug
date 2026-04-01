@@ -1,6 +1,7 @@
 package act
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/eilidhmae/smaug/internal/types"
@@ -195,5 +196,289 @@ func TestGetSellPrice(t *testing.T) {
 	price := getSellPrice(keeper, obj)
 	if price != 50 {
 		t.Errorf("expected 50, got %d", price)
+	}
+}
+
+func TestDoList_WithItems(t *testing.T) {
+	ch, _ := newShopRoom()
+
+	// Use makeTestChar to get a descriptor for output capture
+	chWithDesc, client := makeTestChar("Buyer")
+	defer client.Close()
+	chWithDesc.InRoom = ch.InRoom
+	chWithDesc.Gold = 500
+	ch.InRoom.People = append(ch.InRoom.People, chWithDesc)
+
+	DoList(chWithDesc, "")
+	out := readOutput(chWithDesc, client)
+
+	if !strings.Contains(out, "steel sword") {
+		t.Errorf("expected item in list, got: %q", out)
+	}
+	// Cost should be 150 (100 * 150%)
+	if !strings.Contains(out, "150") {
+		t.Errorf("expected cost of 150, got: %q", out)
+	}
+}
+
+func TestDoList_NoKeeper(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Buyer")
+	defer client.Close()
+	ch.InRoom = &types.RoomIndexData{Vnum: 8000, Name: "Empty Room"}
+
+	DoList(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "can't do that here") {
+		t.Errorf("expected 'can't do that here', got: %q", out)
+	}
+}
+
+func TestDoList_EmptyShop(t *testing.T) {
+	_ = setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8001, Name: "Empty Shop"}
+
+	shop := &types.ShopData{ProfitBuy: 150, ProfitSell: 50}
+	keeperIdx := &types.MobIndexData{Vnum: 200, PlayerName: "merchant", ShortDescr: "a merchant", Shop: shop}
+	keeper := &types.CharData{
+		Name: "merchant", ShortDescr: "a merchant",
+		Level: 30, Position: types.POS_STANDING,
+		InRoom: room, IndexData: keeperIdx,
+	}
+	keeper.Act.Set(types.ACT_IS_NPC)
+	room.People = append(room.People, keeper)
+
+	ch, client := makeTestChar("Buyer")
+	defer client.Close()
+	ch.InRoom = room
+	room.People = append(room.People, ch)
+
+	DoList(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "nothing for sale") {
+		t.Errorf("expected 'nothing for sale', got: %q", out)
+	}
+}
+
+func TestDoValue_NoArg(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Seller")
+	defer client.Close()
+	ch.InRoom = &types.RoomIndexData{Vnum: 8002, Name: "Test"}
+
+	DoValue(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Value what?") {
+		t.Errorf("expected 'Value what?', got: %q", out)
+	}
+}
+
+func TestDoValue_ShowsPrice(t *testing.T) {
+	ch, _ := newShopRoom()
+	chWithDesc, client := makeTestChar("Seller")
+	defer client.Close()
+	chWithDesc.InRoom = ch.InRoom
+	ch.InRoom.People = append(ch.InRoom.People, chWithDesc)
+
+	sword := &types.ObjData{
+		Name: "axe battle", ShortDescr: "a battle axe",
+		ItemType: types.ITEM_WEAPON, GoldCost: 200,
+		CarriedBy: chWithDesc, WearLoc: types.WEAR_NONE,
+	}
+	chWithDesc.Carrying = append(chWithDesc.Carrying, sword)
+
+	DoValue(chWithDesc, "axe")
+	out := readOutput(chWithDesc, client)
+
+	// Sell price: 200 * 50% = 100
+	if !strings.Contains(out, "100") {
+		t.Errorf("expected sell price of 100, got: %q", out)
+	}
+}
+
+func TestDoValue_WontBuyType(t *testing.T) {
+	ch, _ := newShopRoom()
+	chWithDesc, client := makeTestChar("Seller")
+	defer client.Close()
+	chWithDesc.InRoom = ch.InRoom
+	ch.InRoom.People = append(ch.InRoom.People, chWithDesc)
+
+	food := &types.ObjData{
+		Name: "bread", ShortDescr: "a loaf of bread",
+		ItemType: types.ITEM_FOOD, GoldCost: 5,
+		CarriedBy: chWithDesc, WearLoc: types.WEAR_NONE,
+	}
+	chWithDesc.Carrying = append(chWithDesc.Carrying, food)
+
+	DoValue(chWithDesc, "bread")
+	out := readOutput(chWithDesc, client)
+	if !strings.Contains(out, "don't buy that kind") {
+		t.Errorf("expected rejection message, got: %q", out)
+	}
+}
+
+func TestDoValue_NoKeeper(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Seller")
+	defer client.Close()
+	ch.InRoom = &types.RoomIndexData{Vnum: 8003, Name: "Empty Room"}
+
+	DoValue(ch, "sword")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "can't do that here") {
+		t.Errorf("expected 'can't do that here', got: %q", out)
+	}
+}
+
+func TestDoValue_DontHaveItem(t *testing.T) {
+	ch, _ := newShopRoom()
+	chWithDesc, client := makeTestChar("Seller")
+	defer client.Close()
+	chWithDesc.InRoom = ch.InRoom
+	ch.InRoom.People = append(ch.InRoom.People, chWithDesc)
+
+	DoValue(chWithDesc, "nonexistent")
+	out := readOutput(chWithDesc, client)
+	if !strings.Contains(out, "don't have") {
+		t.Errorf("expected 'don't have', got: %q", out)
+	}
+}
+
+func TestDoBuy_NoArg(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Buyer")
+	defer client.Close()
+
+	DoBuy(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Buy what?") {
+		t.Errorf("expected 'Buy what?', got: %q", out)
+	}
+}
+
+func TestDoBuy_ItemNotSold(t *testing.T) {
+	ch, _ := newShopRoom()
+	chWithDesc, client := makeTestChar("Buyer")
+	defer client.Close()
+	chWithDesc.InRoom = ch.InRoom
+	chWithDesc.Gold = 10000
+	ch.InRoom.People = append(ch.InRoom.People, chWithDesc)
+
+	DoBuy(chWithDesc, "nonexistent")
+	out := readOutput(chWithDesc, client)
+	if !strings.Contains(out, "don't sell that") {
+		t.Errorf("expected 'don't sell that', got: %q", out)
+	}
+}
+
+func TestDoSell_NoArg(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Seller")
+	defer client.Close()
+
+	DoSell(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Sell what?") {
+		t.Errorf("expected 'Sell what?', got: %q", out)
+	}
+}
+
+func TestDoSell_NoKeeper(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Seller")
+	defer client.Close()
+	ch.InRoom = &types.RoomIndexData{Vnum: 8004, Name: "Empty Room"}
+
+	DoSell(ch, "sword")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "can't do that here") {
+		t.Errorf("expected 'can't do that here', got: %q", out)
+	}
+}
+
+func TestDoSell_DontHaveItem(t *testing.T) {
+	ch, _ := newShopRoom()
+	chWithDesc, client := makeTestChar("Seller")
+	defer client.Close()
+	chWithDesc.InRoom = ch.InRoom
+	ch.InRoom.People = append(ch.InRoom.People, chWithDesc)
+
+	DoSell(chWithDesc, "nonexistent")
+	out := readOutput(chWithDesc, client)
+	if !strings.Contains(out, "don't have") {
+		t.Errorf("expected 'don't have', got: %q", out)
+	}
+}
+
+func TestGetShopCost_DefaultProfit(t *testing.T) {
+	keeperIdx := &types.MobIndexData{
+		Shop: &types.ShopData{ProfitBuy: 0}, // 0 means use default 120%
+	}
+	keeper := &types.CharData{IndexData: keeperIdx}
+	obj := &types.ObjData{GoldCost: 100}
+
+	cost := getShopCost(keeper, obj)
+	if cost != 120 {
+		t.Errorf("expected default 120, got %d", cost)
+	}
+}
+
+func TestGetSellPrice_DefaultProfit(t *testing.T) {
+	keeperIdx := &types.MobIndexData{
+		Shop: &types.ShopData{ProfitSell: 0}, // 0 means use default 50%
+	}
+	keeper := &types.CharData{IndexData: keeperIdx}
+	obj := &types.ObjData{GoldCost: 100}
+
+	price := getSellPrice(keeper, obj)
+	if price != 50 {
+		t.Errorf("expected default 50, got %d", price)
+	}
+}
+
+func TestGetSellPrice_MinimumOne(t *testing.T) {
+	keeperIdx := &types.MobIndexData{
+		Shop: &types.ShopData{ProfitSell: 1}, // 1% of 1 gold = 0, should clamp to 1
+	}
+	keeper := &types.CharData{IndexData: keeperIdx}
+	obj := &types.ObjData{GoldCost: 1}
+
+	price := getSellPrice(keeper, obj)
+	if price < 1 {
+		t.Errorf("expected minimum price of 1, got %d", price)
+	}
+}
+
+func TestGetShopCost_NoShop(t *testing.T) {
+	keeper := &types.CharData{IndexData: &types.MobIndexData{}}
+	obj := &types.ObjData{GoldCost: 100}
+
+	cost := getShopCost(keeper, obj)
+	if cost != 100 {
+		t.Errorf("expected raw cost 100 with no shop, got %d", cost)
+	}
+}
+
+func TestGetSellPrice_NoShop(t *testing.T) {
+	keeper := &types.CharData{IndexData: &types.MobIndexData{}}
+	obj := &types.ObjData{GoldCost: 100}
+
+	price := getSellPrice(keeper, obj)
+	if price != 50 {
+		t.Errorf("expected half cost 50 with no shop, got %d", price)
+	}
+}
+
+func TestShopBuysType(t *testing.T) {
+	shop := &types.ShopData{BuyType: [5]int{types.ITEM_WEAPON, types.ITEM_ARMOR, 0, 0, 0}}
+
+	if !shopBuysType(shop, types.ITEM_WEAPON) {
+		t.Error("shop should buy weapons")
+	}
+	if !shopBuysType(shop, types.ITEM_ARMOR) {
+		t.Error("shop should buy armor")
+	}
+	if shopBuysType(shop, types.ITEM_FOOD) {
+		t.Error("shop should not buy food")
 	}
 }

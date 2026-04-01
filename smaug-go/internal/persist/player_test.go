@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/eilidhmae/smaug/internal/types"
@@ -371,6 +372,432 @@ func TestSaveLoadObjects(t *testing.T) {
 	}
 	if obj1.WearLoc != types.WEAR_SHIELD {
 		t.Errorf("obj[1] WearLoc = %d, want WEAR_SHIELD (%d)", obj1.WearLoc, types.WEAR_SHIELD)
+	}
+}
+
+func TestPlayerFilePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dataDir string
+		pname   string
+		want    string
+	}{
+		{"normal", "/data", "Gandalf", "/data/player/g/Gandalf"},
+		{"uppercase", "/data", "Aragorn", "/data/player/a/Aragorn"},
+		{"empty name", "/data", "", ""},
+		{"short name", "/db", "A", "/db/player/a/A"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PlayerFilePath(tt.dataDir, tt.pname)
+			if got != tt.want {
+				t.Errorf("PlayerFilePath(%q, %q) = %q, want %q", tt.dataDir, tt.pname, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRoomVnum_InRoom(t *testing.T) {
+	ch := &types.CharData{
+		InRoom:   &types.RoomIndexData{Vnum: 3001},
+		HomeVnum: 21001,
+	}
+	got := roomVnum(ch)
+	if got != 3001 {
+		t.Errorf("roomVnum with InRoom = %d, want 3001", got)
+	}
+}
+
+func TestRoomVnum_HomeVnum(t *testing.T) {
+	ch := &types.CharData{HomeVnum: 21001}
+	got := roomVnum(ch)
+	if got != 21001 {
+		t.Errorf("roomVnum with HomeVnum = %d, want 21001", got)
+	}
+}
+
+func TestRoomVnum_Default(t *testing.T) {
+	ch := &types.CharData{}
+	got := roomVnum(ch)
+	if got != types.ROOM_VNUM_TEMPLE {
+		t.Errorf("roomVnum default = %d, want ROOM_VNUM_TEMPLE (%d)", got, types.ROOM_VNUM_TEMPLE)
+	}
+}
+
+func TestSavePlayer_NilPCData(t *testing.T) {
+	ch := &types.CharData{Name: "NoPCData"}
+	var buf bytes.Buffer
+	err := SavePlayer(&buf, ch)
+	if err == nil {
+		t.Error("SavePlayer with nil PCData should return error")
+	}
+}
+
+func TestSaveLoadPlayer_AllFields(t *testing.T) {
+	ch := &types.CharData{
+		Name:                "Fulltest",
+		Description:         "A fully loaded test character.",
+		Sex:                 1,
+		Class:               5,
+		Race:                3,
+		Speaks:              7,
+		Speaking:            1,
+		Level:               50,
+		Played:              7200,
+		HomeVnum:            3001,
+		Hit:                 500,
+		MaxHit:              600,
+		Mana:                200,
+		MaxMana:             300,
+		Move:                150,
+		MaxMove:             200,
+		Gold:                10000,
+		Exp:                 999999,
+		Height:              70,
+		Weight:              175,
+		Position:            types.POS_STANDING,
+		Style:               types.STYLE_FIGHTING,
+		Practice:            15,
+		Alignment:           1000,
+		SavingPoisonDeath:   -5,
+		SavingWand:          -3,
+		SavingParaPetri:     -2,
+		SavingBreath:        -4,
+		SavingSpellStaff:    -1,
+		Hitroll:             12,
+		Damroll:             15,
+		Armor:               -50,
+		Wimpy:               50,
+		PermStr:             18,
+		PermInt:             16,
+		PermWis:             14,
+		PermDex:             20,
+		PermCon:             15,
+		PermCha:             12,
+		PermLck:             17,
+		ModStr:              2,
+		ModInt:              1,
+		ModWis:              0,
+		ModDex:              3,
+		ModCon:              -1,
+		ModCha:              0,
+		ModLck:              1,
+		Trust:               60,
+		PCData: &types.PCData{
+			Pwd:        "s3cret",
+			Title:      "the Magnificent",
+			Prompt:     "<%hhp %mmana> ",
+			PagerLen:   30,
+			Flags:      5,
+			PKills:     3,
+			PDeaths:    1,
+			MKills:     500,
+			MDeaths:    20,
+			RecentSite: "10.0.0.1",
+		},
+	}
+	ch.PCData.Condition[0] = 48
+	ch.PCData.Condition[1] = 48
+	ch.PCData.Condition[2] = 48
+	ch.PCData.Condition[3] = 0
+
+	// Save
+	var buf bytes.Buffer
+	err := SavePlayer(&buf, ch)
+	if err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+
+	// Load back
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Fulltest")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+
+	// Verify fields
+	checks := []struct {
+		name string
+		got  int
+		want int
+	}{
+		{"Sex", loaded.Sex, ch.Sex},
+		{"Class", loaded.Class, ch.Class},
+		{"Race", loaded.Race, ch.Race},
+		{"Level", loaded.Level, ch.Level},
+		{"Played", loaded.Played, ch.Played},
+		{"Hit", loaded.Hit, ch.Hit},
+		{"MaxHit", loaded.MaxHit, ch.MaxHit},
+		{"Mana", loaded.Mana, ch.Mana},
+		{"MaxMana", loaded.MaxMana, ch.MaxMana},
+		{"Move", loaded.Move, ch.Move},
+		{"MaxMove", loaded.MaxMove, ch.MaxMove},
+		{"Gold", loaded.Gold, ch.Gold},
+		{"Exp", loaded.Exp, ch.Exp},
+		{"Height", loaded.Height, ch.Height},
+		{"Weight", loaded.Weight, ch.Weight},
+		{"Position", loaded.Position, ch.Position},
+		{"Style", loaded.Style, ch.Style},
+		{"Practice", loaded.Practice, ch.Practice},
+		{"Alignment", loaded.Alignment, ch.Alignment},
+		{"SavingPoisonDeath", loaded.SavingPoisonDeath, ch.SavingPoisonDeath},
+		{"SavingWand", loaded.SavingWand, ch.SavingWand},
+		{"SavingParaPetri", loaded.SavingParaPetri, ch.SavingParaPetri},
+		{"SavingBreath", loaded.SavingBreath, ch.SavingBreath},
+		{"SavingSpellStaff", loaded.SavingSpellStaff, ch.SavingSpellStaff},
+		{"Hitroll", loaded.Hitroll, ch.Hitroll},
+		{"Damroll", loaded.Damroll, ch.Damroll},
+		{"Armor", loaded.Armor, ch.Armor},
+		{"Wimpy", loaded.Wimpy, ch.Wimpy},
+		{"PermStr", loaded.PermStr, ch.PermStr},
+		{"PermInt", loaded.PermInt, ch.PermInt},
+		{"PermWis", loaded.PermWis, ch.PermWis},
+		{"PermDex", loaded.PermDex, ch.PermDex},
+		{"PermCon", loaded.PermCon, ch.PermCon},
+		{"PermCha", loaded.PermCha, ch.PermCha},
+		{"PermLck", loaded.PermLck, ch.PermLck},
+		{"ModStr", loaded.ModStr, ch.ModStr},
+		{"ModInt", loaded.ModInt, ch.ModInt},
+		{"ModWis", loaded.ModWis, ch.ModWis},
+		{"ModDex", loaded.ModDex, ch.ModDex},
+		{"ModCon", loaded.ModCon, ch.ModCon},
+		{"ModCha", loaded.ModCha, ch.ModCha},
+		{"ModLck", loaded.ModLck, ch.ModLck},
+		{"Trust", loaded.Trust, ch.Trust},
+		{"Speaks", loaded.Speaks, ch.Speaks},
+		{"Speaking", loaded.Speaking, ch.Speaking},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %d, want %d", c.name, c.got, c.want)
+		}
+	}
+
+	// String fields
+	strChecks := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"Name", loaded.Name, ch.Name},
+		{"Pwd", loaded.PCData.Pwd, ch.PCData.Pwd},
+		{"Title", loaded.PCData.Title, ch.PCData.Title},
+		{"Prompt", loaded.PCData.Prompt, ch.PCData.Prompt},
+		{"RecentSite", loaded.PCData.RecentSite, ch.PCData.RecentSite},
+	}
+	for _, c := range strChecks {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+
+	// PCData int fields
+	pcChecks := []struct {
+		name string
+		got  int
+		want int
+	}{
+		{"PagerLen", loaded.PCData.PagerLen, ch.PCData.PagerLen},
+		{"Flags", loaded.PCData.Flags, ch.PCData.Flags},
+		{"PKills", loaded.PCData.PKills, ch.PCData.PKills},
+		{"PDeaths", loaded.PCData.PDeaths, ch.PCData.PDeaths},
+		{"MKills", loaded.PCData.MKills, ch.PCData.MKills},
+		{"MDeaths", loaded.PCData.MDeaths, ch.PCData.MDeaths},
+	}
+	for _, c := range pcChecks {
+		if c.got != c.want {
+			t.Errorf("PCData.%s = %d, want %d", c.name, c.got, c.want)
+		}
+	}
+
+	// Conditions
+	for i := 0; i < 4; i++ {
+		if loaded.PCData.Condition[i] != ch.PCData.Condition[i] {
+			t.Errorf("Condition[%d] = %d, want %d", i, loaded.PCData.Condition[i], ch.PCData.Condition[i])
+		}
+	}
+}
+
+func TestLoadPlayer_Full(t *testing.T) {
+	path := filepath.Join("testdata", "Testchar_full")
+	f, err := os.Open(path)
+	if err != nil {
+		t.Skipf("testdata not found: %s", path)
+	}
+	defer f.Close()
+
+	ch, err := LoadPlayer(f, "Testchar_full")
+	if err != nil {
+		t.Fatalf("LoadPlayer failed: %v", err)
+	}
+
+	if ch.Name != "Testfull" {
+		t.Errorf("Name = %q", ch.Name)
+	}
+	if ch.ShortDescr != "Testfull" {
+		t.Errorf("ShortDescr = %q, want Name echo", ch.ShortDescr)
+	}
+	if ch.Description == "" {
+		t.Error("Description should not be empty")
+	}
+	if ch.Silver != 500 {
+		t.Errorf("Silver = %d, want 500", ch.Silver)
+	}
+	if ch.Copper != 200 {
+		t.Errorf("Copper = %d, want 200", ch.Copper)
+	}
+	if ch.Stance != 2 {
+		t.Errorf("Stance = %d, want 2", ch.Stance)
+	}
+	if ch.Stances[0] != 10 || ch.Stances[11] != 120 {
+		t.Errorf("Stances[0]=%d [11]=%d", ch.Stances[0], ch.Stances[11])
+	}
+	if !ch.AffectedBy.IsSet(1) {
+		t.Error("AffectedBy bit 1 should be set")
+	}
+	if !ch.NoAffectedBy.IsSet(2) {
+		t.Error("NoAffectedBy bit 2 should be set")
+	}
+	if !ch.Deaf.IsSet(3) {
+		t.Error("Deaf bit 3 should be set")
+	}
+	if ch.Resistant != 4 {
+		t.Errorf("Resistant = %d, want 4", ch.Resistant)
+	}
+	if ch.Immune != 2 {
+		t.Errorf("Immune = %d, want 2", ch.Immune)
+	}
+	if ch.Susceptible != 8 {
+		t.Errorf("Susceptible = %d, want 8", ch.Susceptible)
+	}
+	if ch.NoResistant != 16 {
+		t.Errorf("NoResistant = %d", ch.NoResistant)
+	}
+	if ch.NoImmune != 32 {
+		t.Errorf("NoImmune = %d", ch.NoImmune)
+	}
+	if ch.NoSusceptible != 64 {
+		t.Errorf("NoSusceptible = %d", ch.NoSusceptible)
+	}
+	if ch.MentalState != -10 {
+		t.Errorf("MentalState = %d", ch.MentalState)
+	}
+
+	p := ch.PCData
+	if p == nil {
+		t.Fatal("PCData is nil")
+	}
+	if p.Favor != 100 {
+		t.Errorf("Favor = %d", p.Favor)
+	}
+	if p.Honour != 50 {
+		t.Errorf("Honour = %d", p.Honour)
+	}
+	if p.Rank != "Lord" {
+		t.Errorf("Rank = %q", p.Rank)
+	}
+	if p.Bestowments != "all" {
+		t.Errorf("Bestowments = %q", p.Bestowments)
+	}
+	if p.Homepage != "http://mud.org" {
+		t.Errorf("Homepage = %q", p.Homepage)
+	}
+	if p.Email != "test@mud.org" {
+		t.Errorf("Email = %q", p.Email)
+	}
+	if p.Bio != "A test character bio." {
+		t.Errorf("Bio = %q", p.Bio)
+	}
+	if p.AuthedBy != "Admin" {
+		t.Errorf("AuthedBy = %q", p.AuthedBy)
+	}
+	if p.MinSnoop != 55 {
+		t.Errorf("MinSnoop = %d", p.MinSnoop)
+	}
+	if p.FPrompt != "<%hhp %mmana %vmv> " {
+		t.Errorf("FPrompt = %q", p.FPrompt)
+	}
+	if p.WizInvis != 60 {
+		t.Errorf("WizInvis = %d", p.WizInvis)
+	}
+	if p.BamfIn != "appears in a flash of light" {
+		t.Errorf("BamfIn = %q", p.BamfIn)
+	}
+	if p.BamfOut != "vanishes in a puff of smoke" {
+		t.Errorf("BamfOut = %q", p.BamfOut)
+	}
+	if p.IllegalPK != 1 {
+		t.Errorf("IllegalPK = %d", p.IllegalPK)
+	}
+	if p.ClanName != "Guild of Heroes" {
+		t.Errorf("ClanName = %q", p.ClanName)
+	}
+	if p.CouncilName != "Council of Elders" {
+		t.Errorf("CouncilName = %q", p.CouncilName)
+	}
+	if p.DeityName != "Mota" {
+		t.Errorf("DeityName = %q", p.DeityName)
+	}
+	if p.Lang != "en" {
+		t.Errorf("Lang = %q", p.Lang)
+	}
+	if ch.Spouse != "Arwen" {
+		t.Errorf("Spouse = %q", ch.Spouse)
+	}
+	if ch.X != 100 || ch.Y != 200 || ch.Map != 1 {
+		t.Errorf("Coordinates = %d,%d,%d, want 100,200,1", ch.X, ch.Y, ch.Map)
+	}
+
+	// Should have loaded one affect
+	if len(ch.Affects) != 1 {
+		t.Fatalf("Affects = %d, want 1", len(ch.Affects))
+	}
+	aff := ch.Affects[0]
+	if aff.Type != 5 || aff.Duration != 24 || aff.Modifier != -20 || aff.Location != 17 {
+		t.Errorf("Affect = type=%d dur=%d mod=%d loc=%d", aff.Type, aff.Duration, aff.Modifier, aff.Location)
+	}
+}
+
+func TestLoadPlayer_SkipObjectsWithNilLookup(t *testing.T) {
+	// A player file with an object section; LoadPlayer (nil lookup) should skip it
+	input := `#PLAYER
+Name       Skipper~
+Sex        1
+Class      0
+Race       0
+Level      1
+HpManaMove 10 10 10 10 10 10
+AttrPerm   10 10 10 10 10 10 10
+AttrMod    0 0 0 0 0 0 0
+Condition  48 48 48 0
+Password   test~
+Position   112
+Pagerlen   24
+End
+
+#OBJECT
+Vnum         100
+Name         test object~
+WearLoc      -1
+End
+
+`
+	ch, err := LoadPlayer(strings.NewReader(input), "Skipper")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if ch.Name != "Skipper" {
+		t.Errorf("Name = %q, want Skipper", ch.Name)
+	}
+	if len(ch.Carrying) != 0 {
+		t.Errorf("Carrying = %d, want 0 (objects should be skipped)", len(ch.Carrying))
+	}
+}
+
+func TestLoadPlayer_BadHeader(t *testing.T) {
+	input := "#BADHEADER\nName Test~\nEnd\n"
+	_, err := LoadPlayer(strings.NewReader(input), "test")
+	if err == nil {
+		t.Error("LoadPlayer with bad header should return error")
 	}
 }
 

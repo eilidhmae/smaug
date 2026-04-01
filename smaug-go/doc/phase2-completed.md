@@ -69,7 +69,7 @@ Ported all 7 attribute bonus tables from C `const.c`, indexed by stat value 0-25
 | `GetObjHere` | `(ch, arg)` | Find object in room, inventory, or equipment (precedence order) |
 | `GetObjWorld` | `(w, ch, arg)` | Find object anywhere; checks local first, then world list |
 
-#### Additional Handler Helpers
+#### Additional Handler Helpers (handler/handler.go)
 
 | Function | Signature | Purpose |
 |----------|-----------|---------|
@@ -211,7 +211,7 @@ All 4 door commands registered in main.go.
 | `blindness` | Debuff | -4 hitroll + AFF_BLIND, save negates |
 | `dispel magic` | Utility | Remove all affects from target, save negates |
 
-**Cast command** (`DoCast`): spell lookup by name, mana cost check, target resolution by TAR_* type, spell function dispatch, room notification.
+**Cast command** (`DoCast` in `act/magic.go`): spell lookup by name, mana cost check, target resolution by TAR_* type, spell function dispatch, room notification.
 
 **Saving throws**: `SavesSpellStaff`, `SavesPoisonDeath` — formula: 50 + (victim_level - caster_level - victim_saves) * 5, clamped 5-95%.
 

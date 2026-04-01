@@ -222,3 +222,193 @@ func TestPagerOutput_MinPageLen(t *testing.T) {
 		t.Error("expected paging with min page length")
 	}
 }
+
+func TestPagerOutput_EmptyData(t *testing.T) {
+	d := newTestDesc(24, true)
+	// Don't write any data to pager
+	done := PagerOutput(d)
+	if !done {
+		t.Error("empty pager data should return done immediately")
+	}
+}
+
+func TestPagerOutput_SCommand(t *testing.T) {
+	// 's' should also quit like 'q'
+	d := newTestDesc(10, true)
+
+	var sb strings.Builder
+	for i := 0; i < 20; i++ {
+		sb.WriteString("Line of text\n\r")
+	}
+	WriteToPager(d, sb.String())
+
+	SetPagerInput(d, "s")
+	done := PagerOutput(d)
+	if !done {
+		t.Error("'s' command should end paging immediately")
+	}
+	if d.HasPagerData() {
+		t.Error("pager data should be cleared on 's' quit")
+	}
+}
+
+func TestPagerOutput_VCommand(t *testing.T) {
+	// 'v' should be an alias for back like 'b'
+	d := newTestDesc(10, true)
+
+	var sb strings.Builder
+	for i := 0; i < 20; i++ {
+		sb.WriteString("Line of text\n\r")
+	}
+	WriteToPager(d, sb.String())
+
+	// Advance one page
+	SetPagerInput(d, "")
+	PagerOutput(d)
+
+	// Go back with 'v'
+	SetPagerInput(d, "v")
+	done := PagerOutput(d)
+	if done {
+		t.Error("'v' back command should not end paging")
+	}
+}
+
+func TestPagerOutput_NoPCData(t *testing.T) {
+	// Test with no PCData — should use default page length of 24
+	ch := &types.CharData{
+		Name:  "Tester",
+		Level: 1,
+	}
+	d := &types.DescriptorData{
+		Character: ch,
+		Connected: types.CON_PLAYING,
+	}
+	ch.Desc = d
+
+	var sb strings.Builder
+	for i := 0; i < 5; i++ {
+		sb.WriteString("Short text\n\r")
+	}
+	WriteToPager(d, sb.String())
+
+	SetPagerInput(d, "")
+	done := PagerOutput(d)
+	if !done {
+		t.Error("5 lines should fit in default 24-line page")
+	}
+}
+
+func TestPagerOutput_TextWithoutNewline(t *testing.T) {
+	// Text with no trailing newline
+	d := newTestDesc(10, true)
+
+	WriteToPager(d, "No newline at end")
+	SetPagerInput(d, "")
+	done := PagerOutput(d)
+	if !done {
+		t.Error("single line without newline should complete in one page")
+	}
+}
+
+func TestPagerOutput_BackAtStart(t *testing.T) {
+	// Back when already at the start should stay at start
+	d := newTestDesc(10, true)
+
+	var sb strings.Builder
+	for i := 0; i < 20; i++ {
+		sb.WriteString("Line of text\n\r")
+	}
+	WriteToPager(d, sb.String())
+
+	// Immediately try back without advancing
+	SetPagerInput(d, "b")
+	done := PagerOutput(d)
+	if done {
+		t.Error("back at start should still show first page")
+	}
+}
+
+func TestPagerOutput_RefreshAtStart(t *testing.T) {
+	d := newTestDesc(10, true)
+
+	var sb strings.Builder
+	for i := 0; i < 20; i++ {
+		sb.WriteString("Line of text\n\r")
+	}
+	WriteToPager(d, sb.String())
+
+	// Immediately refresh without advancing
+	SetPagerInput(d, "r")
+	done := PagerOutput(d)
+	if done {
+		t.Error("refresh at start should still show first page")
+	}
+}
+
+func TestSetPagerInput_Uppercase(t *testing.T) {
+	d := newTestDesc(24, true)
+	SetPagerInput(d, "Q")
+	// Should be lowercase 'q'
+	if d.GetPagerCmd() != 'q' {
+		t.Errorf("expected pager cmd 'q', got %c", d.GetPagerCmd())
+	}
+}
+
+func TestSetPagerInput_WithWhitespace(t *testing.T) {
+	d := newTestDesc(24, true)
+	SetPagerInput(d, "  n  ")
+	if d.GetPagerCmd() != 'n' {
+		t.Errorf("expected pager cmd 'n', got %c", d.GetPagerCmd())
+	}
+}
+
+func TestSendToPager_NilDesc(t *testing.T) {
+	ch := &types.CharData{
+		Name:   "NilDesc",
+		Level:  1,
+		PCData: &types.PCData{Flags: int(types.PCFLAG_PAGERON)},
+	}
+	// Should not panic when Desc is nil
+	SendToPager(ch, "test")
+}
+
+func TestGoBackLines_EmptyData(t *testing.T) {
+	result := goBackLines("", 0, 5)
+	if result != 0 {
+		t.Errorf("goBackLines empty data = %d, want 0", result)
+	}
+}
+
+func TestGoBackLines_SmallData(t *testing.T) {
+	data := "line1\nline2\nline3\n"
+	// From the end, go back 2 lines
+	result := goBackLines(data, len(data), 2)
+	if result < 0 || result > len(data) {
+		t.Errorf("goBackLines result %d out of range [0, %d]", result, len(data))
+	}
+}
+
+func TestPagerOutput_NonStopDumpsAll(t *testing.T) {
+	d := newTestDesc(5, true) // very small page
+
+	var sb strings.Builder
+	for i := 0; i < 50; i++ {
+		sb.WriteString("Line of text\n\r")
+	}
+	WriteToPager(d, sb.String())
+
+	// First, advance one page
+	SetPagerInput(d, "")
+	PagerOutput(d)
+
+	// Then non-stop
+	SetPagerInput(d, "n")
+	done := PagerOutput(d)
+	if !done {
+		t.Error("non-stop after first page should dump all remaining and complete")
+	}
+	if d.HasPagerData() {
+		t.Error("pager should be cleared after non-stop")
+	}
+}
