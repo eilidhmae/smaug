@@ -619,3 +619,13 @@ func TestReadToEOL_EOF(t *testing.T) {
 		t.Errorf("ReadToEOL at EOF = %q, want %q", got, "last line")
 	}
 }
+
+func TestReadString_MaxLength(t *testing.T) {
+	// Create a string longer than maxStringLen
+	long := strings.Repeat("A", maxStringLen+1000) + "~"
+	s := NewScanner(strings.NewReader(long), "test")
+	got := s.ReadString()
+	if len(got) > maxStringLen {
+		t.Errorf("ReadString returned %d bytes, want <= %d", len(got), maxStringLen)
+	}
+}

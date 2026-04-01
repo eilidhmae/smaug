@@ -744,3 +744,40 @@ End
 	sc := NewScanner(strings.NewReader(input), "test")
 	skipPlayerObject(sc) // should consume both nested objects
 }
+
+func TestLoadAreas_PathTraversal(t *testing.T) {
+	// Create a temp directory with an area.lst that contains a path traversal entry
+	tmpDir := t.TempDir()
+	lst := "../evil.are\n$\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "area.lst"), []byte(lst), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := world.New("")
+	// Should not panic and should skip the traversal entry (no .are file exists)
+	err := LoadAreas(w, tmpDir)
+	if err != nil {
+		t.Fatalf("LoadAreas should not return error: %v", err)
+	}
+	// No areas should have been loaded
+	if len(w.Areas) != 0 {
+		t.Errorf("Areas = %d, want 0", len(w.Areas))
+	}
+}
+
+func TestLoadAreas_NonAreFileSkipped(t *testing.T) {
+	tmpDir := t.TempDir()
+	lst := "malicious.txt\n$\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "area.lst"), []byte(lst), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := world.New("")
+	err := LoadAreas(w, tmpDir)
+	if err != nil {
+		t.Fatalf("LoadAreas should not return error: %v", err)
+	}
+	if len(w.Areas) != 0 {
+		t.Errorf("Areas = %d, want 0 (non-.are file should be skipped)", len(w.Areas))
+	}
+}

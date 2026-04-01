@@ -442,7 +442,7 @@ func DoForce(ch *types.CharData, argument string) {
 			if d.Character != nil && d.Character != ch &&
 				d.Character.GetTrust() < ch.GetTrust() {
 				if CmdRegistry != nil {
-					CmdRegistry.Interpret(d.Character, rest)
+					CmdRegistry.InterpretWithTrustCap(d.Character, rest, ch.GetTrust())
 				}
 			}
 		}
@@ -465,7 +465,7 @@ func DoForce(ch *types.CharData, argument string) {
 	}
 
 	if CmdRegistry != nil {
-		CmdRegistry.Interpret(victim, rest)
+		CmdRegistry.InterpretWithTrustCap(victim, rest, ch.GetTrust())
 	}
 	ch.Send("Ok.\n\r")
 }

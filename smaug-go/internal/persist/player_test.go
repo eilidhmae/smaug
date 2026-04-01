@@ -385,7 +385,8 @@ func TestPlayerFilePath(t *testing.T) {
 		{"normal", "/data", "Gandalf", "/data/player/g/Gandalf"},
 		{"uppercase", "/data", "Aragorn", "/data/player/a/Aragorn"},
 		{"empty name", "/data", "", ""},
-		{"short name", "/db", "A", "/db/player/a/A"},
+		{"three char", "/db", "Abc", "/db/player/a/Abc"},
+		{"twelve char", "/db", "Abcdefghijkl", "/db/player/a/Abcdefghijkl"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -394,6 +395,45 @@ func TestPlayerFilePath(t *testing.T) {
 				t.Errorf("PlayerFilePath(%q, %q) = %q, want %q", tt.dataDir, tt.pname, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPlayerFilePath_PathTraversal(t *testing.T) {
+	// These should all return empty because after filepath.Base the result
+	// either fails the regex or the traversal is stripped.
+	rejectCases := []string{
+		"a",                                // too short
+		"ab",                               // too short
+		"a123bcdef",                         // contains digits
+		"thisnameiswaytoolongforvalidation", // too long (>12)
+		"name.with.dots",                    // contains dots
+		"name with spaces",                  // contains spaces
+		"../",                               // Base returns "."
+		"",                                  // empty
+	}
+	for _, name := range rejectCases {
+		got := PlayerFilePath("/data", name)
+		if got != "" {
+			t.Errorf("PlayerFilePath(%q) = %q, want empty", name, got)
+		}
+	}
+
+	// Path traversal attempts: filepath.Base strips the directory part,
+	// so these resolve to the base name which is a valid player name.
+	// The path traversal is neutralised by filepath.Base.
+	traversalCases := []struct {
+		input string
+		want  string
+	}{
+		{"../../../etc/passwd", "/data/player/p/passwd"},
+		{"../../evil", "/data/player/e/evil"},
+		{"/absolute/path", "/data/player/p/path"},
+	}
+	for _, tc := range traversalCases {
+		got := PlayerFilePath("/data", tc.input)
+		if got != tc.want {
+			t.Errorf("PlayerFilePath(%q) = %q, want %q (traversal stripped)", tc.input, got, tc.want)
+		}
 	}
 }
 
@@ -874,5 +914,61 @@ func TestSaveLoadObjectInContainer(t *testing.T) {
 	}
 	if loadedGem.InObj != loadedBag {
 		t.Error("gem.InObj should point to bag")
+	}
+}
+
+func TestLoadPlayer_TrustCapped(t *testing.T) {
+	// Trust 999 in the player file should be capped to LEVEL_SUPREME (65)
+	input := `#PLAYER
+Name       Hacker~
+Sex        1
+Class      0
+Race       0
+Level      50
+Trust      999
+HpManaMove 100 100 50 50 80 80
+AttrPerm   15 13 12 14 13 11 13
+AttrMod    0 0 0 0 0 0 0
+Condition  48 48 48 0
+Password   test~
+Position   112
+Pagerlen   24
+End
+
+`
+	ch, err := LoadPlayer(strings.NewReader(input), "Hacker")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if ch.Trust != types.LEVEL_SUPREME {
+		t.Errorf("Trust = %d, want %d (LEVEL_SUPREME)", ch.Trust, types.LEVEL_SUPREME)
+	}
+}
+
+func TestLoadPlayer_TrustNormal(t *testing.T) {
+	// Trust within valid range should be preserved
+	input := `#PLAYER
+Name       Admin~
+Sex        1
+Class      0
+Race       0
+Level      50
+Trust      60
+HpManaMove 100 100 50 50 80 80
+AttrPerm   15 13 12 14 13 11 13
+AttrMod    0 0 0 0 0 0 0
+Condition  48 48 48 0
+Password   test~
+Position   112
+Pagerlen   24
+End
+
+`
+	ch, err := LoadPlayer(strings.NewReader(input), "Admin")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if ch.Trust != 60 {
+		t.Errorf("Trust = %d, want 60", ch.Trust)
 	}
 }

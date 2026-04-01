@@ -74,6 +74,8 @@ func (s *Scanner) ReadWord() string {
 	return buf.String()
 }
 
+const maxStringLen = 32768
+
 // ReadString reads a tilde-terminated string. In SMAUG file formats,
 // strings are terminated by a ~ character. Equivalent to fread_string()
 // in db.c.
@@ -114,7 +116,9 @@ func (s *Scanner) ReadString() string {
 			// skip \r (handled above with \n)
 			continue
 		}
-		buf.WriteByte(c)
+		if buf.Len() < maxStringLen {
+			buf.WriteByte(c)
+		}
 	}
 	return buf.String()
 }

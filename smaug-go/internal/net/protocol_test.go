@@ -595,3 +595,23 @@ func TestBuildMSSPPayload_VarValStructure(t *testing.T) {
 		t.Errorf("MSSP_VAL count = %d, want 9", valCount)
 	}
 }
+
+func TestStripTelnetIAC_TruncatedDO(t *testing.T) {
+	// IAC DO at end with no option byte
+	input := []byte{'X', IAC, DO}
+	got := stripTelnetIAC(input)
+	want := []byte{'X'}
+	if !bytes.Equal(got, want) {
+		t.Errorf("truncated DO: got %v, want %v", got, want)
+	}
+}
+
+func TestStripTelnetIAC_TruncatedSequenceMidStream(t *testing.T) {
+	// Valid data, then truncated IAC DONT at end
+	input := []byte{'A', 'B', IAC, 0xFE} // DONT = 254 = 0xFE
+	got := stripTelnetIAC(input)
+	want := []byte{'A', 'B'}
+	if !bytes.Equal(got, want) {
+		t.Errorf("truncated DONT mid-stream: got %v, want %v", got, want)
+	}
+}

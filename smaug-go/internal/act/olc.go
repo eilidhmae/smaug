@@ -20,6 +20,10 @@ var StartEditingFunc func(ch *types.CharData, text string)
 
 // DoRedit implements the 'redit' command: edit the current room.
 func DoRedit(ch *types.CharData, argument string) {
+	if ch.GetTrust() < types.LEVEL_IMMORTAL {
+		ch.Send("Huh?\n\r")
+		return
+	}
 	if ch.InRoom == nil {
 		ch.Send("You are not in a room.\n\r")
 		return
@@ -165,6 +169,10 @@ func editExit(ch *types.CharData, args string) {
 
 // DoOcreate implements the 'ocreate' command: create a new object template.
 func DoOcreate(ch *types.CharData, argument string) {
+	if ch.GetTrust() < types.LEVEL_IMMORTAL {
+		ch.Send("Huh?\n\r")
+		return
+	}
 	arg, rest := util.OneArgument(argument)
 	if arg == "" {
 		ch.Send("Usage: ocreate <vnum> [name]\n\r")
@@ -211,6 +219,10 @@ func DoOcreate(ch *types.CharData, argument string) {
 
 // DoMcreate implements the 'mcreate' command: create a new mob template.
 func DoMcreate(ch *types.CharData, argument string) {
+	if ch.GetTrust() < types.LEVEL_IMMORTAL {
+		ch.Send("Huh?\n\r")
+		return
+	}
 	arg, rest := util.OneArgument(argument)
 	if arg == "" {
 		ch.Send("Usage: mcreate <vnum> [name]\n\r")
@@ -259,6 +271,10 @@ func DoMcreate(ch *types.CharData, argument string) {
 
 // DoRdig implements the 'rdig' command: create a room and link exits.
 func DoRdig(ch *types.CharData, argument string) {
+	if ch.GetTrust() < types.LEVEL_IMMORTAL {
+		ch.Send("Huh?\n\r")
+		return
+	}
 	arg, rest := util.OneArgument(argument)
 	if arg == "" {
 		ch.Send("Usage: rdig <direction> [vnum]\n\r")
@@ -336,6 +352,10 @@ func DoRdig(ch *types.CharData, argument string) {
 
 // DoRlist implements the 'rlist' command: list rooms in a vnum range.
 func DoRlist(ch *types.CharData, argument string) {
+	if ch.GetTrust() < types.LEVEL_IMMORTAL {
+		ch.Send("Huh?\n\r")
+		return
+	}
 	arg1, arg2 := util.OneArgument(argument)
 	low := 0
 	high := 0
@@ -375,6 +395,10 @@ func DoRlist(ch *types.CharData, argument string) {
 
 // DoOlist implements the 'olist' command: list objects in a vnum range.
 func DoOlist(ch *types.CharData, argument string) {
+	if ch.GetTrust() < types.LEVEL_IMMORTAL {
+		ch.Send("Huh?\n\r")
+		return
+	}
 	arg1, arg2 := util.OneArgument(argument)
 	low := 0
 	high := 0
@@ -412,6 +436,10 @@ func DoOlist(ch *types.CharData, argument string) {
 
 // DoMlist implements the 'mlist' command: list mobs in a vnum range.
 func DoMlist(ch *types.CharData, argument string) {
+	if ch.GetTrust() < types.LEVEL_IMMORTAL {
+		ch.Send("Huh?\n\r")
+		return
+	}
 	arg1, arg2 := util.OneArgument(argument)
 	low := 0
 	high := 0
@@ -451,6 +479,10 @@ func DoMlist(ch *types.CharData, argument string) {
 
 // DoSaveArea implements the 'savearea' command: save an area to disk.
 func DoSaveArea(ch *types.CharData, argument string) {
+	if ch.GetTrust() < types.LEVEL_IMMORTAL {
+		ch.Send("Huh?\n\r")
+		return
+	}
 	if ch.InRoom == nil || ch.InRoom.Area == nil {
 		ch.Send("You are not in an area.\n\r")
 		return

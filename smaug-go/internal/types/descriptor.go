@@ -6,6 +6,9 @@ import (
 	"sync"
 )
 
+// MaxOutputBuf is the maximum size of output/pager buffers (1MB).
+const MaxOutputBuf = 1 << 20
+
 // DescriptorData represents a network connection for one player.
 // Maps to C struct descriptor_data (mud.h:932).
 type DescriptorData struct {
@@ -46,6 +49,9 @@ type DescriptorData struct {
 	outBuf []byte
 	outMu  sync.Mutex
 
+	// OutputOverflow is set when a buffer exceeds MaxOutputBuf.
+	OutputOverflow bool
+
 	// Pager
 	pageBuf   []byte
 	pagePoint int
@@ -53,8 +59,9 @@ type DescriptorData struct {
 	pageColor byte
 
 	// User data during login
-	User     string
-	NewState int
+	User           string
+	NewState       int
+	FailedAttempts int
 
 	// Previous color sent
 	PrevColor byte
@@ -90,6 +97,10 @@ type TelnetState struct {
 func (d *DescriptorData) WriteToBuffer(text string) {
 	d.outMu.Lock()
 	d.outBuf = append(d.outBuf, []byte(text)...)
+	if len(d.outBuf) > MaxOutputBuf {
+		d.OutputOverflow = true
+		d.outBuf = d.outBuf[:0]
+	}
 	d.outMu.Unlock()
 }
 
@@ -134,6 +145,10 @@ func (d *DescriptorData) HasOutput() bool {
 func (d *DescriptorData) WriteToPager(text string) {
 	d.outMu.Lock()
 	d.pageBuf = append(d.pageBuf, []byte(text)...)
+	if len(d.pageBuf) > MaxOutputBuf {
+		d.OutputOverflow = true
+		d.pageBuf = d.pageBuf[:0]
+	}
 	d.outMu.Unlock()
 }
 

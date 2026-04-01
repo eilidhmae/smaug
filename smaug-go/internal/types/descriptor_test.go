@@ -297,3 +297,66 @@ func TestDescriptor_Pager_Lifecycle(t *testing.T) {
 		t.Errorf("pager cmd after clear = %d, want 0", d.GetPagerCmd())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Output buffer overflow (S6)
+// ---------------------------------------------------------------------------
+
+func TestDescriptor_WriteToBuffer_Overflow(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	d := NewDescriptor(server)
+
+	// Write more than MaxOutputBuf
+	chunk := make([]byte, MaxOutputBuf/2+1)
+	for i := range chunk {
+		chunk[i] = 'A'
+	}
+	bigStr := string(chunk)
+
+	d.WriteToBuffer(bigStr)
+	if d.OutputOverflow {
+		t.Error("should not overflow after first write")
+	}
+
+	// Second write pushes over the limit
+	d.WriteToBuffer(bigStr)
+	if !d.OutputOverflow {
+		t.Error("should have set OutputOverflow after exceeding MaxOutputBuf")
+	}
+
+	// Buffer should have been cleared
+	if d.HasOutput() {
+		t.Error("output buffer should be cleared after overflow")
+	}
+}
+
+func TestDescriptor_WriteToPager_Overflow(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	d := NewDescriptor(server)
+
+	chunk := make([]byte, MaxOutputBuf/2+1)
+	for i := range chunk {
+		chunk[i] = 'B'
+	}
+	bigStr := string(chunk)
+
+	d.WriteToPager(bigStr)
+	if d.OutputOverflow {
+		t.Error("should not overflow after first pager write")
+	}
+
+	d.WriteToPager(bigStr)
+	if !d.OutputOverflow {
+		t.Error("should have set OutputOverflow after pager exceeds MaxOutputBuf")
+	}
+
+	if d.HasPagerData() {
+		t.Error("pager buffer should be cleared after overflow")
+	}
+}

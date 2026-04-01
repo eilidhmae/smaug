@@ -129,4 +129,25 @@ Security audit of the SMAUG Go port. Findings categorized by severity.
 | Medium | 5 | Race condition, atomic writes, telnet bounds, scanner bounds, trust cap |
 | Low | 3 | Timing attack, OLC defense-in-depth, telnet echo |
 
-**Recommended priority**: S1 (passwords) > S2 (connection limit) > S3 (force bypass) > S5 (brute force) > S4 (input length) > S10 (atomic writes).
+## Resolution Status
+
+All actionable findings have been addressed:
+
+| ID | Status | Fix |
+|----|--------|-----|
+| S1 | **FIXED** | bcrypt hashing with legacy plaintext migration on login |
+| S2 | **FIXED** | `MaxConnections = 256` check in `acceptNewConnections` |
+| S3 | **FIXED** | `InterpretWithTrustCap` caps forced command trust to forcer's level |
+| S4 | **FIXED** | `scanner.Buffer(1024, 1024)` limits input to 1KB |
+| S5 | **FIXED** | `FailedAttempts` counter, disconnect after 3 failures |
+| S6 | **FIXED** | `MaxOutputBuf = 1MB`, `OutputOverflow` flag clears buffer |
+| S7 | **FIXED** | `filepath.Base()` + `^[a-zA-Z]{3,12}$` regex in `PlayerFilePath` |
+| S8 | **FIXED** | `filepath.Base()` + `.are` suffix check at load time |
+| S9 | N/A | Safe by design (documented, no code change needed) |
+| S10 | **FIXED** | Write to `.tmp` then `os.Rename` for atomic replacement |
+| S11 | **FIXED** | Bounds check `i+2 < len(data)` before consuming 3-byte sequence |
+| S12 | **FIXED** | `maxStringLen = 32768` cap in `ReadString` |
+| S13 | **FIXED** | Trust capped to `LEVEL_SUPREME` on player load |
+| S14 | **FIXED** | Moot — bcrypt (S1) uses constant-time comparison; legacy path uses `subtle.ConstantTimeCompare` |
+| S15 | **FIXED** | Trust guard `ch.GetTrust() < LEVEL_IMMORTAL` at top of all 8 OLC functions |
+| S16 | N/A | Client-side limitation, documented (no server fix possible) |

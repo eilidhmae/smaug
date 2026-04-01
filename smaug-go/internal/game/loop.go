@@ -2,17 +2,23 @@ package game
 
 import (
 	"context"
+	"crypto/subtle"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
+
+// MaxConnections is the maximum number of simultaneous connections allowed.
+const MaxConnections = 256
 
 // greeting is the SMAUG banner sent to new connections.
 const greeting = "\n\r" +
@@ -139,6 +145,12 @@ func (g *GameLoop) acceptNewConnections() {
 	for {
 		select {
 		case d := <-g.incoming:
+			if len(g.world.Descriptors) >= MaxConnections {
+				d.WriteToBuffer("Server is full, try again later.\n\r")
+				d.Connected = -1
+				log.Printf("Connection from %s rejected: server full", d.Host)
+				continue
+			}
 			g.world.Descriptors = append(g.world.Descriptors, d)
 			d.WriteToBuffer(greeting)
 			log.Printf("New connection from %s", d.Host)
@@ -276,10 +288,30 @@ func (g *GameLoop) nannyGetOldPassword(d *types.DescriptorData, line string) {
 		return
 	}
 
-	// NOCRYPT mode: plaintext password comparison (matches C #define NOCRYPT)
-	if line != d.Character.PCData.Pwd {
+	// Check password: bcrypt if stored hash starts with $2, otherwise legacy plaintext
+	storedPwd := d.Character.PCData.Pwd
+	passwordOK := false
+	if strings.HasPrefix(storedPwd, "$2a$") || strings.HasPrefix(storedPwd, "$2b$") {
+		// Bcrypt hash comparison (constant-time internally)
+		passwordOK = bcrypt.CompareHashAndPassword([]byte(storedPwd), []byte(line)) == nil
+	} else {
+		// Legacy plaintext comparison using constant-time compare to prevent timing attacks
+		passwordOK = subtle.ConstantTimeCompare([]byte(line), []byte(storedPwd)) == 1
+		if passwordOK {
+			// Migrate legacy plaintext password to bcrypt
+			if hash, err := bcrypt.GenerateFromPassword([]byte(line), bcrypt.DefaultCost); err == nil {
+				d.Character.PCData.Pwd = string(hash)
+			}
+		}
+	}
+
+	if !passwordOK {
 		d.WriteToBuffer("Wrong password.\n\r")
 		log.Printf("Bad password for %s from %s", d.User, d.Host)
+		d.FailedAttempts++
+		if d.FailedAttempts >= 3 {
+			d.WriteToBuffer("Too many failed attempts. Disconnecting.\n\r")
+		}
 		d.Character = nil
 		d.Connected = -1
 		return
@@ -328,9 +360,14 @@ func (g *GameLoop) nannyGetNewPassword(d *types.DescriptorData, line string) {
 		return
 	}
 
-	// Create the character now with the password
+	// Create the character now with the password (bcrypt hashed)
+	hash, err := bcrypt.GenerateFromPassword([]byte(line), bcrypt.DefaultCost)
+	if err != nil {
+		d.WriteToBuffer("Error hashing password. Try again.\n\rPassword: ")
+		return
+	}
 	ch := g.createNewCharacter(d.User)
-	ch.PCData.Pwd = line // NOCRYPT: store plaintext
+	ch.PCData.Pwd = string(hash)
 	ch.Desc = d
 	d.Character = ch
 
@@ -349,7 +386,7 @@ func (g *GameLoop) nannyConfirmNewPassword(d *types.DescriptorData, line string)
 		return
 	}
 
-	if line != d.Character.PCData.Pwd {
+	if bcrypt.CompareHashAndPassword([]byte(d.Character.PCData.Pwd), []byte(line)) != nil {
 		d.WriteToBuffer("Passwords don't match.\n\rRetype password: ")
 		_, _ = d.Conn.Write(telnetEchoOff)
 		d.Connected = int(types.CON_GET_NEW_PASSWORD)
@@ -622,15 +659,24 @@ func (g *GameLoop) SavePlayer(ch *types.CharData) {
 		return
 	}
 
-	f, err := os.Create(playerPath)
+	tmpPath := playerPath + ".tmp"
+	f, err := os.Create(tmpPath)
 	if err != nil {
 		log.Printf("Error saving player %s: %v", ch.Name, err)
 		return
 	}
-	defer f.Close()
 
 	if err := persist.SavePlayer(f, ch); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
 		log.Printf("Error writing player %s: %v", ch.Name, err)
+		return
+	}
+	f.Close()
+
+	if err := os.Rename(tmpPath, playerPath); err != nil {
+		os.Remove(tmpPath)
+		log.Printf("Error renaming player file %s: %v", ch.Name, err)
 	}
 }
 

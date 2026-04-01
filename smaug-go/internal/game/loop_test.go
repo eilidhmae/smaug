@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/persist"
@@ -655,8 +657,8 @@ func TestNanny_GetNewPassword_Valid(t *testing.T) {
 	if d.Character == nil {
 		t.Fatal("character should be created")
 	}
-	if d.Character.PCData.Pwd != "secret123" {
-		t.Errorf("password = %q, want 'secret123'", d.Character.PCData.Pwd)
+	if !strings.HasPrefix(d.Character.PCData.Pwd, "$2") {
+		t.Errorf("password should be bcrypt hash starting with $2, got %q", d.Character.PCData.Pwd)
 	}
 }
 
@@ -670,7 +672,8 @@ func TestNanny_ConfirmNewPassword_Mismatch(t *testing.T) {
 	d.Connected = int(types.CON_CONFIRM_NEW_PASSWORD)
 
 	ch := g.createNewCharacter("Testguy")
-	ch.PCData.Pwd = "secret123"
+	hash, _ := bcrypt.GenerateFromPassword([]byte("secret123"), bcrypt.MinCost)
+	ch.PCData.Pwd = string(hash)
 	ch.Desc = d
 	d.Character = ch
 
@@ -708,7 +711,8 @@ func TestNanny_ConfirmNewPassword_Match(t *testing.T) {
 	d.Connected = int(types.CON_CONFIRM_NEW_PASSWORD)
 
 	ch := g.createNewCharacter("Testguy")
-	ch.PCData.Pwd = "secret123"
+	hash, _ := bcrypt.GenerateFromPassword([]byte("secret123"), bcrypt.MinCost)
+	ch.PCData.Pwd = string(hash)
 	ch.Desc = d
 	d.Character = ch
 
@@ -843,6 +847,10 @@ func TestNanny_GetOldPassword_Correct(t *testing.T) {
 	}
 	if ch.PCData.RecentSite != "localhost" {
 		t.Errorf("RecentSite = %q, want 'localhost'", ch.PCData.RecentSite)
+	}
+	// Legacy password should have been migrated to bcrypt
+	if !strings.HasPrefix(ch.PCData.Pwd, "$2") {
+		t.Errorf("legacy password should be migrated to bcrypt, got %q", ch.PCData.Pwd)
 	}
 }
 
@@ -1143,6 +1151,34 @@ func TestSavePlayer_NoPCData(t *testing.T) {
 	g.SavePlayer(ch)
 }
 
+func TestSavePlayer_AtomicWrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	w := world.New(tmpDir)
+	reg := command.NewRegistry()
+	incoming := make(chan *types.DescriptorData, 10)
+	g := NewGameLoop(w, reg, incoming)
+
+	ch := &types.CharData{
+		Name:   "Atomica",
+		Level:  1,
+		PCData: &types.PCData{Pwd: "test"},
+	}
+
+	g.SavePlayer(ch)
+
+	// The final file should exist
+	playerPath := persist.PlayerFilePath(tmpDir, ch.Name)
+	if _, err := os.Stat(playerPath); os.IsNotExist(err) {
+		t.Errorf("player file %s does not exist after save", playerPath)
+	}
+
+	// The temp file should NOT exist
+	tmpPath := playerPath + ".tmp"
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Errorf("temp file %s still exists after save", tmpPath)
+	}
+}
+
 // --- pulse tests ---
 
 func TestPulse(t *testing.T) {
@@ -1198,4 +1234,143 @@ func TestFlushOutput_WithPager(t *testing.T) {
 
 	g.flushOutput()
 	s.Close()
+}
+
+// --- Password hashing and brute force tests ---
+
+func TestPasswordHash_Bcrypt(t *testing.T) {
+	g := newTestLoop()
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	drainPipe(c)
+	d := types.NewDescriptor(s)
+	d.Connected = int(types.CON_GET_NEW_PASSWORD)
+	d.User = "Hashtest"
+
+	g.nannyGetNewPassword(d, "secret123")
+
+	if d.Character == nil {
+		t.Fatal("character should be created")
+	}
+	pwd := d.Character.PCData.Pwd
+	if !strings.HasPrefix(pwd, "$2") {
+		t.Fatalf("stored password should be bcrypt hash (start with $2), got %q", pwd)
+	}
+	// Verify the hash actually matches the input
+	if err := bcrypt.CompareHashAndPassword([]byte(pwd), []byte("secret123")); err != nil {
+		t.Errorf("bcrypt hash should match original password: %v", err)
+	}
+	// Verify wrong password does not match
+	if err := bcrypt.CompareHashAndPassword([]byte(pwd), []byte("wrongpass")); err == nil {
+		t.Error("bcrypt hash should NOT match wrong password")
+	}
+}
+
+func TestPasswordHash_LegacyMigration(t *testing.T) {
+	g := newTestLoop()
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	drainPipe(c)
+	d := types.NewDescriptor(s)
+	d.Host = "localhost"
+
+	// Set up a character with a legacy plaintext password
+	ch := &types.CharData{
+		Name:   "Legacy",
+		PCData: &types.PCData{Pwd: "oldplain"},
+	}
+	d.Character = ch
+	ch.Desc = d
+
+	// Login with correct plaintext password
+	g.nannyGetOldPassword(d, "oldplain")
+
+	if d.Connected != int(types.CON_READ_MOTD) {
+		t.Fatalf("correct legacy password should succeed, got state %d", d.Connected)
+	}
+	// Password should now be migrated to bcrypt
+	if !strings.HasPrefix(ch.PCData.Pwd, "$2") {
+		t.Errorf("legacy password should be migrated to bcrypt, got %q", ch.PCData.Pwd)
+	}
+	// Verify the new hash matches the original password
+	if err := bcrypt.CompareHashAndPassword([]byte(ch.PCData.Pwd), []byte("oldplain")); err != nil {
+		t.Errorf("migrated hash should match original password: %v", err)
+	}
+}
+
+func TestPasswordHash_BcryptLogin(t *testing.T) {
+	g := newTestLoop()
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	drainPipe(c)
+	d := types.NewDescriptor(s)
+	d.Host = "localhost"
+
+	// Set up a character with a bcrypt-hashed password
+	hash, _ := bcrypt.GenerateFromPassword([]byte("bcryptpwd"), bcrypt.MinCost)
+	ch := &types.CharData{
+		Name:   "Modern",
+		PCData: &types.PCData{Pwd: string(hash)},
+	}
+	d.Character = ch
+	ch.Desc = d
+
+	g.nannyGetOldPassword(d, "bcryptpwd")
+
+	if d.Connected != int(types.CON_READ_MOTD) {
+		t.Errorf("correct bcrypt password should succeed, got state %d", d.Connected)
+	}
+}
+
+func TestBruteForceProtection(t *testing.T) {
+	g := newTestLoop()
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	drainPipe(c)
+
+	hash, _ := bcrypt.GenerateFromPassword([]byte("realpassword"), bcrypt.MinCost)
+
+	// Attempt 1: wrong password
+	d := types.NewDescriptor(s)
+	d.Host = "localhost"
+	ch1 := &types.CharData{Name: "Bruteforce", PCData: &types.PCData{Pwd: string(hash)}}
+	d.Character = ch1
+	ch1.Desc = d
+
+	g.nannyGetOldPassword(d, "wrong1")
+	if d.FailedAttempts != 1 {
+		t.Errorf("after 1st failed attempt, FailedAttempts = %d, want 1", d.FailedAttempts)
+	}
+	if d.Connected != -1 {
+		t.Errorf("wrong password should disconnect, got %d", d.Connected)
+	}
+
+	// Attempt 2: simulate reconnect on same descriptor (reset state but keep FailedAttempts)
+	d.Connected = int(types.CON_GET_OLD_PASSWORD)
+	ch2 := &types.CharData{Name: "Bruteforce", PCData: &types.PCData{Pwd: string(hash)}}
+	d.Character = ch2
+	ch2.Desc = d
+
+	g.nannyGetOldPassword(d, "wrong2")
+	if d.FailedAttempts != 2 {
+		t.Errorf("after 2nd failed attempt, FailedAttempts = %d, want 2", d.FailedAttempts)
+	}
+
+	// Attempt 3: should disconnect with brute force message
+	d.Connected = int(types.CON_GET_OLD_PASSWORD)
+	ch3 := &types.CharData{Name: "Bruteforce", PCData: &types.PCData{Pwd: string(hash)}}
+	d.Character = ch3
+	ch3.Desc = d
+
+	g.nannyGetOldPassword(d, "wrong3")
+	if d.FailedAttempts != 3 {
+		t.Errorf("after 3rd failed attempt, FailedAttempts = %d, want 3", d.FailedAttempts)
+	}
+	if d.Connected != -1 {
+		t.Errorf("3 failed attempts should disconnect, got %d", d.Connected)
+	}
 }

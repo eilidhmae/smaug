@@ -83,6 +83,7 @@ func (s *Server) readLoop(desc *types.DescriptorData, conn gonet.Conn) {
 	defer close(desc.InputQueue)
 
 	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 1024), 1024)
 	for scanner.Scan() {
 		select {
 		case <-s.done:
@@ -122,7 +123,11 @@ func stripTelnetIAC(data []byte) []byte {
 			switch {
 			case cmd >= 251 && cmd <= 254:
 				// WILL (251), WONT (252), DO (253), DONT (254): 3 bytes total.
-				i += 3
+				if i+2 < len(data) {
+					i += 3
+				} else {
+					i = len(data) // truncated sequence, skip to end
+				}
 			case cmd == iac:
 				// Escaped 0xFF – keep one literal 0xFF.
 				out = append(out, iac)

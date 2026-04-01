@@ -1,6 +1,7 @@
 package act
 
 import (
+	"net"
 	"strings"
 	"testing"
 
@@ -15,6 +16,13 @@ func setupOlcWorld() *world.World {
 	return w
 }
 
+// makeImmTestChar creates a test character with immortal trust level for OLC tests.
+func makeImmTestChar(name string) (*types.CharData, net.Conn) {
+	ch, client := makeTestChar(name)
+	ch.Level = types.LEVEL_IMMORTAL
+	return ch, client
+}
+
 // --- DoRlist ---
 
 func TestDoRlist_WithRange(t *testing.T) {
@@ -23,7 +31,7 @@ func TestDoRlist_WithRange(t *testing.T) {
 	w.Rooms[105] = &types.RoomIndexData{Vnum: 105, Name: "Room Beta"}
 	w.Rooms[200] = &types.RoomIndexData{Vnum: 200, Name: "Room Gamma"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoRlist(ch, "100 110")
@@ -42,7 +50,7 @@ func TestDoRlist_WithRange(t *testing.T) {
 
 func TestDoRlist_Empty(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoRlist(ch, "9000 9100")
@@ -55,7 +63,7 @@ func TestDoRlist_Empty(t *testing.T) {
 
 func TestDoRlist_NoArgNoArea(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 1, Name: "Test"}
 
@@ -72,7 +80,7 @@ func TestDoRlist_DefaultArea(t *testing.T) {
 	area := &types.AreaData{Name: "Test Area", LowRVnum: 50, HiRVnum: 60}
 	w.Rooms[55] = &types.RoomIndexData{Vnum: 55, Name: "Area Room", Area: area}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 50, Name: "Start", Area: area}
 
@@ -89,7 +97,7 @@ func TestDoRlist_SingleVnum(t *testing.T) {
 	w.Rooms[300] = &types.RoomIndexData{Vnum: 300, Name: "Room 300"}
 	w.Rooms[350] = &types.RoomIndexData{Vnum: 350, Name: "Room 350"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	// When only one arg given, high = low + 100
@@ -112,7 +120,7 @@ func TestDoOlist_WithRange(t *testing.T) {
 	w.ObjIndex[105] = &types.ObjIndexData{Vnum: 105, Name: "shield", ShortDescr: "an oak shield"}
 	w.ObjIndex[200] = &types.ObjIndexData{Vnum: 200, Name: "potion", ShortDescr: "a healing potion"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoOlist(ch, "100 110")
@@ -131,7 +139,7 @@ func TestDoOlist_WithRange(t *testing.T) {
 
 func TestDoOlist_Empty(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoOlist(ch, "9000 9100")
@@ -144,7 +152,7 @@ func TestDoOlist_Empty(t *testing.T) {
 
 func TestDoOlist_NoArgNoArea(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 1, Name: "Test"}
 
@@ -161,7 +169,7 @@ func TestDoOlist_DefaultArea(t *testing.T) {
 	area := &types.AreaData{Name: "Test Area", LowOVnum: 50, HiOVnum: 60}
 	w.ObjIndex[55] = &types.ObjIndexData{Vnum: 55, Name: "gem", ShortDescr: "a shiny gem"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 50, Name: "Start", Area: area}
 
@@ -181,7 +189,7 @@ func TestDoMlist_WithRange(t *testing.T) {
 	w.MobIndex[105] = &types.MobIndexData{Vnum: 105, PlayerName: "thief", ShortDescr: "a sneaky thief"}
 	w.MobIndex[200] = &types.MobIndexData{Vnum: 200, PlayerName: "dragon", ShortDescr: "a red dragon"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoMlist(ch, "100 110")
@@ -200,7 +208,7 @@ func TestDoMlist_WithRange(t *testing.T) {
 
 func TestDoMlist_Empty(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoMlist(ch, "9000 9100")
@@ -213,7 +221,7 @@ func TestDoMlist_Empty(t *testing.T) {
 
 func TestDoMlist_NoArgNoArea(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 1, Name: "Test"}
 
@@ -230,7 +238,7 @@ func TestDoMlist_DefaultArea(t *testing.T) {
 	area := &types.AreaData{Name: "Test Area", LowMVnum: 50, HiMVnum: 60}
 	w.MobIndex[55] = &types.MobIndexData{Vnum: 55, PlayerName: "rat", ShortDescr: "a sewer rat"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 50, Name: "Start", Area: area}
 
@@ -246,7 +254,7 @@ func TestDoMlist_DefaultArea(t *testing.T) {
 
 func TestDoOcreate_NoArg(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoOcreate(ch, "")
@@ -258,7 +266,7 @@ func TestDoOcreate_NoArg(t *testing.T) {
 
 func TestDoOcreate_Success(t *testing.T) {
 	w := setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.Level = types.LEVEL_IMMORTAL
 
@@ -289,7 +297,7 @@ func TestDoOcreate_DuplicateVnum(t *testing.T) {
 	w := setupOlcWorld()
 	w.ObjIndex[5001] = &types.ObjIndexData{Vnum: 5001, Name: "existing"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoOcreate(ch, "5001 duplicate")
@@ -304,7 +312,7 @@ func TestDoOcreate_DuplicateVnum(t *testing.T) {
 
 func TestDoMcreate_NoArg(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoMcreate(ch, "")
@@ -319,7 +327,7 @@ func TestDoMcreate_Success(t *testing.T) {
 	room := &types.RoomIndexData{Vnum: 7100, Name: "Build Room"}
 	w.Rooms[7100] = room
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	handler.CharToRoom(ch, room)
 
@@ -338,7 +346,7 @@ func TestDoMcreate_DuplicateVnum(t *testing.T) {
 	w := setupOlcWorld()
 	w.MobIndex[6001] = &types.MobIndexData{Vnum: 6001, PlayerName: "existing"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoMcreate(ch, "6001 duplicate")
@@ -353,7 +361,7 @@ func TestDoMcreate_DuplicateVnum(t *testing.T) {
 
 func TestDoRedit_NoArg(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 7200, Name: "Build Room"}
 
@@ -367,7 +375,7 @@ func TestDoRedit_NoArg(t *testing.T) {
 func TestDoRedit_SetName(t *testing.T) {
 	_ = setupOlcWorld()
 	room := &types.RoomIndexData{Vnum: 7201, Name: "Old Name"}
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -385,7 +393,7 @@ func TestDoRedit_SetName(t *testing.T) {
 func TestDoRedit_ShowName(t *testing.T) {
 	_ = setupOlcWorld()
 	room := &types.RoomIndexData{Vnum: 7202, Name: "Current Name"}
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -400,7 +408,7 @@ func TestDoRedit_ShowName(t *testing.T) {
 func TestDoRedit_SetSector(t *testing.T) {
 	_ = setupOlcWorld()
 	room := &types.RoomIndexData{Vnum: 7203, Name: "Test", SectorType: types.SECT_INSIDE}
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -418,7 +426,7 @@ func TestDoRedit_SetSector(t *testing.T) {
 func TestDoRedit_AddExdesc(t *testing.T) {
 	_ = setupOlcWorld()
 	room := &types.RoomIndexData{Vnum: 7204, Name: "Test"}
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -438,7 +446,7 @@ func TestDoRedit_AddExdesc(t *testing.T) {
 
 func TestDoRedit_NilRoom(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = nil
 
@@ -453,7 +461,7 @@ func TestDoRedit_NilRoom(t *testing.T) {
 
 func TestDoRdig_NoArg(t *testing.T) {
 	_ = setupOlcWorld()
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
 	DoRdig(ch, "")
@@ -468,7 +476,7 @@ func TestDoRdig_Success(t *testing.T) {
 	room := &types.RoomIndexData{Vnum: 7300, Name: "Start Room"}
 	w.Rooms[7300] = room
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	handler.CharToRoom(ch, room)
 
@@ -509,7 +517,7 @@ func TestDoRdig_Success(t *testing.T) {
 func TestEditExit_NoArg(t *testing.T) {
 	_ = setupOlcWorld()
 	room := &types.RoomIndexData{Vnum: 7400, Name: "Test"}
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -527,7 +535,7 @@ func TestEditExit_SetVnum(t *testing.T) {
 	w.Rooms[7401] = room
 	w.Rooms[7402] = dest
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -556,7 +564,7 @@ func TestEditExit_Delete(t *testing.T) {
 		{Direction: types.DIR_NORTH, ToRoom: &types.RoomIndexData{Vnum: 1}},
 	}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -574,7 +582,7 @@ func TestEditExit_Delete(t *testing.T) {
 func TestEditExit_InvalidDirection(t *testing.T) {
 	_ = setupOlcWorld()
 	room := &types.RoomIndexData{Vnum: 7404, Name: "Test"}
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -590,7 +598,7 @@ func TestEditExit_BadDestVnum(t *testing.T) {
 	room := &types.RoomIndexData{Vnum: 7405, Name: "Test"}
 	w.Rooms[7405] = room
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = room
 
@@ -605,7 +613,7 @@ func TestDoRdig_ExistingVnum(t *testing.T) {
 	w := setupOlcWorld()
 	w.Rooms[7302] = &types.RoomIndexData{Vnum: 7302, Name: "Existing"}
 
-	ch, client := makeTestChar("Builder")
+	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 7303, Name: "Start"}
 
@@ -613,5 +621,45 @@ func TestDoRdig_ExistingVnum(t *testing.T) {
 	out := readOutput(ch, client)
 	if !strings.Contains(out, "already exists") {
 		t.Errorf("expected 'already exists', got: %q", out)
+	}
+}
+
+func TestOLC_DefenseInDepth(t *testing.T) {
+	_ = setupOlcWorld()
+
+	// Create a mortal character (level 1, no trust override)
+	mortal, client := makeTestChar("Mortal")
+	defer client.Close()
+	mortal.Level = 1
+	mortal.InRoom = &types.RoomIndexData{Vnum: 100, Name: "Original Name"}
+
+	tests := []struct {
+		name string
+		fn   func(ch *types.CharData, argument string)
+		arg  string
+	}{
+		{"DoRedit", DoRedit, "name Hacked Room"},
+		{"DoOcreate", DoOcreate, "9999 hacked object"},
+		{"DoMcreate", DoMcreate, "9999 hacked mob"},
+		{"DoRdig", DoRdig, "north 9999"},
+		{"DoRlist", DoRlist, "100 200"},
+		{"DoOlist", DoOlist, "100 200"},
+		{"DoMlist", DoMlist, "100 200"},
+		{"DoSaveArea", DoSaveArea, ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.fn(mortal, tc.arg)
+			out := readOutput(mortal, client)
+			if !strings.Contains(out, "Huh?") {
+				t.Errorf("%s should reject mortal with 'Huh?', got: %q", tc.name, out)
+			}
+		})
+	}
+
+	// Verify DoRedit didn't modify the room
+	if mortal.InRoom.Name != "Original Name" {
+		t.Errorf("room name should be unchanged, got: %q", mortal.InRoom.Name)
 	}
 }

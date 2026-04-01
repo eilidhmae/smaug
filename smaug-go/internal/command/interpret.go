@@ -108,3 +108,49 @@ func (r *Registry) Interpret(ch *types.CharData, argument string) {
 
 	cmd.DoFun(ch, rest)
 }
+
+// InterpretWithTrustCap is like Interpret but caps the effective trust level
+// for command lookup. Used by force to prevent privilege escalation.
+func (r *Registry) InterpretWithTrustCap(ch *types.CharData, argument string, maxTrust int) {
+	argument = strings.TrimSpace(argument)
+	if argument == "" {
+		return
+	}
+
+	cmdWord, rest := util.OneArgument(argument)
+	trust := ch.GetTrust()
+	if trust > maxTrust {
+		trust = maxTrust
+	}
+	cmd := r.Find(cmdWord, trust)
+
+	if cmd == nil {
+		if r.SocialFallback != nil && r.SocialFallback(ch, cmdWord, rest) {
+			return
+		}
+		ch.Send("Huh?\n\r")
+		return
+	}
+
+	if ch.Position < cmd.Position {
+		switch ch.Position {
+		case int(types.POS_DEAD):
+			ch.Send("Lie still; you are DEAD.\n\r")
+		case int(types.POS_MORTAL), int(types.POS_INCAP):
+			ch.Send("You are hurt far too bad for that.\n\r")
+		case int(types.POS_STUNNED):
+			ch.Send("You are too stunned to do that.\n\r")
+		case int(types.POS_SLEEPING):
+			ch.Send("In your dreams, or what?\n\r")
+		case int(types.POS_RESTING):
+			ch.Send("Nah... You feel too relaxed...\n\r")
+		case int(types.POS_SITTING):
+			ch.Send("Better stand up first.\n\r")
+		case int(types.POS_FIGHTING):
+			ch.Send("No way!  You are still fighting!\n\r")
+		}
+		return
+	}
+
+	cmd.DoFun(ch, rest)
+}

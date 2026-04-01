@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
@@ -1429,5 +1430,115 @@ func TestDoSlay_Player(t *testing.T) {
 	}
 	if victim.Position != types.POS_RESTING {
 		t.Errorf("player victim should be resting, got: %d", victim.Position)
+	}
+}
+
+func TestDoForce_TrustCap(t *testing.T) {
+	w := setupWizWorld()
+
+	// Create a command at level 58 (between forcer trust 55 and victim trust 60)
+	reg := command.NewRegistry()
+	dispatched := false
+	reg.Register(&command.Command{
+		Name:     "secretwiz",
+		Position: 0,
+		Level:    58,
+		DoFun: func(ch *types.CharData, argument string) {
+			dispatched = true
+		},
+	})
+	CmdRegistry = reg
+
+	room := &types.RoomIndexData{Vnum: 3001, Name: "Test Room"}
+	w.Rooms[3001] = room
+
+	// Forcer: trust level 55
+	forcer, forcerClient := makeTestChar("Forcer")
+	defer forcerClient.Close()
+	forcer.Level = 55
+	handler.CharToRoom(forcer, room)
+	w.Descriptors = append(w.Descriptors, forcer.Desc)
+
+	// Victim: trust level 60 (higher than forcer)
+	victim, victimClient := makeTestChar("Victim")
+	defer victimClient.Close()
+	victim.Level = 60
+	handler.CharToRoom(victim, room)
+	w.Descriptors = append(w.Descriptors, victim.Desc)
+
+	// Force victim to run "secretwiz" — should be blocked because trust is
+	// capped to forcer's 55, which is below the command's level 58
+	DoForce(forcer, "Victim secretwiz")
+	_ = readOutput(forcer, forcerClient)
+	_ = readOutput(victim, victimClient)
+
+	if dispatched {
+		t.Fatal("secretwiz should NOT have been dispatched — trust capped to forcer's 55, command needs 58")
+	}
+
+	// Now test that a command within the forcer's trust level works
+	lowVictim, lowVictimClient := makeTestChar("LowVictim")
+	defer lowVictimClient.Close()
+	lowVictim.Level = 52
+	handler.CharToRoom(lowVictim, room)
+	w.Descriptors = append(w.Descriptors, lowVictim.Desc)
+
+	allowedCmd := false
+	reg.Register(&command.Command{
+		Name:     "allowed",
+		Position: 0,
+		Level:    50,
+		DoFun: func(ch *types.CharData, argument string) {
+			allowedCmd = true
+		},
+	})
+
+	DoForce(forcer, "LowVictim allowed")
+	_ = readOutput(forcer, forcerClient)
+	_ = readOutput(lowVictim, lowVictimClient)
+
+	if !allowedCmd {
+		t.Fatal("allowed command should have been dispatched — level 50 is within forcer's trust 55")
+	}
+}
+
+func TestDoForce_TrustCapAll(t *testing.T) {
+	w := setupWizWorld()
+
+	reg := command.NewRegistry()
+	dispatched := 0
+	reg.Register(&command.Command{
+		Name:     "highcmd",
+		Position: 0,
+		Level:    58,
+		DoFun: func(ch *types.CharData, argument string) {
+			dispatched++
+		},
+	})
+	CmdRegistry = reg
+
+	room := &types.RoomIndexData{Vnum: 3002, Name: "Test Room"}
+	w.Rooms[3002] = room
+
+	// Forcer at trust 55
+	forcer, forcerClient := makeTestChar("Forcer")
+	defer forcerClient.Close()
+	forcer.Level = 55
+	handler.CharToRoom(forcer, room)
+
+	// Target at trust 52 (lower than forcer, so force applies)
+	target, targetClient := makeTestChar("Target")
+	defer targetClient.Close()
+	target.Level = 52
+	handler.CharToRoom(target, room)
+	w.Descriptors = []*types.DescriptorData{forcer.Desc, target.Desc}
+
+	// "force all highcmd" — highcmd needs trust 58, forcer has 55, so capped
+	DoForce(forcer, "all highcmd")
+	_ = readOutput(forcer, forcerClient)
+	_ = readOutput(target, targetClient)
+
+	if dispatched != 0 {
+		t.Fatalf("highcmd should NOT have been dispatched via force all, but was dispatched %d times", dispatched)
 	}
 }

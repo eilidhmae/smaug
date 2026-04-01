@@ -200,3 +200,116 @@ func TestInterpret_PositionCheck(t *testing.T) {
 		t.Fatalf("expected %q, got %q", expected, out)
 	}
 }
+
+// ---------- Registry.InterpretWithTrustCap tests ----------
+
+func TestInterpretWithTrustCap_BlocksHighLevelCommand(t *testing.T) {
+	r := NewRegistry()
+	dispatched := false
+	r.Register(&Command{
+		Name:     "wiztest",
+		Position: 0,
+		Level:    50,
+		DoFun: func(ch *types.CharData, argument string) {
+			dispatched = true
+		},
+	})
+
+	// Character has trust 60 (high enough), but cap is 40 (too low)
+	ch, client := makeTestChar("HighTrust")
+	defer client.Close()
+	defer ch.Desc.Conn.Close()
+	ch.Level = 60
+
+	r.InterpretWithTrustCap(ch, "wiztest", 40)
+
+	out := readOutput(ch, client)
+	if dispatched {
+		t.Fatal("command should NOT have been dispatched with trust cap 40")
+	}
+	if out != "Huh?\n\r" {
+		t.Fatalf("expected %q, got %q", "Huh?\n\r", out)
+	}
+}
+
+func TestInterpretWithTrustCap_AllowsWithinCap(t *testing.T) {
+	r := NewRegistry()
+	dispatched := false
+	r.Register(&Command{
+		Name:     "wiztest",
+		Position: 0,
+		Level:    50,
+		DoFun: func(ch *types.CharData, argument string) {
+			dispatched = true
+		},
+	})
+
+	ch, client := makeTestChar("HighTrust")
+	defer client.Close()
+	defer ch.Desc.Conn.Close()
+	ch.Level = 60
+
+	r.InterpretWithTrustCap(ch, "wiztest", 55)
+
+	if !dispatched {
+		t.Fatal("command should have been dispatched with trust cap 55")
+	}
+}
+
+func TestInterpretWithTrustCap_PositionCheck(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&Command{
+		Name:     "stand",
+		Position: types.POS_STANDING,
+		Level:    0,
+		DoFun:    func(ch *types.CharData, argument string) {},
+	})
+
+	positions := []struct {
+		pos  int
+		want string
+	}{
+		{types.POS_DEAD, "Lie still; you are DEAD.\n\r"},
+		{types.POS_MORTAL, "You are hurt far too bad for that.\n\r"},
+		{types.POS_INCAP, "You are hurt far too bad for that.\n\r"},
+		{types.POS_STUNNED, "You are too stunned to do that.\n\r"},
+		{types.POS_SLEEPING, "In your dreams, or what?\n\r"},
+		{types.POS_RESTING, "Nah... You feel too relaxed...\n\r"},
+		{types.POS_SITTING, "Better stand up first.\n\r"},
+		{types.POS_FIGHTING, "No way!  You are still fighting!\n\r"},
+	}
+	for _, tt := range positions {
+		ch, client := makeTestChar("Pos")
+		ch.Position = tt.pos
+		r.InterpretWithTrustCap(ch, "stand", 100)
+		out := readOutput(ch, client)
+		if out != tt.want {
+			t.Errorf("pos %d: got %q, want %q", tt.pos, out, tt.want)
+		}
+		client.Close()
+		ch.Desc.Conn.Close()
+	}
+}
+
+func TestInterpretWithTrustCap_NoCapNeeded(t *testing.T) {
+	r := NewRegistry()
+	dispatched := false
+	r.Register(&Command{
+		Name:     "look",
+		Position: 0,
+		Level:    0,
+		DoFun: func(ch *types.CharData, argument string) {
+			dispatched = true
+		},
+	})
+
+	ch, client := makeTestChar("Player")
+	defer client.Close()
+	defer ch.Desc.Conn.Close()
+
+	r.InterpretWithTrustCap(ch, "look", 5)
+
+	if !dispatched {
+		t.Fatal("level-0 command should be dispatched even with low cap")
+	}
+}

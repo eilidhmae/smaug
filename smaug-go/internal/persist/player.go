@@ -3,6 +3,8 @@ package persist
 import (
 	"fmt"
 	"io"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/eilidhmae/smaug/internal/types"
@@ -217,7 +219,11 @@ func parsePlayerField(ch *types.CharData, word string, sc *Scanner) {
 	case "Pagerlen":
 		ch.PCData.PagerLen = sc.ReadNumber()
 	case "Trust":
-		ch.Trust = sc.ReadNumber()
+		trust := sc.ReadNumber()
+		if trust > types.LEVEL_SUPREME {
+			trust = types.LEVEL_SUPREME
+		}
+		ch.Trust = trust
 	case "WizInvis":
 		ch.PCData.WizInvis = sc.ReadNumber()
 	case "Bamfin":
@@ -589,9 +595,17 @@ func roomVnum(ch *types.CharData) int {
 	return types.ROOM_VNUM_TEMPLE
 }
 
+// validPlayerName matches names that are 3-12 alphabetic characters.
+var validPlayerName = regexp.MustCompile(`^[a-zA-Z]{3,12}$`)
+
 // PlayerFilePath returns the path for a player's save file.
+// It validates the name to prevent path traversal attacks.
 func PlayerFilePath(dataDir, name string) string {
 	if name == "" {
+		return ""
+	}
+	name = filepath.Base(name)
+	if !validPlayerName.MatchString(name) {
 		return ""
 	}
 	first := strings.ToLower(name[:1])

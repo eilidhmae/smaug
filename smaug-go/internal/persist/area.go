@@ -29,7 +29,12 @@ func LoadAreas(w *world.World, areaDir string) error {
 		if line == "$" {
 			break
 		}
-		areaPath := filepath.Join(areaDir, line)
+		base := filepath.Base(line)
+		if !strings.HasSuffix(strings.ToLower(base), ".are") {
+			util.Bug("LoadAreas: skipping non-.are file: %s", line)
+			continue
+		}
+		areaPath := filepath.Join(areaDir, base)
 		if err := loadAreaFile(w, areaPath); err != nil {
 			util.Bug("LoadAreas: error loading %s: %v", areaPath, err)
 			// Continue loading other areas, like the C code does during boot.
