@@ -15,6 +15,7 @@ import (
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/game"
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	smaugnet "github.com/eilidhmae/smaug/internal/net"
 	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
@@ -59,6 +60,13 @@ func main() {
 
 	// Wire social fallback for command interpreter
 	cmdReg.SocialFallback = act.CheckSocial
+
+	// Wire mudprog system
+	mudprog.CmdRegistry = cmdReg
+	mudprog.WorldRef = w
+
+	// Wire OLC editor function
+	act.StartEditingFunc = game.StartEditing
 
 	// Start network server
 	if err := server.Start(*port); err != nil {
@@ -227,6 +235,19 @@ func registerCommands() *command.Registry {
 	// Config commands
 	reg.Register(&command.Command{Name: "pager", DoFun: act.DoPager, Position: types.POS_DEAD, Level: 0})
 
+	// Clan/deity/board commands
+	reg.Register(&command.Command{Name: "clans", DoFun: act.DoClans, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "claninfo", DoFun: act.DoClanInfo, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "clantalk", DoFun: act.DoClantalk, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "join", DoFun: act.DoClanJoin, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "leave", DoFun: act.DoClanLeave, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "deities", DoFun: act.DoDeities, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "devote", DoFun: act.DoDevote, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "note", DoFun: act.DoNote, Position: types.POS_RESTING, Level: 0})
+
+	// Immortal control (additional)
+	reg.Register(&command.Command{Name: "snoop", DoFun: act.DoSnoop, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
 	// Shop commands
 	reg.Register(&command.Command{Name: "buy", DoFun: act.DoBuy, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "sell", DoFun: act.DoSell, Position: types.POS_STANDING, Level: 0})
@@ -304,6 +325,16 @@ func registerCommands() *command.Registry {
 	// Immortal system
 	reg.Register(&command.Command{Name: "echo", DoFun: act.DoEcho, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "recho", DoFun: act.DoRecho, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
+	// OLC commands
+	reg.Register(&command.Command{Name: "redit", DoFun: act.DoRedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "ocreate", DoFun: act.DoOcreate, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "mcreate", DoFun: act.DoMcreate, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "rdig", DoFun: act.DoRdig, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "rlist", DoFun: act.DoRlist, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "olist", DoFun: act.DoOlist, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "mlist", DoFun: act.DoMlist, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "savearea", DoFun: act.DoSaveArea, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 
 	// Movement commands
 	reg.Register(&command.Command{Name: "north", DoFun: act.DoNorth, Position: types.POS_STANDING, Level: 0})

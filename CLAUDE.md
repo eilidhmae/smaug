@@ -34,11 +34,11 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - `smaug-go/doc/phase2-completed.md` — Phase 2 record (completed work so far)
 - `smaug-go/doc/phase2-remaining.md` — Phase 2 task breakdown with priority order
 - `smaug-go/doc/phase3-plan.md` — Phase 3 implementation plan: 12 task groups with dependencies and execution order
-- `smaug-go/doc/phase3-completed.md` — Phase 3 record (completed work so far: G1, G2, G4, G6)
+- `smaug-go/doc/phase3-completed.md` — Phase 3 record (all 12 task groups complete)
 
 ## Current Status
 
-**Phase 1 complete. Phase 2 complete. Phase 3 in progress (G1, G2, G4, G6 complete).** 51 source files, 29 test files, 527 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
+**Phase 1 complete. Phase 2 complete. Phase 3 complete.** 67 source files, 36 test files, 572 test cases — all passing across 13 packages. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races, 8 clans, 2 deities, 496 socials, 2 boards.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -49,7 +49,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Single-threaded game loop at 4 pulses/second
 - Command interpreter with prefix matching
 - Room navigation (10 directions) with auto-look through real loaded rooms
-- Commands: look, quit, say, score, who, help, commands, inventory, equipment, get, drop, put, give, wear, remove, sacrifice, kill, flee, tell, reply, yell, gossip, emote, open, close, unlock, lock, consider, where, time, cast, eat, drink, fill, empty, examine, shout, pmote, pager, weather, murder, wimpy, buy, sell, list, value, mstat, ostat, rstat
+- Commands (90+): look, quit, say, score, who, help, commands, inventory, equipment, get, drop, put, give, wear, remove, sacrifice, kill, flee, tell, reply, yell, gossip, emote, open, close, unlock, lock, consider, where, time, cast, eat, drink, fill, empty, examine, shout, pmote, pager, weather, murder, wimpy, buy, sell, list, value, backstab, bash, kick, disarm, rescue, sneak, hide, steal, pick, scan, aid, recall, clans, claninfo, clantalk, join, leave, deities, devote, note, mstat, ostat, rstat, goto, transfer, at, bamfin, bamfout, force, peace, purge, restore, advance, slay, mfind, ofind, mwhere, owhere, users, invis, holylight, freeze, silence, echo, recho, snoop, redit, ocreate, mcreate, rdig, rlist, olist, mlist, savearea
 - Area file loading from `db/area/*.are` with skip-and-recover on parse errors
 - Exit resolution (vnum → room pointer linking after all areas load)
 - Area reset processing: mob/object instantiation (M/O/P/G/E/D/H reset commands)
@@ -76,19 +76,22 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Magic system: 20 spells (3 heals, 2 damage, 3 buffs, 4 debuffs, 4 detects, sleep, charm, shield, identify), cast command with mana/target/save, spell function registry
 - Pager: page long output with (C)ontinue/(N)on-stop/(R)efresh/(B)ack/(Q)uit, configurable page length, pager command to toggle on/off
 - String editor: line-based text editor for OLC descriptions (/l /c /d /g /i /r /f /a /s commands), CON_EDITING integration in game loop
-- Immortal commands: mstat, ostat, rstat (inspect mob/object/room data, pager-aware)
-- Test suite: 29 files, 527 cases covering types, util, net, persist, command, world, handler, game, act, combat, magic (mutation-verified)
+- Immortal commands (26): goto, transfer, at, bamfin/bamfout, force, peace, purge, restore, advance, slay, mfind, ofind, mwhere, owhere, users, invis, holylight, freeze, silence, echo, recho, snoop, mstat, ostat, rstat
+- Combat skills (12): backstab, bash, kick, disarm, rescue, sneak, hide, steal, pick, scan, aid, recall — with skill improvement on use (learnFromSuccess/learnFromFailure)
+- Magic system: 32 spells (3 heals + heal, 2 damage, 3 buffs, 4 debuffs, 4 detects, sleep, charm, shield, identify, locate object, create food/water, summon, teleport, enchant weapon/armor, invis, fly), cast command with mana/target/save, spell function registry
+- Subsystem loaders: clans (8 loaded), deities (2 loaded), socials (496 loaded), boards (2 loaded) from db/ data files
+- Social dispatch: 496 social commands as fallback in command interpreter with $n/$N/$e/$m/$s variable substitution
+- Clan commands: clans, claninfo, clantalk, join, leave — with member tracking
+- Deity commands: deities, devote (with worshipper tracking)
+- Board/note commands: note list/read/write/post/remove
+- MUD Programs: script interpreter with if/or/else/endif, ~25 if-checks (rand, level, hp, ispc, isevil, etc.), variable substitution ($n/$t/$o etc.), 7 trigger types (greet, speech, fight, death, rand, give, entry), mp commands (mpecho, mpgoto, mptransfer, mpforce, mpkill, mpdamage, mppurge)
+- OLC: redit (name/desc/sector/flags/exdesc/exit), ocreate, mcreate, rdig, rlist, olist, mlist, savearea
+- Area save: persist/area_write.go writes rooms, mobs, objects, resets, shops to .are files
+- Protocol support: telnet negotiation helpers, MCCP2 zlib compression, MSDP variable reporting, MSSP server status
+- Test suite: 36 files, 572 cases covering all 13 packages (types, util, net, persist, command, world, handler, game, act, combat, magic, mudprog)
 
-### What's next (Phase 3: Advanced Systems — in progress)
-See `smaug-go/doc/phase3-plan.md` for the full plan and `smaug-go/doc/phase3-completed.md` for completed work. Remaining groups:
-- **G3:** Subsystem data loaders (clans, councils, deities, boards, socials)
-- **G5:** Immortal commands — core set (goto, force, peace, purge, etc.) — depends on G4 ✓
-- **G7:** Remaining spells/skills (~50 functions)
-- **G8:** OLC — online creation — depends on G1 ✓, G4 ✓, G5
-- **G9:** Clans/boards — depends on G3
-- **G10:** MUD programs — depends on G5, G7
-- **G11:** Protocol support (MCCP2, MSDP, MSSP)
-- **G12:** OLC area save — depends on G8
+### What's next (Phase 4)
+Phase 3 is complete. See `smaug-go/doc/phase3-completed.md` for the full record. Phase 4 (polish, overland maps, advanced features) is not yet planned.
 
 ## Building and Running the Go Port
 
@@ -136,12 +139,12 @@ smaug-go/
     persist/                          # File format I/O — scanner, area, classes, races, player, skills (6 files)
     net/                              # TCP server + color processing (2 files)
     game/                             # Game loop, nanny, pager, string editor, updates (6 files)
-    command/                          # Command registry + interpreter (1 file)
-    act/                              # Player commands — info, combat, movement, objects, shops, wiz (10 files)
+    command/                          # Command registry + interpreter with social fallback (1 file)
+    act/                              # Player commands — info, combat, movement, objects, shops, wiz, clans, OLC, skills, socials (16 files)
     handler/                          # Entity manipulation: create mob/obj, room placement, area resets, find (3 files)
-    combat/                           # Combat system: fighting, damage, corpses (1 file)
-    magic/                            # Spell/skill system: 20 spells + cast command (1 file)
-    mudprog/                          # (future) MUD program interpreter
+    combat/                           # Combat system: fighting, damage, corpses, dual wield (1 file)
+    magic/                            # Spell/skill system: 32 spells + cast command (1 file)
+    mudprog/                          # MUD program interpreter: driver, if-checks, triggers, commands, variable substitution (4 files)
     overland/                         # (future) Overland maps
   doc/                                # Port documentation
 ```
@@ -188,8 +191,19 @@ Key C files to reference when porting (in `src/`):
 4. Refactor if needed, confirm tests still pass
 5. Commit
 
-### Backfilling tests for existing code
-When adding tests for code that already exists, verify the tests actually exercise the code by temporarily breaking the implementation (e.g., change a return value, flip a condition, short-circuit a function), confirming the test fails, then reverting the breakage and confirming the test passes. This proves the test is not vacuous.
+### Strive for code coverage
+- Aim for high code coverage on all new and modified code
+- Use `go test -cover ./...` to check coverage across packages
+- Use `go test -coverprofile=coverage.out ./internal/package/` and `go tool cover -func=coverage.out` to identify untested functions
+- Prioritise covering critical paths: combat, spell resolution, file I/O, command dispatch
+
+### Mutation testing for existing code
+When adding tests for code that already exists, use mutation testing to verify the tests are meaningful:
+1. Stage your working code: `git add <filename>` to save changes you want to keep
+2. Mutate the implementation (change a return value, flip a condition, short-circuit a function)
+3. Run the tests — confirm they **fail** (proving the test catches the mutation)
+4. Restore the original: `git checkout <filename>` to revert the mutation
+5. Run the tests again — confirm they **pass**
 
 ### Test file placement
 - Tests live next to the code they test: `foo.go` → `foo_test.go`
@@ -204,11 +218,18 @@ When adding tests for code that already exists, verify the tests actually exerci
 - **World operations** — test AddChar/RemoveChar, GetRoom, etc.
 - **Commands** — use a fake descriptor with a buffer to capture output, verify command output
 
+### Use Sub-Agents whenever possible
+1. You read the full documents so that you have the full context.
+2. Give the Sub-Agents explicit directions. Do not give them full context.
+
 ### Running tests
 ```bash
 cd smaug-go
 go test ./...                    # all tests
+go test -cover ./...             # all tests with coverage summary
 go test ./internal/types/        # one package
 go test -v ./internal/util/      # verbose
 go test -run TestBitVector ./internal/types/  # one test
+go test -coverprofile=coverage.out ./internal/combat/  # coverage profile
+go tool cover -func=coverage.out                       # show per-function coverage
 ```
