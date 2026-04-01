@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 	"github.com/eilidhmae/smaug/internal/world"
@@ -93,6 +94,43 @@ func DoLook(ch *types.CharData, argument string) {
 	ch.Send("You do not see that here.\n\r")
 }
 
+// DoExamine implements the 'examine' command: look + show contents.
+func DoExamine(ch *types.CharData, argument string) {
+	arg, _ := util.OneArgument(argument)
+	if arg == "" {
+		ch.Send("Examine what?\n\r")
+		return
+	}
+
+	// First do a normal look
+	DoLook(ch, arg)
+
+	// Then show container contents or drink level
+	obj := handler.GetObjHere(ch, arg)
+	if obj == nil {
+		return
+	}
+
+	switch obj.ItemType {
+	case types.ITEM_DRINK_CON:
+		if obj.Value[1] <= 0 {
+			ch.Send("It is empty.\n\r")
+		} else {
+			ch.Sendf("It contains some liquid.\n\r")
+		}
+
+	case types.ITEM_CONTAINER, types.ITEM_CORPSE_NPC, types.ITEM_CORPSE_PC:
+		ch.Sendf("%s contains:\n\r", util.Capitalize(obj.ShortDescr))
+		if len(obj.Contents) == 0 {
+			ch.Send("  Nothing.\n\r")
+		} else {
+			for _, item := range obj.Contents {
+				ch.Sendf("  %s\n\r", item.ShortDescr)
+			}
+		}
+	}
+}
+
 func showExits(ch *types.CharData, room *types.RoomIndexData) {
 	dirNames := []string{"north", "east", "south", "west", "up", "down",
 		"northeast", "northwest", "southeast", "southwest"}
@@ -119,18 +157,134 @@ func showExits(ch *types.CharData, room *types.RoomIndexData) {
 
 // DoScore implements the 'score' command.
 func DoScore(ch *types.CharData, argument string) {
-	ch.Sendf("You are %s.\n\r", ch.Name)
-	ch.Sendf("Level: %d  Race: %d  Class: %d  Sex: %d\n\r",
-		ch.Level, ch.Race, ch.Class, ch.Sex)
+	// Race and class names
+	raceName := "Unknown"
+	if ch.Race >= 0 && ch.Race < len(WorldRef.Races) && WorldRef.Races[ch.Race] != nil {
+		raceName = WorldRef.Races[ch.Race].Name
+	}
+	className := "Unknown"
+	if ch.Class >= 0 && ch.Class < len(WorldRef.Classes) && WorldRef.Classes[ch.Class] != nil {
+		className = WorldRef.Classes[ch.Class].WhoName
+	}
+
+	sexName := "Neutral"
+	switch ch.Sex {
+	case types.SEX_MALE:
+		sexName = "Male"
+	case types.SEX_FEMALE:
+		sexName = "Female"
+	}
+
+	ch.Sendf("&W----- Score for %s -----&D\n\r", ch.Name)
+	if ch.PCData != nil && ch.PCData.Title != "" {
+		ch.Sendf("Title: %s %s\n\r", ch.Name, ch.PCData.Title)
+	}
+	ch.Sendf("Level: %-3d  Race: %-12s  Class: %-12s  Sex: %s\n\r",
+		ch.Level, raceName, className, sexName)
 	ch.Sendf("Hp: %d/%d  Mana: %d/%d  Move: %d/%d\n\r",
 		ch.Hit, ch.MaxHit, ch.Mana, ch.MaxMana, ch.Move, ch.MaxMove)
-	ch.Sendf("Str: %d  Int: %d  Wis: %d  Dex: %d  Con: %d  Cha: %d  Lck: %d\n\r",
+	ch.Send("\n\r")
+	ch.Sendf("Str: %-3d  Int: %-3d  Wis: %-3d  Dex: %-3d  Con: %-3d  Cha: %-3d  Lck: %-3d\n\r",
 		ch.GetCurrStr(), ch.GetCurrInt(), ch.GetCurrWis(),
 		ch.GetCurrDex(), ch.GetCurrCon(), ch.GetCurrCha(), ch.GetCurrLck())
-	ch.Sendf("Hitroll: %d  Damroll: %d  Armor: %d\n\r",
+	ch.Sendf("Hitroll: %-3d  Damroll: %-3d  Armor: %d\n\r",
 		ch.Hitroll, ch.Damroll, ch.Armor)
+	ch.Sendf("Alignment: %-5d  ", ch.Alignment)
+
+	// Alignment descriptor
+	switch {
+	case ch.Alignment > 900:
+		ch.Send("(Angelic)")
+	case ch.Alignment > 700:
+		ch.Send("(Saintly)")
+	case ch.Alignment > 350:
+		ch.Send("(Good)")
+	case ch.Alignment > 100:
+		ch.Send("(Kind)")
+	case ch.Alignment > -100:
+		ch.Send("(Neutral)")
+	case ch.Alignment > -350:
+		ch.Send("(Mean)")
+	case ch.Alignment > -700:
+		ch.Send("(Evil)")
+	case ch.Alignment > -900:
+		ch.Send("(Demonic)")
+	default:
+		ch.Send("(Satanic)")
+	}
+	ch.Send("\n\r")
+
 	ch.Sendf("Gold: %d  Exp: %d\n\r", ch.Gold, ch.Exp)
-	ch.Sendf("Alignment: %d  Position: %d\n\r", ch.Alignment, ch.Position)
+
+	if ch.PCData != nil {
+		ch.Sendf("Pkills: %d  Pdeaths: %d  Mkills: %d  Mdeaths: %d\n\r",
+			ch.PCData.PKills, ch.PCData.PDeaths, ch.PCData.MKills, ch.PCData.MDeaths)
+	}
+
+	// Items carried
+	ch.Sendf("Items: %d  Weight: %d\n\r", ch.CarryNumber, ch.CarryWeight)
+
+	// Wimpy
+	if ch.Wimpy > 0 {
+		ch.Sendf("Wimpy set to %d hit points.\n\r", ch.Wimpy)
+	}
+
+	// Affects
+	if len(ch.Affects) > 0 {
+		ch.Send("\n\r&WActive affects:&D\n\r")
+		for _, aff := range ch.Affects {
+			name := "unknown"
+			if aff.Type >= 0 && aff.Type < len(WorldRef.Skills) && WorldRef.Skills[aff.Type] != nil {
+				name = WorldRef.Skills[aff.Type].Name
+			}
+			if aff.Duration >= 0 {
+				ch.Sendf("  %-18s: %d rounds remaining\n\r", name, aff.Duration)
+			} else {
+				ch.Sendf("  %-18s: permanent\n\r", name)
+			}
+		}
+	}
+}
+
+// DoWeather implements the 'weather' command.
+func DoWeather(ch *types.CharData, argument string) {
+	if ch.InRoom == nil {
+		ch.Send("You can't see the weather from here.\n\r")
+		return
+	}
+	if ch.InRoom.RoomFlags.IsSet(types.ROOM_INDOORS) {
+		ch.Send("You can't see the weather indoors.\n\r")
+		return
+	}
+
+	sky := "cloudless"
+	if WorldRef != nil {
+		switch WorldRef.TimeInfo.Sunlight {
+		case types.SUN_DARK:
+			sky = "dark and "
+		case types.SUN_RISE:
+			sky = "dawn and "
+		case types.SUN_LIGHT:
+			sky = "bright and "
+		case types.SUN_SET:
+			sky = "dusk and "
+		}
+
+		switch WorldRef.WeatherInfo.Sky {
+		case types.SKY_CLOUDLESS:
+			sky += "cloudless"
+		case types.SKY_CLOUDY:
+			sky += "cloudy"
+		case types.SKY_RAINING:
+			sky += "rainy"
+		case types.SKY_LIGHTNING:
+			sky += "stormy with lightning"
+		}
+
+		ch.Sendf("The sky is %s.\n\r", sky)
+	} else {
+		ch.Send("The sky is clear.\n\r")
+	}
 }
 
 // DoWho implements the 'who' command.

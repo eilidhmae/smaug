@@ -86,7 +86,41 @@ func ViolenceUpdate(w *world.World) {
 				OneHit(w, ch, victim, types.TYPE_UNDEFINED)
 			}
 		}
+
+		// Dual wield extra attack
+		if ch.Fighting != nil && handler.GetEqChar(ch, types.WEAR_DUAL_WIELD) != nil {
+			OneHit(w, ch, victim, types.TYPE_UNDEFINED)
+		}
+
+		// Wimpy auto-flee check
+		if ch.Fighting != nil && !ch.IsNPC() && ch.Wimpy > 0 && ch.Hit <= ch.Wimpy {
+			ch.Send("You wimp out and attempt to flee!\n\r")
+			// Try each direction
+			for dir := 0; dir <= types.DIR_DOWN; dir++ {
+				if ch.InRoom == nil {
+					break
+				}
+				exit := ch.InRoom.GetExit(dir)
+				if exit != nil && exit.ToRoom != nil && exit.ExitInfo&int(types.EX_CLOSED) == 0 {
+					StopFighting(ch, true)
+					handler.CharFromRoom(ch)
+					handler.CharToRoom(ch, exit.ToRoom)
+					ch.Sendf("You flee %s!\n\r", dirName(dir))
+					break
+				}
+			}
+		}
 	}
+}
+
+// dirName returns the name of a direction.
+func dirName(dir int) string {
+	names := []string{"north", "east", "south", "west", "up", "down",
+		"northeast", "northwest", "southeast", "southwest"}
+	if dir >= 0 && dir < len(names) {
+		return names[dir]
+	}
+	return "somewhere"
 }
 
 // OneHit resolves a single attack from ch against victim.

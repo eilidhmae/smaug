@@ -261,6 +261,24 @@ func (g *GameLoop) mobileUpdate() {
 			continue
 		}
 
+		// NPC scavenging: pick up valuable items from room
+		if ch.Act.IsSet(types.ACT_SCAVENGER) && ch.InRoom != nil && len(ch.InRoom.Contents) > 0 {
+			var bestObj *types.ObjData
+			bestCost := 0
+			for _, obj := range ch.InRoom.Contents {
+				if obj.WearFlags&int(types.ITEM_TAKE) != 0 && obj.GoldCost > bestCost {
+					bestObj = obj
+					bestCost = obj.GoldCost
+				}
+			}
+			if bestObj != nil && util.NumberBits(2) == 0 {
+				handler.ObjFromRoom(bestObj)
+				bestObj.CarriedBy = ch
+				bestObj.WearLoc = types.WEAR_NONE
+				ch.Carrying = append(ch.Carrying, bestObj)
+			}
+		}
+
 		// Sentinel mobs don't wander
 		if ch.Act.IsSet(types.ACT_SENTINEL) {
 			continue
@@ -296,6 +314,47 @@ func (g *GameLoop) mobileUpdate() {
 	}
 }
 
+// aggrUpdate checks for aggressive NPCs that should attack nearby players.
+func (g *GameLoop) aggrUpdate() {
+	for _, ch := range g.world.Characters {
+		if !ch.IsNPC() || ch.InRoom == nil || ch.Fighting != nil {
+			continue
+		}
+		if !ch.Act.IsSet(types.ACT_AGGRESSIVE) {
+			continue
+		}
+		if ch.AffectedBy.IsSet(types.AFF_CHARM) {
+			continue
+		}
+		if ch.Position < types.POS_STANDING {
+			continue
+		}
+		if ch.InRoom.RoomFlags.IsSet(types.ROOM_SAFE) {
+			continue
+		}
+
+		// Find a victim in the room
+		for _, victim := range ch.InRoom.People {
+			if victim == ch || victim.IsNPC() {
+				continue
+			}
+			if victim.Level >= types.LEVEL_IMMORTAL {
+				continue
+			}
+			if victim.Fighting != nil {
+				continue
+			}
+			// Random chance to not attack every pulse
+			if util.NumberBits(1) == 0 {
+				continue
+			}
+
+			combat.StartFighting(ch, victim)
+			break
+		}
+	}
+}
+
 // violenceUpdate runs per-pulse combat rounds.
 func (g *GameLoop) violenceUpdate() {
 	combat.ViolenceUpdate(g.world)
@@ -312,6 +371,37 @@ func (g *GameLoop) autosave() {
 
 // areaUpdate runs periodic area resets.
 func (g *GameLoop) areaUpdate() {
-	// Area resets are already run at boot via handler.ResetAllAreas.
-	// Periodic re-resets will be added when area reset timers are implemented.
+	for _, area := range g.world.Areas {
+		if area == nil {
+			continue
+		}
+
+		area.Age++
+
+		resetFreq := area.ResetFrequency
+		if resetFreq == 0 {
+			resetFreq = 15 // default 15 minutes
+		}
+
+		// Don't reset if age hasn't reached frequency and players are present
+		if area.Age < resetFreq {
+			continue
+		}
+
+		// Reset when: no players and age >= freq, OR age >= freq*2 (forced)
+		if (area.NPlayer == 0 && area.Age >= resetFreq) || area.Age >= resetFreq*2 {
+			handler.ResetArea(g.world, area)
+			area.Age = 0
+
+			// Send reset message to players in the area
+			if area.ResetMsg != "" {
+				for _, d := range g.world.Descriptors {
+					if d.Character != nil && d.Character.InRoom != nil &&
+						d.Character.InRoom.Area == area {
+						d.Character.Sendf("%s\n\r", area.ResetMsg)
+					}
+				}
+			}
+		}
+	}
 }

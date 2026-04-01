@@ -1,6 +1,9 @@
 package act
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
@@ -120,4 +123,44 @@ func DoTime(ch *types.CharData, argument string) {
 
 	ch.Sendf("It is hour %d of the day, %s.\n\rDay %d of month %d, year %d.\n\r",
 		hour, timeOfDay, day, month, year)
+}
+
+// DoPager implements the 'pager' command: toggle pager on/off and set page length.
+// Usage: pager [on|off|<number>]
+func DoPager(ch *types.CharData, argument string) {
+	if ch.IsNPC() || ch.PCData == nil {
+		return
+	}
+
+	arg := strings.TrimSpace(argument)
+
+	if arg == "" {
+		// Toggle
+		if (ch.PCData.Flags & int(types.PCFLAG_PAGERON)) != 0 {
+			ch.PCData.Flags &^= int(types.PCFLAG_PAGERON)
+			ch.Send("Pager disabled.\n\r")
+		} else {
+			ch.PCData.Flags |= int(types.PCFLAG_PAGERON)
+			ch.Sendf("Pager enabled (%d lines).\n\r", ch.PCData.PagerLen)
+		}
+		return
+	}
+
+	switch strings.ToLower(arg) {
+	case "on":
+		ch.PCData.Flags |= int(types.PCFLAG_PAGERON)
+		ch.Sendf("Pager enabled (%d lines).\n\r", ch.PCData.PagerLen)
+	case "off":
+		ch.PCData.Flags &^= int(types.PCFLAG_PAGERON)
+		ch.Send("Pager disabled.\n\r")
+	default:
+		n, err := strconv.Atoi(arg)
+		if err != nil || n < 5 || n > 200 {
+			ch.Send("Usage: pager [on|off|<5-200>]\n\r")
+			return
+		}
+		ch.PCData.PagerLen = n
+		ch.PCData.Flags |= int(types.PCFLAG_PAGERON)
+		ch.Sendf("Pager set to %d lines.\n\r", n)
+	}
 }

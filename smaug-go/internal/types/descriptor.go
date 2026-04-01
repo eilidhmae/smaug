@@ -130,6 +130,61 @@ func (d *DescriptorData) HasOutput() bool {
 	return len(d.outBuf) > 0
 }
 
+// WriteToPager appends text to the pager buffer.
+func (d *DescriptorData) WriteToPager(text string) {
+	d.outMu.Lock()
+	d.pageBuf = append(d.pageBuf, []byte(text)...)
+	d.outMu.Unlock()
+}
+
+// HasPagerData returns true if there is data in the pager buffer.
+func (d *DescriptorData) HasPagerData() bool {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	return len(d.pageBuf) > 0
+}
+
+// GetPagerData returns the full pager buffer content.
+func (d *DescriptorData) GetPagerData() string {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	return string(d.pageBuf)
+}
+
+// GetPagePoint returns the current read position in the pager buffer.
+func (d *DescriptorData) GetPagePoint() int {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	return d.pagePoint
+}
+
+// SetPagePoint sets the current read position in the pager buffer.
+func (d *DescriptorData) SetPagePoint(pos int) {
+	d.outMu.Lock()
+	d.pagePoint = pos
+	d.outMu.Unlock()
+}
+
+// GetPagerCmd returns the stored pager command byte.
+func (d *DescriptorData) GetPagerCmd() byte {
+	return d.pageCmd
+}
+
+// SetPagerCmd sets the pager command byte.
+func (d *DescriptorData) SetPagerCmd(cmd byte) {
+	d.pageCmd = cmd
+}
+
+// ClearPager resets all pager state.
+func (d *DescriptorData) ClearPager() {
+	d.outMu.Lock()
+	d.pageBuf = d.pageBuf[:0]
+	d.pagePoint = 0
+	d.pageCmd = 0
+	d.pageColor = 0
+	d.outMu.Unlock()
+}
+
 // NewDescriptor creates a new descriptor for a connection.
 func NewDescriptor(conn net.Conn) *DescriptorData {
 	host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())

@@ -281,3 +281,129 @@ func TestMobileUpdate_Wander(t *testing.T) {
 		t.Error("mob should still be in a room after wander updates")
 	}
 }
+
+func TestAggrUpdate_AttacksPlayer(t *testing.T) {
+	w, g := newUpdateTestWorld()
+	room := &types.RoomIndexData{Vnum: 6020, Name: "Danger Room"}
+	w.Rooms[6020] = room
+
+	mobIdx := &types.MobIndexData{
+		Vnum: 7010, PlayerName: "aggr mob", Level: 5,
+		Position: types.POS_STANDING, DefPosition: types.POS_STANDING,
+	}
+	w.MobIndex[7010] = mobIdx
+	mob := handler.CreateMobile(w, mobIdx)
+	mob.Act.Set(types.ACT_AGGRESSIVE)
+	handler.CharToRoom(mob, room)
+
+	// Place a player in the room
+	player := &types.CharData{
+		Name:     "Victim",
+		Level:    5,
+		Position: types.POS_STANDING,
+		PCData:   &types.PCData{PagerLen: 24},
+	}
+	handler.CharToRoom(player, room)
+	w.AddChar(player)
+
+	// Run many aggr updates (random chance to attack)
+	for i := 0; i < 100; i++ {
+		g.aggrUpdate()
+		if mob.Fighting != nil {
+			break
+		}
+	}
+
+	if mob.Fighting == nil {
+		t.Error("aggressive mob should have started fighting the player")
+	}
+}
+
+func TestAggrUpdate_SkipsSafeRoom(t *testing.T) {
+	w, g := newUpdateTestWorld()
+	room := &types.RoomIndexData{Vnum: 6021, Name: "Safe Room"}
+	room.RoomFlags.Set(types.ROOM_SAFE)
+	w.Rooms[6021] = room
+
+	mobIdx := &types.MobIndexData{
+		Vnum: 7011, PlayerName: "aggr mob", Level: 5,
+		Position: types.POS_STANDING, DefPosition: types.POS_STANDING,
+	}
+	w.MobIndex[7011] = mobIdx
+	mob := handler.CreateMobile(w, mobIdx)
+	mob.Act.Set(types.ACT_AGGRESSIVE)
+	handler.CharToRoom(mob, room)
+
+	player := &types.CharData{
+		Name: "Safe", Level: 5, Position: types.POS_STANDING,
+		PCData: &types.PCData{PagerLen: 24},
+	}
+	handler.CharToRoom(player, room)
+	w.AddChar(player)
+
+	for i := 0; i < 100; i++ {
+		g.aggrUpdate()
+	}
+
+	if mob.Fighting != nil {
+		t.Error("aggressive mob should not attack in safe room")
+	}
+}
+
+func TestAreaUpdate_ResetsOnTimer(t *testing.T) {
+	w, g := newUpdateTestWorld()
+	area := &types.AreaData{
+		Name:           "TestArea",
+		ResetFrequency: 3, // reset every 3 ticks
+		Age:            0,
+		NPlayer:        0,
+		ResetMsg:       "The area resets!",
+	}
+	w.Areas = append(w.Areas, area)
+
+	// First two updates: age goes to 1, 2 — under freq, no reset
+	g.areaUpdate()
+	if area.Age != 1 {
+		t.Errorf("area age should be 1, got %d", area.Age)
+	}
+	g.areaUpdate()
+	if area.Age != 2 {
+		t.Errorf("area age should be 2, got %d", area.Age)
+	}
+
+	// Third update: age=3 >= freq=3 and NPlayer=0, so reset
+	g.areaUpdate()
+	if area.Age != 0 {
+		t.Errorf("area age should be 0 after reset, got %d", area.Age)
+	}
+}
+
+func TestAreaUpdate_DelaysResetWithPlayers(t *testing.T) {
+	w, g := newUpdateTestWorld()
+	area := &types.AreaData{
+		Name:           "TestArea",
+		ResetFrequency: 2,
+		Age:            0,
+		NPlayer:        1, // players present
+	}
+	w.Areas = append(w.Areas, area)
+
+	// With players present, won't reset at freq (age=2)
+	g.areaUpdate() // age=1
+	g.areaUpdate() // age=2, players present, no reset yet
+	if area.Age != 2 {
+		t.Errorf("area age should be 2, got %d", area.Age)
+	}
+
+	// Still players, age=3
+	g.areaUpdate()
+	if area.Age != 3 {
+		t.Errorf("area age should be 3, got %d", area.Age)
+	}
+
+	// Forced reset at freq*2=4
+	g.areaUpdate()
+	if area.Age != 0 {
+		t.Errorf("area age should be 0 after forced reset, got %d", area.Age)
+	}
+}

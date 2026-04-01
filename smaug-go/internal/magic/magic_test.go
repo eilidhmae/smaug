@@ -176,3 +176,169 @@ func TestFindSpellByName(t *testing.T) {
 		t.Error("FindSpellByName should return -1 for unknown spell")
 	}
 }
+
+func TestSpellSleep(t *testing.T) {
+	w := newMagicWorld()
+	room := &types.RoomIndexData{Vnum: 9110, Name: "Arena"}
+	ch := newCaster("Wizard", 20)
+	handler.CharToRoom(ch, room)
+
+	victim := &types.CharData{
+		Name: "target", Level: 5, Position: types.POS_STANDING,
+		Hit: 100, MaxHit: 100,
+	}
+	victim.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(victim, room)
+
+	landed := false
+	for i := 0; i < 50; i++ {
+		victim.Affects = nil
+		victim.AffectedBy.Clear()
+		victim.Position = types.POS_STANDING
+		SpellSleep(w, 0, ch.Level, ch, victim)
+		if victim.AffectedBy.IsSet(types.AFF_SLEEP) {
+			landed = true
+			if victim.Position != types.POS_SLEEPING {
+				t.Error("victim should be sleeping after sleep spell")
+			}
+			break
+		}
+	}
+	if !landed {
+		t.Error("sleep spell should land at least once in 50 attempts")
+	}
+}
+
+func TestSpellCharmPerson(t *testing.T) {
+	w := newMagicWorld()
+	room := &types.RoomIndexData{Vnum: 9111, Name: "Arena"}
+	ch := newCaster("Wizard", 20)
+	handler.CharToRoom(ch, room)
+
+	victim := &types.CharData{
+		Name: "target", ShortDescr: "a target", Level: 5,
+		Position: types.POS_STANDING, Hit: 100, MaxHit: 100,
+	}
+	victim.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(victim, room)
+
+	landed := false
+	for i := 0; i < 50; i++ {
+		victim.Affects = nil
+		victim.AffectedBy.Clear()
+		victim.Master = nil
+		victim.Leader = nil
+		SpellCharmPerson(w, 0, ch.Level, ch, victim)
+		if victim.AffectedBy.IsSet(types.AFF_CHARM) {
+			landed = true
+			if victim.Master != ch {
+				t.Error("charmed victim should follow caster")
+			}
+			break
+		}
+	}
+	if !landed {
+		t.Error("charm should land at least once in 50 attempts")
+	}
+}
+
+func TestSpellDetectEvil(t *testing.T) {
+	w := newMagicWorld()
+	room := &types.RoomIndexData{Vnum: 9112, Name: "Temple"}
+	ch := newCaster("Priest", 10)
+	handler.CharToRoom(ch, room)
+
+	SpellDetectEvil(w, 0, ch.Level, ch, ch)
+	if !ch.AffectedBy.IsSet(types.AFF_DETECT_EVIL) {
+		t.Error("AFF_DETECT_EVIL should be set")
+	}
+}
+
+func TestSpellDetectInvis(t *testing.T) {
+	w := newMagicWorld()
+	room := &types.RoomIndexData{Vnum: 9113, Name: "Temple"}
+	ch := newCaster("Mage", 10)
+	handler.CharToRoom(ch, room)
+
+	SpellDetectInvis(w, 0, ch.Level, ch, ch)
+	if !ch.AffectedBy.IsSet(types.AFF_DETECT_INVIS) {
+		t.Error("AFF_DETECT_INVIS should be set")
+	}
+}
+
+func TestSpellDetectMagic(t *testing.T) {
+	w := newMagicWorld()
+	room := &types.RoomIndexData{Vnum: 9114, Name: "Temple"}
+	ch := newCaster("Mage", 10)
+	handler.CharToRoom(ch, room)
+
+	SpellDetectMagic(w, 0, ch.Level, ch, ch)
+	if !ch.AffectedBy.IsSet(types.AFF_DETECT_MAGIC) {
+		t.Error("AFF_DETECT_MAGIC should be set")
+	}
+}
+
+func TestSpellDetectHidden(t *testing.T) {
+	w := newMagicWorld()
+	room := &types.RoomIndexData{Vnum: 9115, Name: "Temple"}
+	ch := newCaster("Ranger", 10)
+	handler.CharToRoom(ch, room)
+
+	SpellDetectHidden(w, 0, ch.Level, ch, ch)
+	if !ch.AffectedBy.IsSet(types.AFF_DETECT_HIDDEN) {
+		t.Error("AFF_DETECT_HIDDEN should be set")
+	}
+}
+
+func TestSpellShield(t *testing.T) {
+	w := newMagicWorld()
+	room := &types.RoomIndexData{Vnum: 9116, Name: "Temple"}
+	ch := newCaster("Mage", 10)
+	handler.CharToRoom(ch, room)
+
+	armorBefore := ch.Armor
+	SpellShield(w, 0, ch.Level, ch, ch)
+
+	if ch.Armor >= armorBefore {
+		t.Errorf("Armor = %d, should have improved from %d", ch.Armor, armorBefore)
+	}
+}
+
+func TestSpellIdentify(t *testing.T) {
+	w := newMagicWorld()
+	room := &types.RoomIndexData{Vnum: 9117, Name: "Temple"}
+	ch := newCaster("Mage", 10)
+	ch.Desc = &types.DescriptorData{Character: ch}
+	handler.CharToRoom(ch, room)
+
+	// Add an item to carry
+	obj := &types.ObjData{
+		Name:       "sword",
+		ShortDescr: "a magic sword",
+		ItemType:   types.ITEM_WEAPON,
+		Level:      5,
+		Weight:     10,
+		GoldCost:   100,
+		Value:      [6]int{0, 5, 10, 0, 0, 0},
+		CarriedBy:  ch,
+		WearLoc:    types.WEAR_NONE,
+	}
+	ch.Carrying = append(ch.Carrying, obj)
+
+	// Just verify it doesn't panic
+	SpellIdentify(w, 0, ch.Level, ch, ch)
+}
+
+func TestSpellRegistry_NewSpells(t *testing.T) {
+	newSpells := []string{
+		"spell_sleep", "spell_charm_person",
+		"spell_detect_evil", "spell_detect_invis",
+		"spell_detect_magic", "spell_detect_hidden",
+		"spell_shield", "spell_identify",
+	}
+	for _, name := range newSpells {
+		if FindSpellFunc(name) == nil {
+			t.Errorf("spell %s should be registered", name)
+		}
+	}
+}

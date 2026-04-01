@@ -104,6 +104,7 @@ func (g *GameLoop) pulse() {
 	g.pulseViolence--
 	if g.pulseViolence <= 0 {
 		g.pulseViolence = types.PULSE_VIOLENCE
+		g.aggrUpdate()
 		g.violenceUpdate()
 	}
 
@@ -153,7 +154,15 @@ func (g *GameLoop) processInput() {
 		select {
 		case line := <-d.InputQueue:
 			line = strings.TrimRight(line, "\r\n")
-			if d.Connected == int(types.CON_PLAYING) {
+
+			// Pager takes priority: if paging, handle pager input
+			if d.HasPagerData() {
+				SetPagerInput(d, line)
+				continue
+			}
+
+			switch d.Connected {
+			case types.CON_PLAYING:
 				if d.Character != nil {
 					g.cmdReg.Interpret(d.Character, line)
 					// Send prompt after command output
@@ -161,7 +170,11 @@ func (g *GameLoop) processInput() {
 						d.WriteToBuffer(FormatPrompt(d.Character))
 					}
 				}
-			} else {
+			case types.CON_EDITING:
+				if d.Character != nil {
+					EditBuffer(d.Character, line)
+				}
+			default:
 				g.nanny(d, line)
 			}
 		default:
@@ -637,6 +650,11 @@ func isValidName(name string) bool {
 // flushOutput sends buffered output for all descriptors.
 func (g *GameLoop) flushOutput() {
 	for _, d := range g.world.Descriptors {
+		// If pager has data, process pager output instead of normal flush
+		if d.HasPagerData() {
+			PagerOutput(d)
+		}
+
 		if err := d.FlushOutput(); err != nil {
 			log.Printf("Lost connection to %s: %v", d.Host, err)
 			d.Connected = -1 // Mark for cleanup

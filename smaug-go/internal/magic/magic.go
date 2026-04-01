@@ -16,18 +16,26 @@ type SpellFunc func(w *world.World, sn int, level int, ch *types.CharData, victi
 
 // spellRegistry maps spell function names (from skills.dat) to Go functions.
 var spellRegistry = map[string]SpellFunc{
-	"spell_magic_missile": SpellMagicMissile,
-	"spell_cure_light":    SpellCureLight,
-	"spell_cure_serious":  SpellCureSerious,
-	"spell_cure_critical": SpellCureCritical,
-	"spell_fireball":      SpellFireball,
-	"spell_armor":         SpellArmor,
-	"spell_bless":         SpellBless,
-	"spell_curse":         SpellCurse,
-	"spell_poison":        SpellPoison,
-	"spell_blindness":     SpellBlindness,
-	"spell_sanctuary":     SpellSanctuary,
-	"spell_dispel_magic":  SpellDispelMagic,
+	"spell_magic_missile":  SpellMagicMissile,
+	"spell_cure_light":     SpellCureLight,
+	"spell_cure_serious":   SpellCureSerious,
+	"spell_cure_critical":  SpellCureCritical,
+	"spell_fireball":       SpellFireball,
+	"spell_armor":          SpellArmor,
+	"spell_bless":          SpellBless,
+	"spell_curse":          SpellCurse,
+	"spell_poison":         SpellPoison,
+	"spell_blindness":      SpellBlindness,
+	"spell_sanctuary":      SpellSanctuary,
+	"spell_dispel_magic":   SpellDispelMagic,
+	"spell_sleep":          SpellSleep,
+	"spell_charm_person":   SpellCharmPerson,
+	"spell_detect_evil":    SpellDetectEvil,
+	"spell_detect_invis":   SpellDetectInvis,
+	"spell_detect_magic":   SpellDetectMagic,
+	"spell_detect_hidden":  SpellDetectHidden,
+	"spell_shield":         SpellShield,
+	"spell_identify":       SpellIdentify,
 }
 
 // FindSpellFunc looks up a spell function by its code name.
@@ -235,5 +243,171 @@ func SpellDispelMagic(w *world.World, sn int, level int, ch *types.CharData, vic
 	victim.Send("Your enchantments fade away.\n\r")
 	if ch != victim {
 		ch.Sendf("You dispel %s's magic.\n\r", victim.Name)
+	}
+}
+
+// --- Phase 3 Spells ---
+
+// SpellSleep puts the victim to sleep (save negates).
+func SpellSleep(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim.AffectedBy.IsSet(types.AFF_SLEEP) {
+		ch.Send("They are already asleep.\n\r")
+		return
+	}
+	if SavesSpellStaff(level, victim) {
+		ch.Send("Your magic fails to take hold.\n\r")
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: 4 + level/8,
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_SLEEP)
+	handler.AffectToChar(victim, aff)
+
+	if victim.Position > types.POS_SLEEPING {
+		victim.Send("You feel very sleepy... zzzz.\n\r")
+		victim.Position = types.POS_SLEEPING
+	}
+}
+
+// SpellCharmPerson charms the victim to follow the caster (save negates).
+func SpellCharmPerson(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim == ch {
+		ch.Send("You like yourself even better!\n\r")
+		return
+	}
+	if victim.AffectedBy.IsSet(types.AFF_CHARM) {
+		ch.Send("They are already charmed.\n\r")
+		return
+	}
+	if !victim.IsNPC() {
+		ch.Send("You cannot charm other players.\n\r")
+		return
+	}
+	if SavesSpellStaff(level, victim) {
+		ch.Send("Your magic fails to take hold.\n\r")
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: util.NumberFuzzy(level / 4),
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_CHARM)
+	handler.AffectToChar(victim, aff)
+
+	victim.Master = ch
+	victim.Leader = ch
+	ch.Sendf("%s looks at you with adoring eyes.\n\r", victim.ShortDescr)
+}
+
+// SpellDetectEvil grants AFF_DETECT_EVIL.
+func SpellDetectEvil(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim.AffectedBy.IsSet(types.AFF_DETECT_EVIL) {
+		victim.Send("You can already sense evil.\n\r")
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: level + 10,
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_DETECT_EVIL)
+	handler.AffectToChar(victim, aff)
+	victim.Send("Your eyes tingle.\n\r")
+}
+
+// SpellDetectInvis grants AFF_DETECT_INVIS.
+func SpellDetectInvis(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim.AffectedBy.IsSet(types.AFF_DETECT_INVIS) {
+		victim.Send("You can already see invisible.\n\r")
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: level + 10,
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_DETECT_INVIS)
+	handler.AffectToChar(victim, aff)
+	victim.Send("Your eyes tingle.\n\r")
+}
+
+// SpellDetectMagic grants AFF_DETECT_MAGIC.
+func SpellDetectMagic(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim.AffectedBy.IsSet(types.AFF_DETECT_MAGIC) {
+		victim.Send("You can already sense magical auras.\n\r")
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: level + 10,
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_DETECT_MAGIC)
+	handler.AffectToChar(victim, aff)
+	victim.Send("Your eyes tingle.\n\r")
+}
+
+// SpellDetectHidden grants AFF_DETECT_HIDDEN.
+func SpellDetectHidden(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim.AffectedBy.IsSet(types.AFF_DETECT_HIDDEN) {
+		victim.Send("You can already sense hidden things.\n\r")
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: level + 10,
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_DETECT_HIDDEN)
+	handler.AffectToChar(victim, aff)
+	victim.Send("Your awareness improves.\n\r")
+}
+
+// SpellShield improves AC by -20 (similar to armor but stacks differently).
+func SpellShield(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	handler.AffectToChar(victim, &types.AffectData{
+		Type:     sn,
+		Duration: 18 + level/2,
+		Location: types.APPLY_AC,
+		Modifier: -20,
+	})
+	victim.Send("A shimmering shield surrounds you.\n\r")
+}
+
+// SpellIdentify reveals the properties of an item held by the caster.
+func SpellIdentify(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	// Identify operates on an object, not a victim. Use the last item in inventory.
+	if len(ch.Carrying) == 0 {
+		ch.Send("You are not carrying anything to identify.\n\r")
+		return
+	}
+	// Find first non-worn item
+	var obj *types.ObjData
+	for _, o := range ch.Carrying {
+		if o.WearLoc == types.WEAR_NONE {
+			obj = o
+			break
+		}
+	}
+	if obj == nil {
+		ch.Send("You are not carrying anything to identify.\n\r")
+		return
+	}
+
+	ch.Sendf("Object: %s\n\r", obj.ShortDescr)
+	ch.Sendf("Type: %d  Level: %d  Weight: %d  Value: %d\n\r",
+		obj.ItemType, obj.Level, obj.Weight, obj.GoldCost)
+	ch.Sendf("Values: %d %d %d %d %d %d\n\r",
+		obj.Value[0], obj.Value[1], obj.Value[2],
+		obj.Value[3], obj.Value[4], obj.Value[5])
+
+	if len(obj.Affects) > 0 {
+		for _, aff := range obj.Affects {
+			ch.Sendf("Affects %d by %d.\n\r", aff.Location, aff.Modifier)
+		}
 	}
 }

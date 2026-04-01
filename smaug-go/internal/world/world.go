@@ -52,8 +52,9 @@ type World struct {
 	Bans []*types.BanData
 
 	// Global config
-	SysData  types.SystemData
-	TimeInfo types.TimeInfoData
+	SysData     types.SystemData
+	TimeInfo    types.TimeInfoData
+	WeatherInfo types.WeatherInfoData
 
 	// Auction
 	Auction *types.AuctionData

@@ -120,6 +120,15 @@ type TimeInfoData struct {
 	Sunlight int
 }
 
+// WeatherInfoData for global weather state.
+// Maps to C struct weather_data (global, not per-area).
+type WeatherInfoData struct {
+	Mmhg   int // barometric pressure
+	Change int // pressure change
+	Sky    int // SKY_CLOUDLESS, etc.
+	Temp   int
+}
+
 // ClassType for class definitions.
 // Maps to C struct class_type (mud.h:1368).
 type ClassType struct {

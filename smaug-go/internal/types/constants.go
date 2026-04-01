@@ -31,6 +31,8 @@ const (
 	MAX_RACE      = 26
 	MAX_NPC_RACE  = 200
 	MAX_MSG       = 18
+
+	MAX_COND_VAL = 48
 )
 
 // Level hierarchy.

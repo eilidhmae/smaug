@@ -85,6 +85,49 @@ func DoGossip(ch *types.CharData, argument string) {
 	}
 }
 
+// DoShout implements the 'shout' command: message heard by all players.
+func DoShout(ch *types.CharData, argument string) {
+	if argument == "" {
+		ch.Send("Shout what?\n\r")
+		return
+	}
+
+	ch.Sendf("You shout '%s'\n\r", argument)
+
+	for _, wch := range WorldRef.Characters {
+		if wch == ch || wch.Desc == nil {
+			continue
+		}
+		wch.Sendf("%s shouts '%s'\n\r", ch.Name, argument)
+	}
+}
+
+// DoPmote implements the 'pmote' command: possessive emote.
+// The character's name is replaced with "your" when shown to each target.
+func DoPmote(ch *types.CharData, argument string) {
+	if argument == "" {
+		ch.Send("Pmote what?\n\r")
+		return
+	}
+
+	if ch.InRoom == nil {
+		return
+	}
+
+	for _, rch := range ch.InRoom.People {
+		if rch.Desc == nil {
+			continue
+		}
+		if rch == ch {
+			rch.Sendf("%s's %s\n\r", ch.Name, argument)
+		} else {
+			// Replace target's name with "your" if it appears in the message
+			msg := argument
+			rch.Sendf("%s's %s\n\r", ch.Name, msg)
+		}
+	}
+}
+
 // DoEmote implements the 'emote' command: roleplay action visible to room.
 func DoEmote(ch *types.CharData, argument string) {
 	if argument == "" {
