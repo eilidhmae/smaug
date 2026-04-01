@@ -58,9 +58,9 @@ Security audit of the SMAUG Go port. Findings categorized by severity.
 ### S8: Area.lst Path Traversal
 
 - **File**: persist/area.go:32
-- **Issue**: Area filenames from area.lst used directly in `filepath.Join()` without validation.
-- **Risk**: Malicious area.lst could read arbitrary files.
-- **Fix**: Apply `filepath.Base()` to strip directory components. Validate extension is `.are`.
+- **Issue**: Area filenames from area.lst used in `filepath.Join()` for loading. However, `filepath.Base()` is already applied at line 73 when storing the filename on the area struct, so saved area filenames are safe.
+- **Risk**: Reduced — a malicious area.lst could cause reads from outside the area directory during loading, but stored filenames are sanitized. Defense-in-depth would validate at load time too.
+- **Fix**: Apply `filepath.Base()` at line 32 as well, before the initial file read. Validate extension is `.are`.
 
 ## Medium
 

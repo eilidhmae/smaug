@@ -25,17 +25,27 @@ These exported globals are set during init but undocumented for thread-safety:
 
 Multiple instances of `int(types.CON_PLAYING)` and similar casts where the constants are already untyped `int`:
 
-- game/loop.go:169, 260, 264, 307, 338, 354, 360, 554
+- game/loop.go:169, 260, 264, 307, 338, 354, 360, 384, 415, 460, 554
 
 **Fix**: Remove redundant `int()` casts.
 
-### 3. Missing Nil Guards in MUD Programs
+### 3. Logic Bug in mpPurge
 
-- mudprog/commands.go:22 — `mpEcho` accesses `mob.InRoom.People` after checking but before guard
-- mudprog/commands.go:43 — `mpEchoAround` similar pattern
-- mudprog/driver.go:160 — `mpPurge` accesses `mob.InRoom.People` without nil check
+- mudprog/commands.go:158-160 — `mpPurge` has an inverted condition: the guard `if arg == "" || mob.InRoom == nil || WorldRef == nil` should cause an early return, but instead the code falls through to access `mob.InRoom.People` inside the if block. When `arg == ""` but `mob.InRoom` is nil, this will panic.
 
-**Fix**: Add nil checks for `mob.InRoom` before accessing `People`.
+**Fix**: Restructure the condition so the no-arg purge-all path is a separate branch that still requires `mob.InRoom != nil && WorldRef != nil`:
+```go
+if mob.InRoom == nil || WorldRef == nil {
+    return
+}
+if arg == "" {
+    // purge all NPCs and objects
+    ...
+    return
+}
+```
+
+**Note**: `mpEcho` (line 22) and `mpEchoAround` (line 43) already have correct nil guards.
 
 ## Medium Issues
 
@@ -71,9 +81,7 @@ types/descriptor.go:46-47 — `outMu` protects `outBuf` and `pageBuf`, but `page
 | Symbol | File |
 |--------|------|
 | `StrApp`, `IntApp`, etc. (7 tables) | types/attributes.go |
-| `ObjIndexLookup` | persist/player.go:13 |
 | `PlayerFilePath` | persist/player.go:593 |
-| `MSSPInfo` | net/mssp.go:14 |
 | `MSDPVariable` | net/msdp.go:16 |
 | `FindSpellFunc` | magic/magic.go:52 |
 | `Driver` | mudprog/driver.go:20 |
