@@ -34,10 +34,11 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - `smaug-go/doc/phase2-completed.md` — Phase 2 record (completed work so far)
 - `smaug-go/doc/phase2-remaining.md` — Phase 2 task breakdown with priority order
 - `smaug-go/doc/phase3-plan.md` — Phase 3 implementation plan: 12 task groups with dependencies and execution order
+- `smaug-go/doc/phase3-completed.md` — Phase 3 record (completed work so far: G1, G2, G4, G6)
 
 ## Current Status
 
-**Phase 1 complete. Phase 2 complete.** 55 source files, 27 test files, 455 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
+**Phase 1 complete. Phase 2 complete. Phase 3 in progress (G1, G2, G4, G6 complete).** 51 source files, 29 test files, 527 test cases — all passing. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -48,7 +49,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Single-threaded game loop at 4 pulses/second
 - Command interpreter with prefix matching
 - Room navigation (10 directions) with auto-look through real loaded rooms
-- Commands: look, quit, say, score, who, help, commands, inventory, equipment, get, drop, put, give, wear, remove, sacrifice, kill, flee, tell, reply, yell, gossip, emote, open, close, unlock, lock, consider, where, time, cast
+- Commands: look, quit, say, score, who, help, commands, inventory, equipment, get, drop, put, give, wear, remove, sacrifice, kill, flee, tell, reply, yell, gossip, emote, open, close, unlock, lock, consider, where, time, cast, eat, drink, fill, empty, examine, shout, pmote, pager, weather, murder, wimpy, buy, sell, list, value, mstat, ostat, rstat
 - Area file loading from `db/area/*.are` with skip-and-recover on parse errors
 - Exit resolution (vnum → room pointer linking after all areas load)
 - Area reset processing: mob/object instantiation (M/O/P/G/E/D/H reset commands)
@@ -64,17 +65,30 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Attribute bonus tables: StrApp, IntApp, WisApp, DexApp, ConApp, ChaApp, LckApp (all 7 tables, 26 entries each)
 - BitVector: added Not(), AndNot() methods
 - Object commands: get (room + container), drop, put, give, wear (auto-detect location), remove, sacrifice
-- Game updates: HP/mana/move regen per tick, affect duration countdown with wear-off, corpse decay, NPC wandering, violence update
-- Combat system: StartFighting, StopFighting, ViolenceUpdate, OneHit (thac0 + d20 vs AC), Damage, MakeCorpse, kill/flee commands, XP gain on kill, gold in corpses, position checks
-- Communication: tell/reply (private), yell (area), gossip (global), emote (room)
+- Game updates: HP/mana/move regen per tick, affect duration countdown with wear-off, corpse decay, NPC wandering, violence update, aggressive mob attacks (aggrUpdate), NPC scavenging, area reset on timer
+- Combat system: StartFighting, StopFighting, ViolenceUpdate, OneHit (thac0 + d20 vs AC), Damage, MakeCorpse, kill/flee/murder commands, XP gain on kill, gold in corpses, position checks, dual wield extra attack, wimpy auto-flee
+- Communication: tell/reply (private), yell (area), shout (global), gossip (global), emote (room), pmote (possessive emote)
 - Door commands: open, close, lock, unlock with key matching
 - Movement position check: must be standing to move
-- Enhanced info: consider (level comparison), where (find in area), time (game clock)
-- Magic system: 12 spells (3 heals, 2 damage, 3 buffs, 4 debuffs), cast command with mana/target/save, spell function registry
-- Test suite: 27 files, 450 cases covering types, util, net, persist, command, world, handler, game, act, combat, magic (mutation-verified)
+- Enhanced info: consider (level comparison), where (find in area), time (game clock), enhanced score (alignment text, affects, kill stats), weather, examine (look + contents)
+- Consume commands: eat (food/pills), drink (containers/fountains), fill (from fountain), empty (containers), condition tracking (hunger/thirst/drunk)
+- Shops: buy, sell, list, value with FindKeeper, configurable profit margins, item type restrictions
+- Magic system: 20 spells (3 heals, 2 damage, 3 buffs, 4 debuffs, 4 detects, sleep, charm, shield, identify), cast command with mana/target/save, spell function registry
+- Pager: page long output with (C)ontinue/(N)on-stop/(R)efresh/(B)ack/(Q)uit, configurable page length, pager command to toggle on/off
+- String editor: line-based text editor for OLC descriptions (/l /c /d /g /i /r /f /a /s commands), CON_EDITING integration in game loop
+- Immortal commands: mstat, ostat, rstat (inspect mob/object/room data, pager-aware)
+- Test suite: 29 files, 527 cases covering types, util, net, persist, command, world, handler, game, act, combat, magic (mutation-verified)
 
-### What's next (Phase 3: Advanced Systems)
-See `smaug-go/doc/phase3-plan.md` for the implementation plan: 12 task groups covering pager, Phase 2 deferred items, subsystem loaders, stat/immortal commands, shops, spells/skills, OLC, clans/boards, MUD Progs, protocol support, and area save.
+### What's next (Phase 3: Advanced Systems — in progress)
+See `smaug-go/doc/phase3-plan.md` for the full plan and `smaug-go/doc/phase3-completed.md` for completed work. Remaining groups:
+- **G3:** Subsystem data loaders (clans, councils, deities, boards, socials)
+- **G5:** Immortal commands — core set (goto, force, peace, purge, etc.) — depends on G4 ✓
+- **G7:** Remaining spells/skills (~50 functions)
+- **G8:** OLC — online creation — depends on G1 ✓, G4 ✓, G5
+- **G9:** Clans/boards — depends on G3
+- **G10:** MUD programs — depends on G5, G7
+- **G11:** Protocol support (MCCP2, MSDP, MSSP)
+- **G12:** OLC area save — depends on G8
 
 ## Building and Running the Go Port
 
@@ -114,19 +128,19 @@ The game loop runs in one goroutine. All game state mutation happens there. Netw
 ```
 smaug-go/
   go.mod
-  cmd/smaug/main.go                  # Entry point
+  cmd/smaug/main.go                  # Entry point, command registration, bootDB
   internal/
     types/                            # Core data structures, enums, constants (17 files)
     util/                             # String, dice, logging helpers (3 files)
     world/                            # Mutable game state container (1 file)
     persist/                          # File format I/O — scanner, area, classes, races, player, skills (6 files)
     net/                              # TCP server + color processing (2 files)
-    game/                             # Game loop + nanny state machine + login/creation flow (1 file)
+    game/                             # Game loop, nanny, pager, string editor, updates (6 files)
     command/                          # Command registry + interpreter (1 file)
-    act/                              # Player commands (1 file)
-    handler/                          # Entity manipulation: create mob/obj, room placement, area resets (2 files)
-    combat/                           # (future) Combat system
-    magic/                            # (future) Spell/skill system
+    act/                              # Player commands — info, combat, movement, objects, shops, wiz (10 files)
+    handler/                          # Entity manipulation: create mob/obj, room placement, area resets, find (3 files)
+    combat/                           # Combat system: fighting, damage, corpses (1 file)
+    magic/                            # Spell/skill system: 20 spells + cast command (1 file)
     mudprog/                          # (future) MUD program interpreter
     overland/                         # (future) Overland maps
   doc/                                # Port documentation

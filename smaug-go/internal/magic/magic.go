@@ -36,6 +36,16 @@ var spellRegistry = map[string]SpellFunc{
 	"spell_detect_hidden":  SpellDetectHidden,
 	"spell_shield":         SpellShield,
 	"spell_identify":       SpellIdentify,
+	"spell_locate_object":  SpellLocateObject,
+	"spell_create_food":    SpellCreateFood,
+	"spell_create_water":   SpellCreateWater,
+	"spell_summon":         SpellSummon,
+	"spell_teleport":       SpellTeleport,
+	"spell_enchant_weapon": SpellEnchantWeapon,
+	"spell_enchant_armor":  SpellEnchantArmor,
+	"spell_invis":          SpellInvis,
+	"spell_fly":            SpellFly,
+	"spell_heal":           SpellHeal,
 }
 
 // FindSpellFunc looks up a spell function by its code name.
@@ -410,4 +420,214 @@ func SpellIdentify(w *world.World, sn int, level int, ch *types.CharData, victim
 			ch.Sendf("Affects %d by %d.\n\r", aff.Location, aff.Modifier)
 		}
 	}
+}
+
+// --- Phase 3 G7 Spells ---
+
+// SpellLocateObject shows where an object is in the world.
+func SpellLocateObject(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if ch == nil {
+		return
+	}
+	// Use the argument stored in ch's last command — simplified version
+	found := false
+	for _, obj := range w.Objects {
+		if obj.ExtraFlags.IsSet(types.ITEM_NOLOCATE) {
+			continue
+		}
+		location := "somewhere"
+		if obj.CarriedBy != nil {
+			location = "carried by " + obj.CarriedBy.Name
+		} else if obj.InRoom != nil {
+			location = obj.InRoom.Name
+		}
+		ch.Sendf("%s is %s.\n\r", obj.ShortDescr, location)
+		found = true
+		if found {
+			break // just show first match for simplicity
+		}
+	}
+	if !found {
+		ch.Send("Nothing like that in the world.\n\r")
+	}
+}
+
+// SpellCreateFood creates a food item in the caster's inventory.
+func SpellCreateFood(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	food := &types.ObjData{
+		Name:       "mushroom magical",
+		ShortDescr: "a magical mushroom",
+		Description: "A magical mushroom has been left here.",
+		ItemType:   types.ITEM_FOOD,
+		Value:      [6]int{level / 2, level / 2, 0, 0, 0, 0},
+		Weight:     1,
+		WearLoc:    types.WEAR_NONE,
+		Timer:      24 + level,
+	}
+	w.AddObj(food)
+	food.CarriedBy = ch
+	ch.Carrying = append(ch.Carrying, food)
+	ch.Send("A mushroom suddenly appears.\n\r")
+}
+
+// SpellCreateWater fills a drink container with water.
+func SpellCreateWater(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	// Find a drink container in inventory
+	for _, obj := range ch.Carrying {
+		if obj.ItemType == types.ITEM_DRINK_CON && obj.WearLoc == types.WEAR_NONE {
+			water := util.UMIN(level*2, obj.Value[0]-obj.Value[1])
+			if water > 0 {
+				obj.Value[1] += water
+				obj.Value[2] = 0 // water liquid type
+				ch.Sendf("Water flows into %s.\n\r", obj.ShortDescr)
+			} else {
+				ch.Send("It's already full.\n\r")
+			}
+			return
+		}
+	}
+	ch.Send("You need a drink container.\n\r")
+}
+
+// SpellSummon teleports a character to the caster.
+func SpellSummon(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim == nil || victim == ch {
+		ch.Send("You can't summon that.\n\r")
+		return
+	}
+	if victim.InRoom == nil || ch.InRoom == nil {
+		return
+	}
+	if victim.Fighting != nil {
+		ch.Send("They are too busy fighting.\n\r")
+		return
+	}
+
+	handler.CharFromRoom(victim)
+	handler.CharToRoom(victim, ch.InRoom)
+	victim.Sendf("%s has summoned you!\n\r", ch.Name)
+	ch.Sendf("You summon %s.\n\r", victim.Name)
+}
+
+// SpellTeleport teleports the caster to a random room.
+func SpellTeleport(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	// Find a random room
+	var dest *types.RoomIndexData
+	for _, r := range w.Rooms {
+		if r.RoomFlags.IsSet(types.ROOM_PRIVATE) || r.RoomFlags.IsSet(types.ROOM_NO_RECALL) {
+			continue
+		}
+		if util.NumberBits(3) == 0 {
+			dest = r
+			break
+		}
+	}
+	if dest == nil {
+		ch.Send("Your spell fizzles.\n\r")
+		return
+	}
+
+	if ch.InRoom != nil {
+		handler.CharFromRoom(ch)
+	}
+	handler.CharToRoom(ch, dest)
+	ch.Send("You are teleported!\n\r")
+}
+
+// SpellEnchantWeapon adds +1 hitroll/damroll to a wielded weapon.
+func SpellEnchantWeapon(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	wield := handler.GetEqChar(ch, types.WEAR_WIELD)
+	if wield == nil {
+		ch.Send("You must wield a weapon to enchant.\n\r")
+		return
+	}
+	if wield.ExtraFlags.IsSet(types.ITEM_MAGIC) {
+		ch.Send("That weapon is already enchanted.\n\r")
+		return
+	}
+
+	bonus := 1 + level/20
+	wield.Affects = append(wield.Affects, &types.AffectData{
+		Type:     sn,
+		Duration: -1,
+		Location: types.APPLY_HITROLL,
+		Modifier: bonus,
+	})
+	wield.Affects = append(wield.Affects, &types.AffectData{
+		Type:     sn,
+		Duration: -1,
+		Location: types.APPLY_DAMROLL,
+		Modifier: bonus,
+	})
+	wield.ExtraFlags.Set(types.ITEM_MAGIC)
+	ch.Sendf("%s glows brightly!\n\r", util.Capitalize(wield.ShortDescr))
+}
+
+// SpellEnchantArmor adds +1 AC to worn armor.
+func SpellEnchantArmor(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	// Find first worn armor piece
+	var armor *types.ObjData
+	for _, obj := range ch.Carrying {
+		if obj.WearLoc != types.WEAR_NONE && obj.ItemType == types.ITEM_ARMOR {
+			armor = obj
+			break
+		}
+	}
+	if armor == nil {
+		ch.Send("You must be wearing armor to enchant.\n\r")
+		return
+	}
+	if armor.ExtraFlags.IsSet(types.ITEM_MAGIC) {
+		ch.Send("That armor is already enchanted.\n\r")
+		return
+	}
+
+	bonus := -(1 + level/20)
+	armor.Affects = append(armor.Affects, &types.AffectData{
+		Type:     sn,
+		Duration: -1,
+		Location: types.APPLY_AC,
+		Modifier: bonus,
+	})
+	armor.ExtraFlags.Set(types.ITEM_MAGIC)
+	ch.Sendf("%s glows with a protective aura!\n\r", util.Capitalize(armor.ShortDescr))
+}
+
+// SpellInvis grants AFF_INVISIBLE.
+func SpellInvis(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim.AffectedBy.IsSet(types.AFF_INVISIBLE) {
+		victim.Send("You are already invisible.\n\r")
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: 24 + level,
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_INVISIBLE)
+	handler.AffectToChar(victim, aff)
+	victim.Send("You fade out of existence.\n\r")
+}
+
+// SpellFly grants AFF_FLYING.
+func SpellFly(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim.AffectedBy.IsSet(types.AFF_FLYING) {
+		victim.Send("You are already flying.\n\r")
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: level + 10,
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_FLYING)
+	handler.AffectToChar(victim, aff)
+	victim.Send("Your feet rise off the ground.\n\r")
+}
+
+// SpellHeal heals a large amount of HP.
+func SpellHeal(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	heal := util.UMAX(100, level*5)
+	victim.Hit = util.UMIN(victim.Hit+heal, victim.MaxHit)
+	victim.Send("A warm feeling fills your body.\n\r")
 }

@@ -54,6 +54,12 @@ func main() {
 		gameLoop.SavePlayer(ch)
 	}
 
+	// Wire command registry for force/at commands
+	act.CmdRegistry = cmdReg
+
+	// Wire social fallback for command interpreter
+	cmdReg.SocialFallback = act.CheckSocial
+
 	// Start network server
 	if err := server.Start(*port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
@@ -130,6 +136,35 @@ func bootDB(w *world.World) error {
 
 	if len(w.Helps) > 0 {
 		log.Printf("Loaded %d help entries.", len(w.Helps))
+	}
+
+	// Load subsystem data
+	clanDir := filepath.Join(w.DataDir, "clans")
+	if err := persist.LoadClansFromDir(w, clanDir); err != nil {
+		log.Printf("WARNING: failed to load clans: %v", err)
+	} else if len(w.Clans) > 0 {
+		log.Printf("Loaded %d clans.", len(w.Clans))
+	}
+
+	deityDir := filepath.Join(w.DataDir, "deity")
+	if err := persist.LoadDeitiesFromDir(w, deityDir); err != nil {
+		log.Printf("WARNING: failed to load deities: %v", err)
+	} else if len(w.Deities) > 0 {
+		log.Printf("Loaded %d deities.", len(w.Deities))
+	}
+
+	socialsPath := filepath.Join(w.DataDir, "system", "en", "socials.dat")
+	if err := persist.LoadSocials(w, socialsPath); err != nil {
+		log.Printf("WARNING: failed to load socials: %v", err)
+	} else if len(w.Socials) > 0 {
+		log.Printf("Loaded %d socials.", len(w.Socials))
+	}
+
+	boardsPath := filepath.Join(w.DataDir, "boards", "boards.dat")
+	if err := persist.LoadBoards(w, boardsPath); err != nil {
+		log.Printf("WARNING: failed to load boards: %v", err)
+	} else if len(w.Boards) > 0 {
+		log.Printf("Loaded %d boards.", len(w.Boards))
 	}
 
 	log.Printf("Boot complete. %d rooms, %d mob templates, %d obj templates loaded.",
@@ -213,16 +248,62 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "murder", DoFun: act.DoMurder, Position: types.POS_FIGHTING, Level: 0})
 	reg.Register(&command.Command{Name: "wimpy", DoFun: act.DoWimpy, Position: types.POS_DEAD, Level: 0})
 
+	// Skill commands
+	reg.Register(&command.Command{Name: "backstab", DoFun: act.DoBackstab, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "bash", DoFun: act.DoBash, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "kick", DoFun: act.DoKickSkill, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "disarm", DoFun: act.DoDisarm, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "rescue", DoFun: act.DoRescue, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "sneak", DoFun: act.DoSneak, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "hide", DoFun: act.DoHide, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "steal", DoFun: act.DoSteal, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "pick", DoFun: act.DoPick, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "scan", DoFun: act.DoScan, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "aid", DoFun: act.DoAid, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "recall", DoFun: act.DoRecall, Position: types.POS_STANDING, Level: 0})
+
 	// Door commands
 	reg.Register(&command.Command{Name: "open", DoFun: act.DoOpen, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "close", DoFun: act.DoClose, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "unlock", DoFun: act.DoUnlock, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "lock", DoFun: act.DoLock, Position: types.POS_STANDING, Level: 0})
 
-	// Immortal commands
+	// Immortal stat commands
 	reg.Register(&command.Command{Name: "mstat", DoFun: act.DoMstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "ostat", DoFun: act.DoOstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "rstat", DoFun: act.DoRstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
+	// Immortal movement
+	reg.Register(&command.Command{Name: "goto", DoFun: act.DoGoto, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "transfer", DoFun: act.DoTransfer, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "at", DoFun: act.DoAt, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "bamfin", DoFun: act.DoBamfin, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "bamfout", DoFun: act.DoBamfout, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
+	// Immortal action
+	reg.Register(&command.Command{Name: "force", DoFun: act.DoForce, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "peace", DoFun: act.DoPeace, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "purge", DoFun: act.DoPurge, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "restore", DoFun: act.DoRestore, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "advance", DoFun: act.DoAdvance, Position: types.POS_DEAD, Level: types.LEVEL_SUPREME})
+	reg.Register(&command.Command{Name: "slay", DoFun: act.DoSlay, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
+	// Immortal info
+	reg.Register(&command.Command{Name: "mfind", DoFun: act.DoMfind, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "ofind", DoFun: act.DoOfind, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "mwhere", DoFun: act.DoMwhere, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "owhere", DoFun: act.DoOwhere, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "users", DoFun: act.DoUsers, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
+	// Immortal control
+	reg.Register(&command.Command{Name: "invis", DoFun: act.DoInvis, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "holylight", DoFun: act.DoHolylight, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "freeze", DoFun: act.DoFreeze, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "silence", DoFun: act.DoSilence, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
+	// Immortal system
+	reg.Register(&command.Command{Name: "echo", DoFun: act.DoEcho, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "recho", DoFun: act.DoRecho, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 
 	// Movement commands
 	reg.Register(&command.Command{Name: "north", DoFun: act.DoNorth, Position: types.POS_STANDING, Level: 0})

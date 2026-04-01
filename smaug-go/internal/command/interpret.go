@@ -23,8 +23,9 @@ type Command struct {
 
 // Registry holds all registered commands and provides lookup and dispatch.
 type Registry struct {
-	commands map[string]*Command
-	sorted   []*Command // sorted by name for prefix matching
+	commands       map[string]*Command
+	sorted         []*Command // sorted by name for prefix matching
+	SocialFallback func(ch *types.CharData, cmd string, argument string) bool
 }
 
 // NewRegistry creates a new empty command registry.
@@ -76,6 +77,10 @@ func (r *Registry) Interpret(ch *types.CharData, argument string) {
 	cmd := r.Find(cmdWord, trust)
 
 	if cmd == nil {
+		// Try social fallback before giving up
+		if r.SocialFallback != nil && r.SocialFallback(ch, cmdWord, rest) {
+			return
+		}
 		ch.Send("Huh?\n\r")
 		return
 	}
