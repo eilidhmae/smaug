@@ -36,7 +36,7 @@ func newCasterWithDesc(name string, level int) (*types.CharData, net.Conn) {
 	d := &types.DescriptorData{
 		Conn:       server,
 		InputQueue: make(chan string, 10),
-		Connected:  int(types.CON_PLAYING),
+		Connected:  types.CON_PLAYING,
 	}
 	ch := &types.CharData{
 		Name:     name,

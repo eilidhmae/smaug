@@ -178,7 +178,7 @@ func (g *GameLoop) processInput() {
 				if d.Character != nil {
 					g.cmdReg.Interpret(d.Character, line)
 					// Send prompt after command output
-					if d.Connected == int(types.CON_PLAYING) {
+					if d.Connected == types.CON_PLAYING {
 						d.WriteToBuffer(FormatPrompt(d.Character))
 					}
 				}
@@ -269,11 +269,11 @@ func (g *GameLoop) nannyGetName(d *types.DescriptorData, line string) {
 		ch.Desc = d
 		_, _ = d.Conn.Write(telnetEchoOff)
 		d.WriteToBuffer("Password: ")
-		d.Connected = int(types.CON_GET_OLD_PASSWORD)
+		d.Connected = types.CON_GET_OLD_PASSWORD
 	} else {
 		// New player — confirm the name
 		d.WriteToBufferf("Did I get that right, %s (Y/N)? ", name)
-		d.Connected = int(types.CON_CONFIRM_NEW_NAME)
+		d.Connected = types.CON_CONFIRM_NEW_NAME
 	}
 }
 
@@ -321,7 +321,7 @@ func (g *GameLoop) nannyGetOldPassword(d *types.DescriptorData, line string) {
 	d.Character.PCData.RecentSite = d.Host
 
 	d.WriteToBuffer(motd)
-	d.Connected = int(types.CON_READ_MOTD)
+	d.Connected = types.CON_READ_MOTD
 }
 
 // nannyConfirmNewName handles "Did I get that right, Gandalf (Y/N)?"
@@ -336,11 +336,11 @@ func (g *GameLoop) nannyConfirmNewName(d *types.DescriptorData, line string) {
 	case "Y":
 		_, _ = d.Conn.Write(telnetEchoOff)
 		d.WriteToBuffer("New character.\n\rGive me a password for this character: ")
-		d.Connected = int(types.CON_GET_NEW_PASSWORD)
+		d.Connected = types.CON_GET_NEW_PASSWORD
 	case "N":
 		d.WriteToBuffer("Ok, what IS it, then? ")
 		d.User = ""
-		d.Connected = int(types.CON_GET_NAME)
+		d.Connected = types.CON_GET_NAME
 	default:
 		d.WriteToBuffer("Please type Yes or No: ")
 	}
@@ -372,7 +372,7 @@ func (g *GameLoop) nannyGetNewPassword(d *types.DescriptorData, line string) {
 	d.Character = ch
 
 	d.WriteToBuffer("Please retype the password to confirm: ")
-	d.Connected = int(types.CON_CONFIRM_NEW_PASSWORD)
+	d.Connected = types.CON_CONFIRM_NEW_PASSWORD
 }
 
 // nannyConfirmNewPassword handles password confirmation.
@@ -389,12 +389,12 @@ func (g *GameLoop) nannyConfirmNewPassword(d *types.DescriptorData, line string)
 	if bcrypt.CompareHashAndPassword([]byte(d.Character.PCData.Pwd), []byte(line)) != nil {
 		d.WriteToBuffer("Passwords don't match.\n\rRetype password: ")
 		_, _ = d.Conn.Write(telnetEchoOff)
-		d.Connected = int(types.CON_GET_NEW_PASSWORD)
+		d.Connected = types.CON_GET_NEW_PASSWORD
 		return
 	}
 
 	d.WriteToBuffer("\n\rWhich gender will your character be?\n\r (M)ale\n\r (F)emale\n\r (N)eutral\n\rPlease select: ")
-	d.Connected = int(types.CON_GET_NEW_SEX)
+	d.Connected = types.CON_GET_NEW_SEX
 }
 
 // nannyGetNewSex handles sex selection for new characters.
@@ -418,7 +418,7 @@ func (g *GameLoop) nannyGetNewSex(d *types.DescriptorData, line string) {
 	}
 
 	g.showClassMenu(d)
-	d.Connected = int(types.CON_GET_NEW_CLASS)
+	d.Connected = types.CON_GET_NEW_CLASS
 }
 
 // nannyGetNewClass handles class selection for new characters.
@@ -449,7 +449,7 @@ func (g *GameLoop) nannyGetNewClass(d *types.DescriptorData, line string) {
 	d.Character.Class = classIdx
 
 	g.showRaceMenu(d)
-	d.Connected = int(types.CON_GET_NEW_RACE)
+	d.Connected = types.CON_GET_NEW_RACE
 }
 
 // nannyGetNewRace handles race selection for new characters.
@@ -494,7 +494,7 @@ func (g *GameLoop) nannyGetNewRace(d *types.DescriptorData, line string) {
 		g.world.Classes[d.Character.Class].WhoName)
 
 	d.WriteToBuffer(motd)
-	d.Connected = int(types.CON_READ_MOTD)
+	d.Connected = types.CON_READ_MOTD
 }
 
 // showClassMenu displays available classes.
@@ -588,7 +588,7 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 	}
 
 	ch.Desc = d
-	d.Connected = int(types.CON_PLAYING)
+	d.Connected = types.CON_PLAYING
 
 	// Add to world character list
 	g.world.AddChar(ch)

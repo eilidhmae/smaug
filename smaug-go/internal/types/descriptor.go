@@ -182,12 +182,16 @@ func (d *DescriptorData) SetPagePoint(pos int) {
 
 // GetPagerCmd returns the stored pager command byte.
 func (d *DescriptorData) GetPagerCmd() byte {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
 	return d.pageCmd
 }
 
 // SetPagerCmd sets the pager command byte.
 func (d *DescriptorData) SetPagerCmd(cmd byte) {
+	d.outMu.Lock()
 	d.pageCmd = cmd
+	d.outMu.Unlock()
 }
 
 // ClearPager resets all pager state.

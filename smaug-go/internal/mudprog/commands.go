@@ -10,6 +10,7 @@ import (
 )
 
 // WorldRef is set from main to give mudprogs access to the world.
+// Written once at boot before the game loop starts; read only from the game loop goroutine. Safe without synchronization.
 var WorldRef *world.World
 
 // mpEcho sends a message to the mob's room.
@@ -155,7 +156,10 @@ func mpDamage(mob *types.CharData, args string) {
 // mpPurge removes an NPC or object from the room.
 func mpPurge(mob *types.CharData, args string) {
 	arg := strings.TrimSpace(args)
-	if arg == "" || mob.InRoom == nil || WorldRef == nil {
+	if mob.InRoom == nil || WorldRef == nil {
+		return
+	}
+	if arg == "" {
 		// Purge all NPCs (except self) and objects
 		for i := len(mob.InRoom.People) - 1; i >= 0; i-- {
 			rch := mob.InRoom.People[i]

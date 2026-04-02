@@ -370,9 +370,3 @@ func computeXP(ch *types.CharData, victim *types.CharData) int {
 	}
 	return xp
 }
-
-// AFF_SANCTUARY constant check.
-func init() {
-	// Verify AFF_SANCTUARY exists
-	_ = types.AFF_SANCTUARY
-}

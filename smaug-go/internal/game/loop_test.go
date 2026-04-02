@@ -513,7 +513,7 @@ func TestNanny_GetName_NewPlayer(t *testing.T) {
 
 	g.nannyGetName(d, "Newguy")
 
-	if d.Connected != int(types.CON_CONFIRM_NEW_NAME) {
+	if d.Connected != types.CON_CONFIRM_NEW_NAME {
 		t.Errorf("new player should go to CON_CONFIRM_NEW_NAME, got %d", d.Connected)
 	}
 	if d.User != "Newguy" {
@@ -541,12 +541,12 @@ func TestNanny_ConfirmNewName_Yes(t *testing.T) {
 	defer c.Close()
 	drainPipe(c)
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_CONFIRM_NEW_NAME)
+	d.Connected = types.CON_CONFIRM_NEW_NAME
 	d.User = "Testguy"
 
 	g.nannyConfirmNewName(d, "Y")
 
-	if d.Connected != int(types.CON_GET_NEW_PASSWORD) {
+	if d.Connected != types.CON_GET_NEW_PASSWORD {
 		t.Errorf("expected CON_GET_NEW_PASSWORD, got %d", d.Connected)
 	}
 }
@@ -557,7 +557,7 @@ func TestNanny_ConfirmNewName_No(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_CONFIRM_NEW_NAME)
+	d.Connected = types.CON_CONFIRM_NEW_NAME
 	d.User = "Testguy"
 
 	g.nannyConfirmNewName(d, "N")
@@ -576,7 +576,7 @@ func TestNanny_ConfirmNewName_Empty(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_CONFIRM_NEW_NAME)
+	d.Connected = types.CON_CONFIRM_NEW_NAME
 	d.User = "Testguy"
 
 	g.nannyConfirmNewName(d, "")
@@ -593,7 +593,7 @@ func TestNanny_ConfirmNewName_InvalidInput(t *testing.T) {
 	defer s.Close()
 	defer c.Close()
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_CONFIRM_NEW_NAME)
+	d.Connected = types.CON_CONFIRM_NEW_NAME
 	d.User = "Testguy"
 
 	g.nannyConfirmNewName(d, "maybe")
@@ -611,13 +611,13 @@ func TestNanny_GetNewPassword_TooShort(t *testing.T) {
 	defer c.Close()
 	drainPipe(c)
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_GET_NEW_PASSWORD)
+	d.Connected = types.CON_GET_NEW_PASSWORD
 	d.User = "Testguy"
 
 	g.nannyGetNewPassword(d, "abc")
 
 	// Should stay in same state
-	if d.Connected != int(types.CON_GET_NEW_PASSWORD) {
+	if d.Connected != types.CON_GET_NEW_PASSWORD {
 		t.Errorf("short password should stay in CON_GET_NEW_PASSWORD, got %d", d.Connected)
 	}
 }
@@ -629,12 +629,12 @@ func TestNanny_GetNewPassword_ContainsTilde(t *testing.T) {
 	defer c.Close()
 	drainPipe(c)
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_GET_NEW_PASSWORD)
+	d.Connected = types.CON_GET_NEW_PASSWORD
 	d.User = "Testguy"
 
 	g.nannyGetNewPassword(d, "pass~word")
 
-	if d.Connected != int(types.CON_GET_NEW_PASSWORD) {
+	if d.Connected != types.CON_GET_NEW_PASSWORD {
 		t.Errorf("tilde password should stay in CON_GET_NEW_PASSWORD, got %d", d.Connected)
 	}
 }
@@ -646,12 +646,12 @@ func TestNanny_GetNewPassword_Valid(t *testing.T) {
 	defer c.Close()
 	drainPipe(c)
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_GET_NEW_PASSWORD)
+	d.Connected = types.CON_GET_NEW_PASSWORD
 	d.User = "Testguy"
 
 	g.nannyGetNewPassword(d, "secret123")
 
-	if d.Connected != int(types.CON_CONFIRM_NEW_PASSWORD) {
+	if d.Connected != types.CON_CONFIRM_NEW_PASSWORD {
 		t.Errorf("valid password should go to CON_CONFIRM_NEW_PASSWORD, got %d", d.Connected)
 	}
 	if d.Character == nil {
@@ -669,7 +669,7 @@ func TestNanny_ConfirmNewPassword_Mismatch(t *testing.T) {
 	defer c.Close()
 	drainPipe(c)
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_CONFIRM_NEW_PASSWORD)
+	d.Connected = types.CON_CONFIRM_NEW_PASSWORD
 
 	ch := g.createNewCharacter("Testguy")
 	hash, _ := bcrypt.GenerateFromPassword([]byte("secret123"), bcrypt.MinCost)
@@ -679,7 +679,7 @@ func TestNanny_ConfirmNewPassword_Mismatch(t *testing.T) {
 
 	g.nannyConfirmNewPassword(d, "wrong")
 
-	if d.Connected != int(types.CON_GET_NEW_PASSWORD) {
+	if d.Connected != types.CON_GET_NEW_PASSWORD {
 		t.Errorf("mismatched password should go back to CON_GET_NEW_PASSWORD, got %d", d.Connected)
 	}
 }
@@ -691,7 +691,7 @@ func TestNanny_ConfirmNewPassword_NilChar(t *testing.T) {
 	defer c.Close()
 	drainPipe(c)
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_CONFIRM_NEW_PASSWORD)
+	d.Connected = types.CON_CONFIRM_NEW_PASSWORD
 	d.Character = nil
 
 	g.nannyConfirmNewPassword(d, "anything")
@@ -708,7 +708,7 @@ func TestNanny_ConfirmNewPassword_Match(t *testing.T) {
 	defer c.Close()
 	drainPipe(c)
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_CONFIRM_NEW_PASSWORD)
+	d.Connected = types.CON_CONFIRM_NEW_PASSWORD
 
 	ch := g.createNewCharacter("Testguy")
 	hash, _ := bcrypt.GenerateFromPassword([]byte("secret123"), bcrypt.MinCost)
@@ -718,7 +718,7 @@ func TestNanny_ConfirmNewPassword_Match(t *testing.T) {
 
 	g.nannyConfirmNewPassword(d, "secret123")
 
-	if d.Connected != int(types.CON_GET_NEW_SEX) {
+	if d.Connected != types.CON_GET_NEW_SEX {
 		t.Errorf("matching password should go to CON_GET_NEW_SEX, got %d", d.Connected)
 	}
 }
@@ -756,7 +756,7 @@ func TestNanny_GetNewSex(t *testing.T) {
 			if ch.Sex != tt.sex {
 				t.Errorf("input %q: sex = %d, want %d", tt.input, ch.Sex, tt.sex)
 			}
-			if d.Connected != int(types.CON_GET_NEW_CLASS) {
+			if d.Connected != types.CON_GET_NEW_CLASS {
 				t.Errorf("input %q: should go to CON_GET_NEW_CLASS, got %d", tt.input, d.Connected)
 			}
 		})
@@ -776,7 +776,7 @@ func TestNanny_GetNewSex_Invalid(t *testing.T) {
 	g.nannyGetNewSex(d, "X")
 
 	// Should not change state
-	if d.Connected == int(types.CON_GET_NEW_CLASS) {
+	if d.Connected == types.CON_GET_NEW_CLASS {
 		t.Error("invalid sex should not advance state")
 	}
 }
@@ -842,7 +842,7 @@ func TestNanny_GetOldPassword_Correct(t *testing.T) {
 
 	g.nannyGetOldPassword(d, "correct")
 
-	if d.Connected != int(types.CON_READ_MOTD) {
+	if d.Connected != types.CON_READ_MOTD {
 		t.Errorf("correct password should go to CON_READ_MOTD, got %d", d.Connected)
 	}
 	if ch.PCData.RecentSite != "localhost" {
@@ -906,7 +906,7 @@ func TestNanny_GetNewClass(t *testing.T) {
 	if ch.Class != 0 {
 		t.Errorf("class = %d, want 0 (Mage)", ch.Class)
 	}
-	if d.Connected != int(types.CON_GET_NEW_RACE) {
+	if d.Connected != types.CON_GET_NEW_RACE {
 		t.Errorf("should go to CON_GET_NEW_RACE, got %d", d.Connected)
 	}
 }
@@ -927,7 +927,7 @@ func TestNanny_GetNewClass_Invalid(t *testing.T) {
 	g.nannyGetNewClass(d, "Paladin")
 
 	// Should not advance
-	if d.Connected == int(types.CON_GET_NEW_RACE) {
+	if d.Connected == types.CON_GET_NEW_RACE {
 		t.Error("invalid class should not advance to race selection")
 	}
 }
@@ -974,7 +974,7 @@ func TestNanny_GetNewRace(t *testing.T) {
 	if ch.Race != 0 {
 		t.Errorf("race = %d, want 0 (Human)", ch.Race)
 	}
-	if d.Connected != int(types.CON_READ_MOTD) {
+	if d.Connected != types.CON_READ_MOTD {
 		t.Errorf("should go to CON_READ_MOTD, got %d", d.Connected)
 	}
 }
@@ -997,7 +997,7 @@ func TestNanny_GetNewRace_Invalid(t *testing.T) {
 	g.nannyGetNewRace(d, "Vulcan")
 
 	// Should not advance
-	if d.Connected == int(types.CON_READ_MOTD) {
+	if d.Connected == types.CON_READ_MOTD {
 		t.Error("invalid race should not advance")
 	}
 }
@@ -1024,7 +1024,7 @@ func TestNanny_GetNewRace_ClassRestriction(t *testing.T) {
 	g.nannyGetNewRace(d, "Orc")
 
 	// Should not advance due to class restriction
-	if d.Connected == int(types.CON_READ_MOTD) {
+	if d.Connected == types.CON_READ_MOTD {
 		t.Error("class-restricted race should not be selectable")
 	}
 }
@@ -1075,7 +1075,7 @@ func TestEnterGame(t *testing.T) {
 
 	g.enterGame(d)
 
-	if d.Connected != int(types.CON_PLAYING) {
+	if d.Connected != types.CON_PLAYING {
 		t.Errorf("should be CON_PLAYING, got %d", d.Connected)
 	}
 	if ch.InRoom != room {
@@ -1245,7 +1245,7 @@ func TestPasswordHash_Bcrypt(t *testing.T) {
 	defer c.Close()
 	drainPipe(c)
 	d := types.NewDescriptor(s)
-	d.Connected = int(types.CON_GET_NEW_PASSWORD)
+	d.Connected = types.CON_GET_NEW_PASSWORD
 	d.User = "Hashtest"
 
 	g.nannyGetNewPassword(d, "secret123")
@@ -1287,7 +1287,7 @@ func TestPasswordHash_LegacyMigration(t *testing.T) {
 	// Login with correct plaintext password
 	g.nannyGetOldPassword(d, "oldplain")
 
-	if d.Connected != int(types.CON_READ_MOTD) {
+	if d.Connected != types.CON_READ_MOTD {
 		t.Fatalf("correct legacy password should succeed, got state %d", d.Connected)
 	}
 	// Password should now be migrated to bcrypt
@@ -1320,7 +1320,7 @@ func TestPasswordHash_BcryptLogin(t *testing.T) {
 
 	g.nannyGetOldPassword(d, "bcryptpwd")
 
-	if d.Connected != int(types.CON_READ_MOTD) {
+	if d.Connected != types.CON_READ_MOTD {
 		t.Errorf("correct bcrypt password should succeed, got state %d", d.Connected)
 	}
 }
@@ -1350,7 +1350,7 @@ func TestBruteForceProtection(t *testing.T) {
 	}
 
 	// Attempt 2: simulate reconnect on same descriptor (reset state but keep FailedAttempts)
-	d.Connected = int(types.CON_GET_OLD_PASSWORD)
+	d.Connected = types.CON_GET_OLD_PASSWORD
 	ch2 := &types.CharData{Name: "Bruteforce", PCData: &types.PCData{Pwd: string(hash)}}
 	d.Character = ch2
 	ch2.Desc = d
@@ -1361,7 +1361,7 @@ func TestBruteForceProtection(t *testing.T) {
 	}
 
 	// Attempt 3: should disconnect with brute force message
-	d.Connected = int(types.CON_GET_OLD_PASSWORD)
+	d.Connected = types.CON_GET_OLD_PASSWORD
 	ch3 := &types.CharData{Name: "Bruteforce", PCData: &types.PCData{Pwd: string(hash)}}
 	d.Character = ch3
 	ch3.Desc = d

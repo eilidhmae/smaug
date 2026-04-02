@@ -443,9 +443,7 @@ func SpellLocateObject(w *world.World, sn int, level int, ch *types.CharData, vi
 		}
 		ch.Sendf("%s is %s.\n\r", obj.ShortDescr, location)
 		found = true
-		if found {
-			break // just show first match for simplicity
-		}
+		break // just show first match for simplicity
 	}
 	if !found {
 		ch.Send("Nothing like that in the world.\n\r")

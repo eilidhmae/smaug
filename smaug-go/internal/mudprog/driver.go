@@ -9,6 +9,7 @@ import (
 )
 
 // CmdRegistry is set from main to allow mudprogs to execute commands.
+// Written once at boot before the game loop starts; read only from the game loop goroutine. Safe without synchronization.
 var CmdRegistry *command.Registry
 
 // maxProgNest prevents infinite recursion in mudprogs.

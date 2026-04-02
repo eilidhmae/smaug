@@ -14,6 +14,7 @@ import (
 )
 
 // StartEditingFunc is set from main to avoid circular dependency with game package.
+// Written once at boot before the game loop starts; read only from the game loop goroutine. Safe without synchronization.
 var StartEditingFunc func(ch *types.CharData, text string)
 
 // --- Room editing ---

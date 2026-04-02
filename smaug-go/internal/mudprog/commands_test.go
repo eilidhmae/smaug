@@ -28,7 +28,7 @@ func makeDescChar(name string) (*types.CharData, net.Conn) {
 	d := &types.DescriptorData{
 		Conn:       server,
 		InputQueue: make(chan string, 10),
-		Connected:  int(types.CON_PLAYING),
+		Connected:  types.CON_PLAYING,
 	}
 	ch := &types.CharData{
 		Name:       name,
@@ -635,6 +635,49 @@ func TestMpPurge_EmptyArgs_PurgesAll(t *testing.T) {
 		if o == obj {
 			t.Error("object should have been extracted in purge all")
 		}
+	}
+}
+
+func TestMpPurge_NilRoom_EmptyArgs(t *testing.T) {
+	mob := makeNPC("guard")
+	mob.InRoom = nil
+	// Must not panic — nil room with empty args should be a no-op
+	mpPurge(mob, "")
+}
+
+func TestMpPurge_NilRoom_WithArgs(t *testing.T) {
+	mob := makeNPC("guard")
+	mob.InRoom = nil
+	// Must not panic — nil room with target name should be a no-op
+	mpPurge(mob, " target")
+}
+
+func TestMpPurge_NilWorld(t *testing.T) {
+	oldWorld := WorldRef
+	WorldRef = nil
+	defer func() { WorldRef = oldWorld }()
+
+	room := &types.RoomIndexData{Vnum: 3001, Name: "Test Room"}
+	mob := makeNPC("guard")
+	mob.InRoom = room
+	room.People = append(room.People, mob)
+
+	other := makeNPC("other")
+	other.InRoom = room
+	room.People = append(room.People, other)
+
+	// Must not panic — nil WorldRef should be a no-op even with valid room
+	mpPurge(mob, "")
+
+	// other should still be in the room (nothing was purged)
+	found := false
+	for _, ch := range room.People {
+		if ch == other {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("other NPC should still be in room when WorldRef is nil")
 	}
 }
 

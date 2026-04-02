@@ -3,6 +3,7 @@ package types
 // Attribute bonus tables ported from C const.c.
 // Indexed by current stat value (0-25).
 
+// StrApp maps strength values (0-25) to hit/damage bonuses, carry weight, and wield weight.
 var StrApp = [26]StrAppType{
 	{-5, -4, 0, 0},    // 0
 	{-5, -4, 3, 1},    // 1
@@ -32,24 +33,28 @@ var StrApp = [26]StrAppType{
 	{10, 12, 999, 60}, // 25
 }
 
+// IntApp maps intelligence values (0-25) to mana gain per level.
 var IntApp = [26]IntAppType{
 	{3}, {5}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {15},
 	{17}, {19}, {22}, {25}, {28}, {31}, {34}, {37}, {40}, {44},
 	{49}, {55}, {60}, {70}, {85}, {99},
 }
 
+// WisApp maps wisdom values (0-25) to practice gain per level.
 var WisApp = [26]WisAppType{
 	{0}, {0}, {0}, {0}, {0}, {1}, {1}, {1}, {1}, {2},
 	{2}, {2}, {2}, {2}, {2}, {3}, {3}, {4}, {5}, {5},
 	{5}, {6}, {6}, {6}, {6}, {7},
 }
 
+// DexApp maps dexterity values (0-25) to AC bonus.
 var DexApp = [26]DexAppType{
 	{60}, {50}, {50}, {40}, {30}, {20}, {10}, {0}, {0}, {0},
 	{0}, {0}, {0}, {0}, {0}, {-10}, {-15}, {-20}, {-30}, {-40},
 	{-50}, {-60}, {-75}, {-90}, {-105}, {-120},
 }
 
+// ConApp maps constitution values (0-25) to HP gain and shock survival percentage.
 var ConApp = [26]ConAppType{
 	{-4, 20}, {-3, 25}, {-2, 30}, {-2, 35}, {-1, 40},
 	{-1, 45}, {-1, 50}, {0, 55}, {0, 60}, {0, 65},
@@ -59,12 +64,14 @@ var ConApp = [26]ConAppType{
 	{8, 99},
 }
 
+// ChaApp maps charisma values (0-25) to shop price adjustment.
 var ChaApp = [26]ChaAppType{
 	{-60}, {-50}, {-50}, {-40}, {-30}, {-20}, {-10}, {-5}, {-1}, {0},
 	{0}, {0}, {0}, {0}, {1}, {5}, {10}, {20}, {30}, {40},
 	{50}, {60}, {70}, {80}, {90}, {99},
 }
 
+// LckApp maps luck values (0-25) to luck-based AC modifier.
 var LckApp = [26]LckAppType{
 	{60}, {50}, {50}, {40}, {30}, {20}, {10}, {0}, {0}, {0},
 	{0}, {0}, {0}, {0}, {0}, {-10}, {-15}, {-20}, {-30}, {-40},

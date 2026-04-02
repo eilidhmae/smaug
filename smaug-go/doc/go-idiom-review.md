@@ -2,11 +2,13 @@
 
 Audit of the SMAUG Go port codebase for Go idiom violations, maintainability issues, and potential bugs.
 
+**Status: All actionable findings resolved.** See resolution notes on each item below.
+
 ## Critical Issues
 
-### 1. Package-Level Mutable Variables Lack Documentation
+### 1. Package-Level Mutable Variables Lack Documentation — RESOLVED
 
-These exported globals are set during init but undocumented for thread-safety:
+These exported globals are set during init but were undocumented for thread-safety:
 
 | Variable | File:Line | Purpose |
 |----------|-----------|---------|
@@ -17,39 +19,23 @@ These exported globals are set during init but undocumented for thread-safety:
 | `mudprog.CmdRegistry` | mudprog/driver.go:12 | Command registry for mp commands |
 | `mudprog.WorldRef` | mudprog/commands.go:12 | World ref for mp commands |
 
-**Fix**: Add godoc comments documenting: when initialized, thread-safety guarantees, required synchronization.
+**Resolution**: Added godoc documenting thread-safety: written once at boot, read only from game loop goroutine, safe without synchronization.
 
-**Note**: These are only written once at boot before the game loop starts, and only read from the game loop goroutine. They are safe in practice due to the single-threaded game state model, but should be documented.
+### 2. Unnecessary int Casts on Constants — RESOLVED
 
-### 2. Unnecessary int Casts on Constants
+Multiple instances of `int(types.CON_PLAYING)` and similar casts where the constants are already untyped `int`.
 
-Multiple instances of `int(types.CON_PLAYING)` and similar casts where the constants are already untyped `int`:
+**Resolution**: Removed ~50 redundant `int()` casts across 7 files (loop.go, loop_test.go, info.go, info_test.go, magic_test.go, driver_test.go, commands_test.go).
 
-- game/loop.go:169, 260, 264, 307, 338, 354, 360, 384, 415, 460, 554
+### 3. Logic Bug in mpPurge — RESOLVED
 
-**Fix**: Remove redundant `int()` casts.
+mudprog/commands.go — `mpPurge` had an inverted condition: `if arg == "" || mob.InRoom == nil || WorldRef == nil` entered the purge-all block even when `mob.InRoom` was nil, causing a nil-pointer panic.
 
-### 3. Logic Bug in mpPurge
-
-- mudprog/commands.go:158-160 — `mpPurge` has an inverted condition: the guard `if arg == "" || mob.InRoom == nil || WorldRef == nil` should cause an early return, but instead the code falls through to access `mob.InRoom.People` inside the if block. When `arg == ""` but `mob.InRoom` is nil, this will panic.
-
-**Fix**: Restructure the condition so the no-arg purge-all path is a separate branch that still requires `mob.InRoom != nil && WorldRef != nil`:
-```go
-if mob.InRoom == nil || WorldRef == nil {
-    return
-}
-if arg == "" {
-    // purge all NPCs and objects
-    ...
-    return
-}
-```
-
-**Note**: `mpEcho` (line 22) and `mpEchoAround` (line 43) already have correct nil guards.
+**Resolution**: Restructured into two guards — nil check returns early, empty-arg check enters purge-all path. Added 3 new tests (nil room + empty args, nil room + target, nil WorldRef).
 
 ## Medium Issues
 
-### 4. Error Handling: Swallowed Errors
+### 4. Error Handling: Swallowed Errors — NO ACTION (by design)
 
 | File:Line | Issue |
 |-----------|-------|
@@ -60,36 +46,27 @@ if arg == "" {
 | game/loop.go:258, 270, 305 | `d.Conn.Write(telnetEchoOff/On)` errors discarded |
 | act/olc.go:353, 391, 428 | `strconv.Atoi` errors silently ignored |
 
-**Note**: Many of these follow the CLAUDE.md convention: "Error handling in file loaders: log with util.Bug() and continue." The telnet write errors are acceptable (connection may be closing). The OLC strconv errors default to 0 which is fine.
+**Note**: These follow the CLAUDE.md convention: "Error handling in file loaders: log with util.Bug() and continue." Telnet write errors are acceptable (connection may be closing). OLC strconv errors default to 0 which is fine.
 
-### 5. Descriptor Mutex Inconsistency
+### 5. Descriptor Mutex Inconsistency — RESOLVED
 
-types/descriptor.go:46-47 — `outMu` protects `outBuf` and `pageBuf`, but `pagePoint`, `pageCmd`, `pageColor` are accessed via separate getter/setter methods. All pager fields should be consistently protected.
+types/descriptor.go — `GetPagerCmd()` and `SetPagerCmd()` were not mutex-protected while all other pager methods used `outMu`.
 
-**Note**: In practice, pager fields are only accessed from the game loop goroutine, so this is safe. The mutex exists for the output buffer which is written from the game loop but flushed from the network goroutine.
+**Resolution**: Added `outMu.Lock()/Unlock()` to both methods for consistency.
 
-### 6. Dead Code
+### 6. Dead Code — RESOLVED
 
-- combat/combat.go:375-378 — `init()` function only verifies `types.AFF_SANCTUARY` exists. Can be removed.
-- magic/magic.go:445-448 — Unreachable `if found { break }` in `SpellLocateObject` (always breaks on first iteration).
-- mudprog/commands.go:155-170 — In `mpPurge`, logic after empty arg check is unreachable.
+- combat/combat.go — `init()` that only verified `types.AFF_SANCTUARY` exists. Removed.
+- magic/magic.go — Unreachable `if found { break }` in `SpellLocateObject`. Simplified to unconditional `break`.
+- mudprog/commands.go — mpPurge dead code path resolved by issue #3 fix above.
 
 ## Low Issues
 
-### 7. Missing Godoc Comments on Exported Symbols
+### 7. Missing Godoc Comments on Exported Symbols — RESOLVED
 
-| Symbol | File |
-|--------|------|
-| `StrApp`, `IntApp`, etc. (7 tables) | types/attributes.go |
-| `PlayerFilePath` | persist/player.go:593 |
-| `MSDPVariable` | net/msdp.go:16 |
-| `FindSpellFunc` | magic/magic.go:52 |
-| `Driver` | mudprog/driver.go:20 |
-| `DoIfCheck` | mudprog/ifcheck.go:14 |
-| `Translate` | mudprog/translate.go:15 |
-| `MobTrigger` | mudprog/triggers.go:12 |
+**Resolution**: Added godoc to the 7 attribute table exports in types/attributes.go (`StrApp`, `IntApp`, `WisApp`, `DexApp`, `ConApp`, `ChaApp`, `LckApp`). The remaining symbols (`PlayerFilePath`, `MSDPVariable`, `FindSpellFunc`, `Driver`, `DoIfCheck`, `Translate`, `MobTrigger`) already had godoc comments.
 
-### 8. C-Style Naming Holdovers
+### 8. C-Style Naming Holdovers — NO ACTION (by design)
 
 | Current | Suggested | File |
 |---------|-----------|------|
@@ -98,20 +75,20 @@ types/descriptor.go:46-47 — `outMu` protects `outBuf` and `pageBuf`, but `page
 | `LowMVnum`/`HiMVnum` | `LowMobVNum`/`HiMobVNum` | types/area.go:21-26 |
 | `BashPlrVsPlr` etc. | `BashPlayerVsPlayer` | types/system.go:46-58 |
 
-**Note**: Per CLAUDE.md convention, "constant names match C names for cross-reference." Struct field names use PascalCase but abbreviations follow C patterns. Changing these would break cross-referencing with the C source — recommend leaving as-is until the port is complete.
+**Note**: Per CLAUDE.md convention, "constant names match C names for cross-reference." Leaving as-is until the port is complete.
 
-### 9. Linear Search in World Collections
+### 9. Linear Search in World Collections — NO ACTION (acceptable)
 
 - world/world.go:110-116 — `RemoveChar` and `RemoveObj` use O(n) linear scan + copy
 - handler/find.go:36-84 — `GetCharWorld`/`GetObjWorld` iterate twice (exact then prefix)
 
 **Note**: Acceptable for current MUD scale (~500 entities). Would matter at 10,000+.
 
-### 10. Close Errors Silently Discarded
+### 10. Close Errors Silently Discarded — NO ACTION (standard practice)
 
 - net/server.go:45, 74 — `listener.Close()` and `conn.Close()` errors ignored
 
-**Note**: Standard Go practice for network cleanup. Logging might be useful for debugging but isn't critical.
+**Note**: Standard Go practice for network cleanup.
 
 ## Not Issues (Confirmed Good Patterns)
 

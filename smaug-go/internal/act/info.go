@@ -13,6 +13,7 @@ import (
 
 // WorldRef holds a reference to the world for commands that need it.
 // Set during boot.
+// Written once at boot before the game loop starts; read only from the game loop goroutine. Safe without synchronization.
 var WorldRef *world.World
 
 // DoLook implements the 'look' command.
@@ -296,7 +297,7 @@ func DoWho(ch *types.CharData, argument string) {
 	count := 0
 	ch.Send("&W--- Players Online ---&D\n\r")
 	for _, d := range WorldRef.Descriptors {
-		if d.Connected != int(types.CON_PLAYING) || d.Character == nil {
+		if d.Connected != types.CON_PLAYING || d.Character == nil {
 			continue
 		}
 		rch := d.Character
@@ -322,6 +323,7 @@ func plural(n int) string {
 
 // SaveFunc is set by main to allow saving players from the act package.
 // This avoids a circular dependency between act and game.
+// Written once at boot before the game loop starts; read only from the game loop goroutine. Safe without synchronization.
 var SaveFunc func(ch *types.CharData)
 
 // DoQuit implements the 'quit' command.

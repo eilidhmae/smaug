@@ -13,6 +13,7 @@ import (
 )
 
 // CmdRegistry is set from main to allow force/at commands to interpret.
+// Written once at boot before the game loop starts; read only from the game loop goroutine. Safe without synchronization.
 var CmdRegistry *command.Registry
 
 // sendToPager sends text through the pager if enabled, else to normal output.
