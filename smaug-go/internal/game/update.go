@@ -261,6 +261,12 @@ func (g *GameLoop) mobileUpdate() {
 			continue
 		}
 
+		// Hunting: move toward target
+		if ch.Hunting != nil && ch.Hunting.Who != nil {
+			act.HuntVictim(g.world, ch)
+			continue
+		}
+
 		// NPC scavenging: pick up valuable items from room
 		if ch.Act.IsSet(types.ACT_SCAVENGER) && ch.InRoom != nil && len(ch.InRoom.Contents) > 0 {
 			var bestObj *types.ObjData

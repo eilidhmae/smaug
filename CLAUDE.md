@@ -28,17 +28,22 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 **Read `smaug-go/doc/` for detailed documentation:**
 
 - `smaug-go/doc/plan.md` — Full architectural plan: C architecture summary, Go design decisions, project structure, C→Go file mapping, data file mapping, testing strategy
-- `smaug-go/doc/phases.md` — All 4 implementation phases with detailed deliverables and verification criteria
+- `smaug-go/doc/phases.md` — All 5 implementation phases with detailed deliverables and verification criteria (Phases 1–4 complete)
 - `smaug-go/doc/phase1-completed.md` — Phase 1 record (per-package breakdown with files, structs, functions, test results)
 - `smaug-go/doc/phase1-remaining.md` — Phase 1 status (complete)
 - `smaug-go/doc/phase2-completed.md` — Phase 2 record (completed work so far)
 - `smaug-go/doc/phase2-remaining.md` — Phase 2 task breakdown with priority order
 - `smaug-go/doc/phase3-plan.md` — Phase 3 implementation plan: 12 task groups with dependencies and execution order
 - `smaug-go/doc/phase3-completed.md` — Phase 3 record (all 12 task groups complete)
+- `smaug-go/doc/phase4-plan.md` — Phase 4 plan: 12 task groups (5 quality + 7 features) — COMPLETE (G11 hotboot moved to Phase 5)
+- `smaug-go/doc/phase4a-completed.md` — Phase 4a record (quality pass: G1–G5 complete)
+- `smaug-go/doc/phase4b-completed.md` — Phase 4b record (features: G6–G10, G12 complete; G11 deferred)
+- `smaug-go/doc/go-idiom-review.md` — Go idiom audit: 10 findings, all resolved
+- `smaug-go/doc/security-review.md` — Security audit: 16 findings, 14 fixed
 
 ## Current Status
 
-**Phase 1 complete. Phase 2 complete. Phase 3 complete.** 67 source files, 36 test files, 572 test cases — all passing across 13 packages. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races, 8 clans, 2 deities, 496 socials, 2 boards.
+**Phases 1–4a complete. Phase 4b (features) complete.** 78 source files, 62 test files, 1,372 test cases — all passing across 13 packages. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races, 8 clans, 2 deities, 496 socials, 2 boards.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -49,7 +54,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Single-threaded game loop at 4 pulses/second
 - Command interpreter with prefix matching
 - Room navigation (10 directions) with auto-look through real loaded rooms
-- Commands (90+): look, quit, say, score, who, help, commands, inventory, equipment, get, drop, put, give, wear, remove, sacrifice, kill, flee, tell, reply, yell, gossip, emote, open, close, unlock, lock, consider, where, time, cast, eat, drink, fill, empty, examine, shout, pmote, pager, weather, murder, wimpy, buy, sell, list, value, backstab, bash, kick, disarm, rescue, sneak, hide, steal, pick, scan, aid, recall, clans, claninfo, clantalk, join, leave, deities, devote, note, mstat, ostat, rstat, goto, transfer, at, bamfin, bamfout, force, peace, purge, restore, advance, slay, mfind, ofind, mwhere, owhere, users, invis, holylight, freeze, silence, echo, recho, snoop, redit, ocreate, mcreate, rdig, rlist, olist, mlist, savearea
+- Commands (130+): look, quit, say, score, who, help, commands, inventory, equipment, get, drop, put, give, wear, remove, sacrifice, kill, flee, tell, reply, yell, gossip, emote, open, close, unlock, lock, consider, where, time, cast, eat, drink, fill, empty, examine, shout, pmote, pager, weather, murder, wimpy, buy, sell, list, value, backstab, bash, kick, disarm, rescue, sneak, hide, steal, pick, scan, aid, recall, clans, claninfo, clantalk, join, leave, deities, devote, note, mstat, ostat, rstat, goto, transfer, at, bamfin, bamfout, force, peace, purge, restore, advance, slay, mfind, ofind, mwhere, owhere, users, invis, holylight, freeze, silence, echo, recho, snoop, redit, ocreate, mcreate, rdig, rlist, olist, mlist, savearea, rest, sit, stand, sleep, wake, bank, ban, track, quest, practice, skills, spells, quaff, recite, brandish, zap, follow, group, order, assist, mount, dismount, mset, oset, rset, aset, astat
 - Area file loading from `db/area/*.are` with skip-and-recover on parse errors
 - Exit resolution (vnum → room pointer linking after all areas load)
 - Area reset processing: mob/object instantiation (M/O/P/G/E/D/H reset commands)
@@ -85,13 +90,24 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Deity commands: deities, devote (with worshipper tracking)
 - Board/note commands: note list/read/write/post/remove
 - MUD Programs: script interpreter with if/or/else/endif, ~25 if-checks (rand, level, hp, ispc, isevil, etc.), variable substitution ($n/$t/$o etc.), 7 trigger types (greet, speech, fight, death, rand, give, entry), mp commands (mpecho, mpgoto, mptransfer, mpforce, mpkill, mpdamage, mppurge)
-- OLC: redit (name/desc/sector/flags/exdesc/exit), ocreate, mcreate, rdig, rlist, olist, mlist, savearea
+- OLC: redit (name/desc/sector/flags/exdesc/exit), ocreate, mcreate, rdig, rlist, olist, mlist, savearea, mset, oset, rset, aset, astat
 - Area save: persist/area_write.go writes rooms, mobs, objects, resets, shops to .are files
 - Protocol support: telnet negotiation helpers, MCCP2 zlib compression, MSDP variable reporting, MSSP server status
-- Test suite: 36 files, 572 cases covering all 13 packages (types, util, net, persist, command, world, handler, game, act, combat, magic, mudprog)
+- Position commands: rest, sit, stand, sleep, wake with full state machine (fighting/mounted/sleep-affected guards)
+- Banking system: deposit, withdraw, balance with ACT_BANKER NPC requirement
+- Ban system: ban site (exact/prefix/suffix wildcards), ban list, ban remove, CheckBans on login, persist load/save
+- Mob tracking/hunting: BFS pathfinding (map-based visited, no room flag pollution), do_track player command, HuntVictim NPC behavior in mobileUpdate
+- Quest system: quest request/complete/list/buy/info/time/points, random mob-slay quests, quest point rewards, QuestUpdate in game loop
+- Skill/spell info: practice (at trainer, spend sessions), skills (list non-spell skills), spells (list spells)
+- Item-based spellcasting: quaff (potions), recite (scrolls), brandish (staves, area effect), zap (wands, targeted)
+- Group system: follow, group, order (sends to follower input queue), assist (join ally's combat)
+- Mount system: mount (ACT_MOUNTABLE NPC), dismount, POS_MOUNTED position state
+- Test suite: 62 files, 1,372 cases covering all 13 packages (types, util, net, persist, command, world, handler, game, act, combat, magic, mudprog)
+- Integration tests: 9 end-to-end tests via programmatic TCP connections (server boot, char creation, commands, communication, multi-connection)
+- Security hardening: bcrypt passwords, connection limits, input/output bounds, path traversal defense, brute force protection, atomic saves, trust caps
 
-### What's next (Phase 4)
-Phase 3 is complete. See `smaug-go/doc/phase3-completed.md` for the full record. Phase 4 (polish, overland maps, advanced features) is not yet planned.
+### What's next (Phase 5 — Optional Systems)
+Phase 4 is complete. See `smaug-go/doc/phase4b-completed.md` for the full record. G11 (hotboot/copyover) deferred — Go's net.Conn model doesn't support C's fd-inheritance approach. Candidates for Phase 5: overland maps, player housing, polymorph, archery, combat stances, dragon flight, arena PvP, planes, holidays, star maps, hotboot (simplified graceful restart).
 
 ## Building and Running the Go Port
 

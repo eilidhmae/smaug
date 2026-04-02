@@ -247,6 +247,7 @@ func registerCommands() *command.Registry {
 
 	// Immortal control (additional)
 	reg.Register(&command.Command{Name: "snoop", DoFun: act.DoSnoop, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "ban", DoFun: act.DoBan, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 
 	// Shop commands
 	reg.Register(&command.Command{Name: "buy", DoFun: act.DoBuy, Position: types.POS_STANDING, Level: 0})
@@ -259,6 +260,10 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "drink", DoFun: act.DoDrink, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "fill", DoFun: act.DoFill, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "empty", DoFun: act.DoEmpty, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "quaff", DoFun: act.DoQuaff, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "recite", DoFun: act.DoRecite, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "brandish", DoFun: act.DoBrandish, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "zap", DoFun: act.DoZap, Position: types.POS_RESTING, Level: 0})
 
 	// Magic commands
 	reg.Register(&command.Command{Name: "cast", DoFun: act.DoCast, Position: types.POS_FIGHTING, Level: 0})
@@ -282,6 +287,14 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "scan", DoFun: act.DoScan, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "aid", DoFun: act.DoAid, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "recall", DoFun: act.DoRecall, Position: types.POS_STANDING, Level: 0})
+
+	// Quest
+	reg.Register(&command.Command{Name: "quest", DoFun: act.DoQuest, Position: types.POS_RESTING, Level: 0})
+
+	// Skill/spell info
+	reg.Register(&command.Command{Name: "practice", DoFun: act.DoPractice, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "skills", DoFun: act.DoSkills, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "spells", DoFun: act.DoSpells, Position: types.POS_DEAD, Level: 0})
 
 	// Door commands
 	reg.Register(&command.Command{Name: "open", DoFun: act.DoOpen, Position: types.POS_STANDING, Level: 0})
@@ -335,6 +348,34 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "olist", DoFun: act.DoOlist, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "mlist", DoFun: act.DoMlist, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "savearea", DoFun: act.DoSaveArea, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "mset", DoFun: act.DoMset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "oset", DoFun: act.DoOset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "rset", DoFun: act.DoRset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "aset", DoFun: act.DoAset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "astat", DoFun: act.DoAstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
+	// Banking
+	reg.Register(&command.Command{Name: "bank", DoFun: act.DoBank, Position: types.POS_STANDING, Level: 0})
+
+	// Tracking
+	reg.Register(&command.Command{Name: "track", DoFun: act.DoTrack, Position: types.POS_STANDING, Level: 0})
+
+	// Group commands
+	reg.Register(&command.Command{Name: "follow", DoFun: act.DoFollow, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "group", DoFun: act.DoGroup, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "order", DoFun: act.DoOrder, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "assist", DoFun: act.DoAssist, Position: types.POS_STANDING, Level: 0})
+
+	// Mount commands
+	reg.Register(&command.Command{Name: "mount", DoFun: act.DoMount, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "dismount", DoFun: act.DoDismount, Position: types.POS_MOUNTED, Level: 0})
+
+	// Position commands
+	reg.Register(&command.Command{Name: "rest", DoFun: act.DoRest, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "sit", DoFun: act.DoSit, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "stand", DoFun: act.DoStand, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "sleep", DoFun: act.DoSleep, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "wake", DoFun: act.DoWake, Position: types.POS_SLEEPING, Level: 0})
 
 	// Movement commands
 	reg.Register(&command.Command{Name: "north", DoFun: act.DoNorth, Position: types.POS_STANDING, Level: 0})

@@ -113,7 +113,7 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Goal:** Feature parity with C version for world interaction and building.
 
-**Status:** In progress. See `phase3-plan.md` for the 12-group implementation plan with dependencies and execution order.
+**Status:** Complete. All 12 task groups done. See `phase3-completed.md` for full record.
 
 **Deliverables:**
 
@@ -171,48 +171,57 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 ---
 
-## Phase 4: Optional Systems + Polish
+## Phase 4: Quality + Feature Systems
 
-**Goal:** Complete feature parity with the C version including all optional subsystems.
+**Goal:** Quality hardening and feature gap closure.
 
-**Deliverables:**
+**Status:** Complete. Phase 4a (quality: G1–G5) and Phase 4b (features: G6–G10, G12) done. G11 (hotboot) deferred to Phase 5. 78 source files, 62 test files, 1,372 test cases across 13 packages. See `phase4-plan.md`, `phase4a-completed.md`, `phase4b-completed.md` for full records.
 
-### Optional Game Systems
-- Overland map system — 3 maps of 1000x1000 tiles, sector types, landmarks, movement costs
-- Dragon flight — call dragons, manual/destination flight, landing sites, fare system
-- Arena — PvP combat with spectators, challenges
-- Stances — combat stance system (viper, crane, crab, mongoose, bull, mantis, dragon, tiger, monkey, swallow)
-- Archery — ranged combat with projectiles, lodging
-- Auction — global item trading
-- Bank — deposit, withdraw, balance (gold/silver/copper)
-- Housing — player-owned rooms
-- Marriage — spouse system
-- Weather — temperature, precipitation, wind with area climate
-- Holidays — calendar-based events
-- Timezone — configurable game time
-- Undertaker — corpse retrieval service
+**Deliverables (all complete):**
+
+### Phase 4a — Quality
+- G1: Documentation verification pass
+- G2: Live integration testing (9 end-to-end tests)
+- G3: Code coverage push (all packages at or near targets)
+- G4: Go idiom audit (10 findings, all resolved)
+- G5: Security vulnerability audit (16 findings, 14 fixed)
+
+### Phase 4b — Features
+- G6: OLC set commands — mset, oset, rset, aset, astat
+- G7: Quest system — request/complete/list/buy/info/time/points, random mob-slay quests
+- G8: Banking — deposit, withdraw, balance with ACT_BANKER NPC
+- G9: Ban system — site bans with prefix/suffix wildcards, persist load/save
+- G10: Mob tracking/hunting — BFS pathfinding, do_track, HuntVictim in mobileUpdate
+- G12: Remaining player commands — position (rest/sit/stand/sleep/wake), skills/spells/practice, quaff/recite/brandish/zap, follow/group/order/assist, mount/dismount
+
+**Verification:** All tests pass, server boots and accepts connections, all new commands work via telnet.
+
+---
+
+## Phase 5: Optional Systems (candidates)
+
+**Goal:** Large, self-contained optional systems and infrastructure improvements.
+
+**Candidates (~19,000+ lines of C total):**
 
 ### Infrastructure
-- Hotboot/copyover — seamless restart via `syscall.Exec` + file descriptor passing
-- Ban system — site/class/race bans with expiry
+- **Hotboot/copyover** — seamless server restart. C uses `exec()` + fd inheritance; Go needs a different approach (save state + graceful restart + auto-reconnect). From `src/hotboot.c`.
 - DNS resolution — `net.LookupAddr` for hostnames
-- IDENT protocol — RFC 1413 support
 - Web status page — embedded HTTP server for game status
 
+### Game Systems
+- **Overland maps** (3,752 lines) — 1000x1000 tile maps, ANSI rendering, landmarks
+- **Player housing** (2,853 lines) — apartments, room customization, guests
+- **Polymorph** (2,753 lines) — form shifting with stat mods
+- **Archery** (1,362 lines) — ranged combat, arrow lodging
+- **Combat stances** (1,022 lines) — 10 fighting postures with stat effects
+- **Dragon flight** (945 lines) — coordinate-based flying system
+- **Arena PvP** (358 lines) — challenge/accept isolated combat
+- **Planes** (298 lines) — multi-planar system
+- **Holidays** (416 lines) — calendar events
+- **Star maps** (226 lines) — celestial display
+
 ### Polish
-- All remaining player commands
-- All remaining immortal commands
-- Complete social command set
+- Minimal telnet test client for repeatable interactive testing
 - Performance profiling and optimization
-- Memory usage analysis
 - Stress testing (100+ concurrent connections)
-- Comprehensive regression testing against C version output
-
-### Testing
-- Unit tests for all core systems
-- File format round-trip tests
-- Combat math verification
-- MUD prog behavior tests
-- Automated telnet scripting for integration tests
-
-**Verification:** Feature-complete Go server that can replace the C server with zero player-visible differences.

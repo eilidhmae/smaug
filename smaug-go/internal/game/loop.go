@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/eilidhmae/smaug/internal/act"
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
@@ -125,6 +126,7 @@ func (g *GameLoop) pulse() {
 		g.pulseTick = types.PULSE_TICK
 		g.charUpdate()
 		g.objUpdate()
+		act.QuestUpdate(g.world)
 	}
 
 	g.pulseSave--
