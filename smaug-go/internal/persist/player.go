@@ -14,6 +14,15 @@ import (
 // ObjIndexLookup is a function that resolves a vnum to an object template.
 type ObjIndexLookup func(vnum int) *types.ObjIndexData
 
+// SkillNameLookup, if non-nil, resolves a skill/spell/weapon/tongue name
+// to its gsn (index into ch.PCData.Learned). Returns -1 when not found.
+// Set at boot after skills are loaded; left nil in standalone unit tests.
+var SkillNameLookup func(name string) int
+
+// SkillGetter, if non-nil, returns the SkillType for a given gsn, or nil
+// when the gsn is out of range. Set at boot after skills are loaded.
+var SkillGetter func(gsn int) *types.SkillType
+
 // LoadPlayer reads a player character from a SMAUG player save file.
 // Objects in the file are skipped (use LoadPlayerWithWorld to load objects).
 func LoadPlayer(r io.Reader, filename string) (*types.CharData, error) {
@@ -275,8 +284,14 @@ func parsePlayerField(ch *types.CharData, word string, sc *Scanner) {
 	case "Spouse":
 		ch.Spouse = sc.ReadString()
 	case "Skill", "Spell", "Weapon", "Tongue":
-		_ = sc.ReadNumber()
-		_ = sc.ReadString()
+		pct := sc.ReadNumber()
+		name := sc.ReadWord()
+		if SkillNameLookup != nil && ch.PCData != nil {
+			gsn := SkillNameLookup(name)
+			if gsn >= 0 && gsn < types.MAX_SKILL {
+				ch.PCData.Learned[gsn] = pct
+			}
+		}
 	case "Killed":
 		_ = sc.ReadNumber()
 		_ = sc.ReadNumber()
@@ -447,6 +462,8 @@ func SavePlayer(w io.Writer, ch *types.CharData) error {
 	fmt.Fprintf(w, "HpManaMove %d %d %d %d %d %d\n",
 		ch.Hit, ch.MaxHit, ch.Mana, ch.MaxMana, ch.Move, ch.MaxMove)
 	fmt.Fprintf(w, "Gold       %d\n", ch.Gold)
+	fmt.Fprintf(w, "Silver     %d\n", ch.Silver)
+	fmt.Fprintf(w, "Copper     %d\n", ch.Copper)
 	fmt.Fprintf(w, "Exp        %d\n", ch.Exp)
 	fmt.Fprintf(w, "Height     %d\n", ch.Height)
 	fmt.Fprintf(w, "Weight     %d\n", ch.Weight)
@@ -502,6 +519,36 @@ func SavePlayer(w io.Writer, ch *types.CharData) error {
 		fmt.Fprintf(w, "Affect       %d %d %d %d %s\n",
 			aff.Type, aff.Duration, aff.Modifier, aff.Location,
 			aff.BitVector.String())
+	}
+
+	// Save learned skill/spell/weapon/tongue proficiencies (bug G4).
+	// C emits one line per non-zero Learned entry, keyed by skill type.
+	if SkillGetter != nil {
+		for gsn, pct := range p.Learned {
+			if pct <= 0 {
+				continue
+			}
+			sk := SkillGetter(gsn)
+			if sk == nil {
+				continue
+			}
+			var keyword string
+			switch sk.Type {
+			case types.SKILL_SPELL:
+				keyword = "Spell"
+			case types.SKILL_WEAPON:
+				keyword = "Weapon"
+			case types.SKILL_TONGUE:
+				keyword = "Tongue"
+			default:
+				// C fwrite_char's default case writes everything else under
+				// "Skill" — covers SKILL_SKILL, SKILL_RACIAL, SKILL_HERB,
+				// SKILL_DISEASE, SKILL_UNKNOWN. Dropping these silently loses
+				// player proficiency (e.g. venomshield at gsn 0).
+				keyword = "Skill"
+			}
+			fmt.Fprintf(w, "%-10s %d '%s'\n", keyword, pct, sk.Name)
+		}
 	}
 
 	fmt.Fprintf(w, "End\n\n")

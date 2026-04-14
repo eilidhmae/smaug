@@ -40,14 +40,15 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - `smaug-go/doc/phase4b-completed.md` — Phase 4b record (features: G6–G10, G12 complete; G11 deferred)
 - `smaug-go/doc/go-idiom-review.md` — Go idiom audit: 10 findings, all resolved
 - `smaug-go/doc/security-review.md` — Security audit: 16 findings, 14 fixed
-- `smaug-go/doc/phase5-tier1-foundation.md` — **Phase 5 Tier 1**: Act() dispatcher, spell_smaug, missing saves, skill-persistence + Silver/Copper save bugs, skill-learning formula
+- `smaug-go/doc/phase5-tier1-foundation.md` — **Phase 5 Tier 1** plan: Act() dispatcher, spell_smaug, missing saves, skill-persistence + Silver/Copper save bugs, skill-learning formula
+- `smaug-go/doc/phase5-tier1-completed.md` — Phase 5 Tier 1 record (G1–G6 complete; adversary + quorum verified)
 - `smaug-go/doc/phase5-tier2-wiring.md` — **Phase 5 Tier 2**: honor already-defined flags (ROOM_*, ITEM_ANTI_*, PLR_*, EX_*), wire loaded-but-idle data (languages, repair shops, class/race bans, mail, clan storerooms)
 - `smaug-go/doc/phase5-tier3-mudprog.md` — **Phase 5 Tier 3**: ~86 missing if-checks, missing mob triggers, oprog + rprog subsystems, mpsleep runtime, ~35 missing mp commands
 - `smaug-go/doc/phase5-tier4-content.md` — **Phase 5 Tier 4**: missing spells, combat/utility skills, damage-message dispatcher, missing immortal/mortal commands, OLC interactivity
 
 ## Current Status
 
-**Phases 1–4a complete. Phase 4b (features) complete.** 78 source files, 62 test files, 1,372 test cases — all passing across 13 packages. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races, 8 clans, 2 deities, 496 socials, 2 boards.
+**Phases 1–4 complete. Phase 5 Tier 1 (foundation + correctness) complete.** 81 source files, 64 test files, 1,445 top-level test cases — all passing across 13 packages. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races, 8 clans, 2 deities, 496 socials, 2 boards.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -106,15 +107,16 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Item-based spellcasting: quaff (potions), recite (scrolls), brandish (staves, area effect), zap (wands, targeted)
 - Group system: follow, group, order (sends to follower input queue), assist (join ally's combat)
 - Mount system: mount (ACT_MOUNTABLE NPC), dismount, POS_MOUNTED position state
-- Test suite: 62 files, 1,372 cases covering all 13 packages (types, util, net, persist, command, world, handler, game, act, combat, magic, mudprog)
+- Test suite: 64 files, 1,445 top-level cases covering all 13 packages (types, util, net, persist, command, world, handler, game, act, combat, magic, mudprog)
+- Phase 5 Tier 1 foundations: `util.Act()` message dispatcher with visibility gating (wiz-invis/holylight/invis/hide); `magic.SpellSmaug` data-driven spell dispatcher with non-NEWSPELLS bit layout, Target-first routing, SE_REFLECT/ABSORB, `parseDiceExpr` covering all real `l*N`/`(l*N)+M`/`NdM` forms; `SavesWands`/`SavesParaPetri`/`SavesBreath` (SavesWands honours RIS_MAGIC immunity); player-file learned proficiencies + Silver/Copper now persist; skill-learning formula uses `learned + 5*difficulty` with per-class adept cap and `learned <= 0` guard
 - Integration tests: 9 end-to-end tests via programmatic TCP connections (server boot, char creation, commands, communication, multi-connection)
 - Security hardening: bcrypt passwords, connection limits, input/output bounds, path traversal defense, brute force protection, atomic saves, trust caps
 
 ### What's next (Phase 5 — Depth-First Parity Closure)
 
-Phase 4 is complete. Before starting optional breadth systems (overland, housing, polymorph, archery, stances, dragon flight, arena, planes, hotboot), close the parity and correctness gaps found by the 2026-04 audit. Work proceeds in four tiers; do Tier 1 first — it unblocks the others.
+Phase 4 is complete. Tier 1 landed 2026-04-13 — see `smaug-go/doc/phase5-tier1-completed.md`. Remaining Tier 2/3/4 close parity and correctness gaps from the 2026-04 audit before optional breadth systems (overland, housing, polymorph, archery, stances, dragon flight, arena, planes, hotboot) in Phase 6.
 
-- **Tier 1 — Foundation + correctness.** Port the `Act()` message dispatcher and the data-driven `spell_smaug` dispatcher. Add the three missing saves (`SavesWands`, `SavesParaPetri`, `SavesBreath`). Fix two data-loss bugs: (1) learned skill/spell/weapon/tongue proficiencies are read-and-discarded on load and never written on save (`persist/player.go:277`); (2) Silver/Copper on-hand are loaded but never saved (`persist/player.go:449` writes only Gold). Fix the skill-learning formula to use `5 * Difficulty` as C does instead of the current flat `+20`. See `smaug-go/doc/phase5-tier1-foundation.md`.
+- **Tier 1 — Foundation + correctness.** ✓ Complete. `Act()` dispatcher, `spell_smaug` data-driven dispatcher, three missing saves, skill/Silver/Copper persistence bugs fixed, skill-learning formula corrected. See `smaug-go/doc/phase5-tier1-completed.md`.
 - **Tier 2 — Flag honoring + wire idle data.** ROOM_NOMAGIC/NOSUMMON/NORECALL/NOFLOOR/DEATH/SILENCE/NOMOB, ITEM_ANTI_*, PLR_AFK/NO_TELL/NO_EMOTE, EX_SECRET/HIDDEN are defined but not enforced. Languages, repair shops, class/race bans, mail targeting, and clan storerooms have their data model but no commands. See `smaug-go/doc/phase5-tier2-wiring.md`.
 - **Tier 3 — Mudprog depth.** Go has 29 if-checks vs C's ~115; 7 mob triggers vs C's ~13; no object-progs at all; no room-progs at all; `MProgSleepData` is defined but the queue/update are missing; 9 of C's ~44 mp commands implemented. See `smaug-go/doc/phase5-tier3-mudprog.md`.
 - **Tier 4 — Content breadth.** Registry has 30 of ~101 C spells; 15 of ~43 combat/utility skills; no damage-message dispatcher (`new_dam_message` equivalent); 14 missing immortal commands; 9 missing mortal commands; OLC has 6 redit subcommands vs C's ~20 and no interactive oedit/medit/mpedit/opedit/rpedit. See `smaug-go/doc/phase5-tier4-content.md`.
@@ -162,7 +164,7 @@ smaug-go/
   cmd/smaug/main.go                  # Entry point, command registration, bootDB
   internal/
     types/                            # Core data structures, enums, constants (17 files)
-    util/                             # String, dice, logging helpers (3 files)
+    util/                             # String, dice, logging, Act() message dispatcher (4 files)
     world/                            # Mutable game state container (1 file)
     persist/                          # File format I/O — scanner, area, classes, races, player, skills (6 files)
     net/                              # TCP server + color processing (2 files)
@@ -171,7 +173,7 @@ smaug-go/
     act/                              # Player commands — info, combat, movement, objects, shops, wiz, clans, OLC, skills, socials (16 files)
     handler/                          # Entity manipulation: create mob/obj, room placement, area resets, find (3 files)
     combat/                           # Combat system: fighting, damage, corpses, dual wield (1 file)
-    magic/                            # Spell/skill system: 32 spells + cast command (1 file)
+    magic/                            # Spell/skill system: 32 hand-coded spells + spell_smaug data-driven dispatcher + cast command (2 files)
     mudprog/                          # MUD program interpreter: driver, if-checks, triggers, commands, variable substitution (4 files)
     overland/                         # (future) Overland maps
   doc/                                # Port documentation

@@ -19,38 +19,85 @@ func canUseSkill(ch *types.CharData, percent int, gsn int) bool {
 	return percent < ch.PCData.Learned[gsn]
 }
 
+// numberPercent is an indirection over util.NumberPercent so tests can
+// replace it with a deterministic stub. Production code reads the real RNG.
+var numberPercent = util.NumberPercent
+
 // learnFromSuccess improves skill proficiency on successful use.
+// Mirrors learn_from_success in src/skills.c:1621 — uses
+// chance = learned + 5*difficulty and honours the per-class adept cap.
 func learnFromSuccess(ch *types.CharData, gsn int) {
 	if ch.IsNPC() || ch.PCData == nil || gsn < 0 || gsn >= types.MAX_SKILL {
 		return
 	}
-	learned := ch.PCData.Learned[gsn]
-	if learned >= 100 {
+	// C guard: only skills the player has already touched improve from use.
+	if ch.PCData.Learned[gsn] <= 0 {
 		return
 	}
-	chance := learned + 20
-	if util.NumberPercent() >= chance {
-		ch.PCData.Learned[gsn] += 2
-		if ch.PCData.Learned[gsn] > 100 {
-			ch.PCData.Learned[gsn] = 100
-		}
-		ch.Sendf("You have become better at that skill! (%d%%)\n\r", ch.PCData.Learned[gsn])
+	if WorldRef == nil || gsn >= len(WorldRef.Skills) {
+		return
+	}
+	skill := WorldRef.Skills[gsn]
+	if skill == nil {
+		return
+	}
+	learned := ch.PCData.Learned[gsn]
+	adept := 100
+	if ch.Class >= 0 && ch.Class < types.MAX_CLASS {
+		adept = skill.SkillAdept[ch.Class]
+	}
+	if learned >= adept {
+		return
+	}
+	chance := learned + 5*skill.Difficulty
+	roll := numberPercent()
+	gain := 0
+	switch {
+	case roll >= chance:
+		gain = 2
+	case chance-roll <= 25:
+		gain = 1
+	}
+	if gain > 0 {
+		ch.PCData.Learned[gsn] = util.UMIN(learned+gain, adept)
+		ch.Sendf("You have become better at %s! (%d%%)\n\r", skill.Name, ch.PCData.Learned[gsn])
+		// Note: XP-on-gain and "fully learned" message deferred to Tier 4.
 	}
 }
 
 // learnFromFailure improves skill proficiency on failed use (slower).
+// Mirrors learn_from_failure in src/skills.c:1658 — gain is capped at adept-1.
 func learnFromFailure(ch *types.CharData, gsn int) {
 	if ch.IsNPC() || ch.PCData == nil || gsn < 0 || gsn >= types.MAX_SKILL {
 		return
 	}
-	learned := ch.PCData.Learned[gsn]
-	if learned >= 99 {
+	// C guard: only skills the player has already touched improve from use.
+	if ch.PCData.Learned[gsn] <= 0 {
 		return
 	}
-	chance := learned + 20
-	if util.NumberPercent() >= chance {
-		ch.PCData.Learned[gsn]++
+	if WorldRef == nil || gsn >= len(WorldRef.Skills) {
+		return
 	}
+	skill := WorldRef.Skills[gsn]
+	if skill == nil {
+		return
+	}
+	learned := ch.PCData.Learned[gsn]
+	adept := 100
+	if ch.Class >= 0 && ch.Class < types.MAX_CLASS {
+		adept = skill.SkillAdept[ch.Class]
+	}
+	if learned >= adept-1 {
+		return
+	}
+	chance := learned + 5*skill.Difficulty
+	// Matches C src/skills.c:1682 — any roll within 25 of chance gains,
+	// regardless of whether the roll beat chance. Previously included
+	// an extra `roll < chance` conjunct that suppressed legitimate gains.
+	if chance-numberPercent() > 25 {
+		return
+	}
+	ch.PCData.Learned[gsn] = util.UMIN(learned+1, adept-1)
 }
 
 // --- Combat Skills ---

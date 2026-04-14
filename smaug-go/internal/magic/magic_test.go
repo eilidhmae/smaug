@@ -1869,3 +1869,249 @@ func TestSpellSleep_SaveResists(t *testing.T) {
 		t.Error("sleep should be resisted at least once in 50 attempts (level 1 vs 50)")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// SavesWands
+// ---------------------------------------------------------------------------
+
+func TestSavesWands(t *testing.T) {
+	// High level victim vs low level wand = high save chance
+	victim := &types.CharData{Level: 20}
+	saved := 0
+	for i := 0; i < 100; i++ {
+		if SavesWands(5, victim) {
+			saved++
+		}
+	}
+	if saved < 50 {
+		t.Errorf("high-level victim saved %d/100 vs low-level wand, expected mostly saves", saved)
+	}
+
+	// Low level victim vs high level wand = low save chance
+	weakVictim := &types.CharData{Level: 1}
+	weakSaved := 0
+	for i := 0; i < 100; i++ {
+		if SavesWands(30, weakVictim) {
+			weakSaved++
+		}
+	}
+	if weakSaved > 30 {
+		t.Errorf("low-level victim saved %d/100 vs high-level wand, expected few saves", weakSaved)
+	}
+}
+
+func TestSavesWands_ClampedRange(t *testing.T) {
+	// Very high save: level 50 vs wand level 1 should be clamped at 95%
+	victim := &types.CharData{Level: 50}
+	allSaved := true
+	for i := 0; i < 200; i++ {
+		if !SavesWands(1, victim) {
+			allSaved = false
+			break
+		}
+	}
+	if allSaved {
+		t.Error("even with very high save, should occasionally fail (clamped at 95%)")
+	}
+
+	// Very low save: level 1 vs wand level 50 should be clamped at 5%
+	weakVictim := &types.CharData{Level: 1}
+	allFailed := true
+	for i := 0; i < 200; i++ {
+		if SavesWands(50, weakVictim) {
+			allFailed = false
+			break
+		}
+	}
+	if allFailed {
+		t.Error("even with very low save, should occasionally succeed (clamped at 5%)")
+	}
+}
+
+func TestSavesWands_UsesSavingWandField(t *testing.T) {
+	// A big SavingWand bonus should push save chance to the ceiling.
+	victim := &types.CharData{Level: 10, SavingWand: -50}
+	saved := 0
+	for i := 0; i < 100; i++ {
+		if SavesWands(10, victim) {
+			saved++
+		}
+	}
+	// With save = 50 + (10-10-(-50))*5 = 300, clamped to 95%, expect near-universal saves.
+	if saved < 80 {
+		t.Errorf("victim with SavingWand=-50 saved %d/100, expected >=80", saved)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SavesParaPetri
+// ---------------------------------------------------------------------------
+
+func TestSavesParaPetri(t *testing.T) {
+	victim := &types.CharData{Level: 20}
+	saved := 0
+	for i := 0; i < 100; i++ {
+		if SavesParaPetri(5, victim) {
+			saved++
+		}
+	}
+	if saved < 50 {
+		t.Errorf("high-level victim saved %d/100 vs low-level paralysis, expected mostly saves", saved)
+	}
+
+	weakVictim := &types.CharData{Level: 1}
+	weakSaved := 0
+	for i := 0; i < 100; i++ {
+		if SavesParaPetri(30, weakVictim) {
+			weakSaved++
+		}
+	}
+	if weakSaved > 30 {
+		t.Errorf("low-level victim saved %d/100 vs high-level paralysis, expected few saves", weakSaved)
+	}
+}
+
+func TestSavesParaPetri_ClampedRange(t *testing.T) {
+	victim := &types.CharData{Level: 50}
+	allSaved := true
+	for i := 0; i < 200; i++ {
+		if !SavesParaPetri(1, victim) {
+			allSaved = false
+			break
+		}
+	}
+	if allSaved {
+		t.Error("even with very high save, should occasionally fail (clamped at 95%)")
+	}
+
+	weakVictim := &types.CharData{Level: 1}
+	allFailed := true
+	for i := 0; i < 200; i++ {
+		if SavesParaPetri(50, weakVictim) {
+			allFailed = false
+			break
+		}
+	}
+	if allFailed {
+		t.Error("even with very low save, should occasionally succeed (clamped at 5%)")
+	}
+}
+
+func TestSavesParaPetri_UsesSavingParaPetriField(t *testing.T) {
+	victim := &types.CharData{Level: 10, SavingParaPetri: -50}
+	saved := 0
+	for i := 0; i < 100; i++ {
+		if SavesParaPetri(10, victim) {
+			saved++
+		}
+	}
+	if saved < 80 {
+		t.Errorf("victim with SavingParaPetri=-50 saved %d/100, expected >=80", saved)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SavesBreath
+// ---------------------------------------------------------------------------
+
+func TestSavesBreath(t *testing.T) {
+	victim := &types.CharData{Level: 20}
+	saved := 0
+	for i := 0; i < 100; i++ {
+		if SavesBreath(5, victim) {
+			saved++
+		}
+	}
+	if saved < 50 {
+		t.Errorf("high-level victim saved %d/100 vs low-level breath, expected mostly saves", saved)
+	}
+
+	weakVictim := &types.CharData{Level: 1}
+	weakSaved := 0
+	for i := 0; i < 100; i++ {
+		if SavesBreath(30, weakVictim) {
+			weakSaved++
+		}
+	}
+	if weakSaved > 30 {
+		t.Errorf("low-level victim saved %d/100 vs high-level breath, expected few saves", weakSaved)
+	}
+}
+
+func TestSavesBreath_ClampedRange(t *testing.T) {
+	victim := &types.CharData{Level: 50}
+	allSaved := true
+	for i := 0; i < 200; i++ {
+		if !SavesBreath(1, victim) {
+			allSaved = false
+			break
+		}
+	}
+	if allSaved {
+		t.Error("even with very high save, should occasionally fail (clamped at 95%)")
+	}
+
+	weakVictim := &types.CharData{Level: 1}
+	allFailed := true
+	for i := 0; i < 200; i++ {
+		if SavesBreath(50, weakVictim) {
+			allFailed = false
+			break
+		}
+	}
+	if allFailed {
+		t.Error("even with very low save, should occasionally succeed (clamped at 5%)")
+	}
+}
+
+func TestSavesBreath_UsesSavingBreathField(t *testing.T) {
+	victim := &types.CharData{Level: 10, SavingBreath: -50}
+	saved := 0
+	for i := 0; i < 100; i++ {
+		if SavesBreath(10, victim) {
+			saved++
+		}
+	}
+	if saved < 80 {
+		t.Errorf("victim with SavingBreath=-50 saved %d/100, expected >=80", saved)
+	}
+}
+
+// TestSavesWands_RISMagicImmune verifies the RIS_MAGIC immunity short-circuit
+// that C (src/magic.c:1087) applies. A victim immune to RIS_MAGIC auto-saves
+// against wands regardless of level / SavingWand. Regression guard for the
+// earlier port that omitted this check.
+func TestSavesWands_RISMagicImmune(t *testing.T) {
+	victim := &types.CharData{
+		Level:       1,          // much lower than caster; would normally fail
+		SavingWand:  -50,        // terrible save; would normally fail
+		Immune:      int(types.RIS_MAGIC),
+	}
+	for i := 0; i < 50; i++ {
+		if !SavesWands(60, victim) {
+			t.Fatalf("RIS_MAGIC-immune victim failed a wand save on iteration %d", i)
+		}
+	}
+}
+
+// TestSavesParaPetri_NoRISMagicShortCircuit confirms the RIS_MAGIC guard was
+// added ONLY to SavesWands, matching C (which omits it in saves_para_petri).
+func TestSavesParaPetri_NoRISMagicShortCircuit(t *testing.T) {
+	victim := &types.CharData{
+		Level:           60,
+		SavingParaPetri: 100, // absurdly good save — should pass without RIS_MAGIC
+		Immune:          0,   // not immune
+	}
+	// With save clamped to 95, expect ~95% pass rate — pick any failure to
+	// prove the path was reached (no short-circuit).
+	failed := false
+	for i := 0; i < 400; i++ {
+		if !SavesParaPetri(1, victim) {
+			failed = true
+			break
+		}
+	}
+	if !failed {
+		t.Error("expected at least one failure over 400 rolls against a 95pct-clamped save")
+	}
+}

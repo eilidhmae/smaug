@@ -216,16 +216,222 @@ func TestCanUseSkill_NPC(t *testing.T) {
 	}
 }
 
-func TestLearnFromSuccess(t *testing.T) {
-	ch := newTestCharWithDesc()
-	ch.PCData.Learned[0] = 50
-
-	// Run many times to check it can improve
-	for i := 0; i < 200; i++ {
-		learnFromSuccess(ch, 0)
+// installLearnTestSkill places a stub SkillType into WorldRef.Skills at the
+// given slot with the supplied difficulty and per-class adept cap. It returns
+// a cleanup func that restores the previous slot value.
+func installLearnTestSkill(t *testing.T, gsn, difficulty, adept int, name string) func() {
+	t.Helper()
+	for len(WorldRef.Skills) <= gsn {
+		WorldRef.Skills = append(WorldRef.Skills, nil)
 	}
-	if ch.PCData.Learned[0] <= 50 {
-		t.Errorf("skill should have improved from 50, got %d", ch.PCData.Learned[0])
+	prev := WorldRef.Skills[gsn]
+	sk := &types.SkillType{
+		Name:       name,
+		Type:       types.SKILL_SKILL,
+		Difficulty: difficulty,
+	}
+	for i := 0; i < types.MAX_CLASS; i++ {
+		sk.SkillAdept[i] = adept
+	}
+	WorldRef.Skills[gsn] = sk
+	return func() { WorldRef.Skills[gsn] = prev }
+}
+
+// withStubNumberPercent swaps the package-level numberPercent with a stub
+// that returns the given values in order (last value repeats). It returns
+// a cleanup func restoring the original.
+func withStubNumberPercent(values ...int) func() {
+	prev := numberPercent
+	idx := 0
+	numberPercent = func() int {
+		v := values[idx]
+		if idx < len(values)-1 {
+			idx++
+		}
+		return v
+	}
+	return func() { numberPercent = prev }
+}
+
+func TestLearnFromSuccess_FormulaTable(t *testing.T) {
+	// Use a slot we control. Slot 500 is well inside MAX_SKILL (600) and
+	// unlikely to collide with anything the test world might populate.
+	const gsn = 500
+	restore := installLearnTestSkill(t, gsn, 5, 95, "testskill")
+	defer restore()
+
+	tests := []struct {
+		name      string
+		learned   int
+		roll      int
+		wantDelta int
+		wantMsg   bool
+	}{
+		// chance = learned + 5*5 = learned + 25
+		{"roll>=chance gains 2", 10, 99, 2, true},           // chance 35, roll 99 -> gain 2
+		{"chance-roll<=25 gains 1", 10, 20, 1, true},        // chance 35, diff 15 -> gain 1
+		{"chance-roll>25 no gain", 10, 5, 0, false},         // chance 35, diff 30 -> no gain
+		{"roll exactly chance gains 2", 10, 35, 2, true},    // roll>=chance path
+		{"diff exactly 25 gains 1", 10, 10, 1, true},        // chance-roll==25 -> gain 1
+		{"cap at adept on gain of 2", 94, 99, 1, true},      // 94+2=96 clamped to 95
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := newTestCharWithDesc()
+			ch.PCData.Learned[gsn] = tc.learned
+			restoreRNG := withStubNumberPercent(tc.roll)
+			defer restoreRNG()
+
+			learnFromSuccess(ch, gsn)
+			got := ch.PCData.Learned[gsn] - tc.learned
+			if got != tc.wantDelta {
+				t.Errorf("delta = %d, want %d (learned %d -> %d)",
+					got, tc.wantDelta, tc.learned, ch.PCData.Learned[gsn])
+			}
+		})
+	}
+}
+
+func TestLearnFromSuccess_AtAdeptNoChange(t *testing.T) {
+	const gsn = 501
+	restore := installLearnTestSkill(t, gsn, 5, 95, "capped")
+	defer restore()
+	restoreRNG := withStubNumberPercent(99) // would gain if not capped
+	defer restoreRNG()
+
+	ch := newTestCharWithDesc()
+	ch.PCData.Learned[gsn] = 95 // already at adept
+	learnFromSuccess(ch, gsn)
+	if ch.PCData.Learned[gsn] != 95 {
+		t.Errorf("learned should stay 95 at adept cap, got %d", ch.PCData.Learned[gsn])
+	}
+}
+
+func TestLearnFromSuccess_NPCNoChange(t *testing.T) {
+	const gsn = 502
+	restore := installLearnTestSkill(t, gsn, 5, 95, "npcskill")
+	defer restore()
+	restoreRNG := withStubNumberPercent(99)
+	defer restoreRNG()
+
+	ch := newTestCharWithDesc()
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.PCData.Learned[gsn] = 10
+	learnFromSuccess(ch, gsn)
+	if ch.PCData.Learned[gsn] != 10 {
+		t.Errorf("NPC should not learn, got %d", ch.PCData.Learned[gsn])
+	}
+}
+
+func TestLearnFromSuccess_NilSkillSlot(t *testing.T) {
+	// gsn within range but WorldRef.Skills[gsn] is nil -> early return
+	const gsn = 503
+	for len(WorldRef.Skills) <= gsn {
+		WorldRef.Skills = append(WorldRef.Skills, nil)
+	}
+	prev := WorldRef.Skills[gsn]
+	WorldRef.Skills[gsn] = nil
+	defer func() { WorldRef.Skills[gsn] = prev }()
+
+	restoreRNG := withStubNumberPercent(99)
+	defer restoreRNG()
+
+	ch := newTestCharWithDesc()
+	ch.PCData.Learned[gsn] = 10
+	learnFromSuccess(ch, gsn)
+	if ch.PCData.Learned[gsn] != 10 {
+		t.Errorf("nil skill slot should not learn, got %d", ch.PCData.Learned[gsn])
+	}
+}
+
+func TestLearnFromFailure_FormulaTable(t *testing.T) {
+	const gsn = 504
+	restore := installLearnTestSkill(t, gsn, 5, 95, "failskill")
+	defer restore()
+
+	tests := []struct {
+		name      string
+		learned   int
+		roll      int
+		wantDelta int
+	}{
+		// chance = learned + 25
+		{"diff<=25 and roll<chance gains 1", 10, 20, 1}, // chance 35, diff 15 -> gain
+		// C src/skills.c:1682 has only the "> 25 => return" guard. Any roll
+		// within 25 of chance gains, even if it beat chance.
+		{"roll>=chance still gains when within 25", 10, 50, 1}, // chance 35, diff=-15 -> gain
+		{"diff>25 no gain", 10, 5, 0},                          // chance-roll = 30 -> no gain
+		{"diff exactly 25 gains 1", 10, 10, 1},                 // chance-roll == 25
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := newTestCharWithDesc()
+			ch.PCData.Learned[gsn] = tc.learned
+			restoreRNG := withStubNumberPercent(tc.roll)
+			defer restoreRNG()
+
+			learnFromFailure(ch, gsn)
+			got := ch.PCData.Learned[gsn] - tc.learned
+			if got != tc.wantDelta {
+				t.Errorf("delta = %d, want %d (learned %d -> %d)",
+					got, tc.wantDelta, tc.learned, ch.PCData.Learned[gsn])
+			}
+		})
+	}
+}
+
+func TestLearnFromFailure_AtAdeptMinusOneNoChange(t *testing.T) {
+	const gsn = 505
+	restore := installLearnTestSkill(t, gsn, 5, 95, "failcap")
+	defer restore()
+	restoreRNG := withStubNumberPercent(20) // would normally gain
+	defer restoreRNG()
+
+	ch := newTestCharWithDesc()
+	ch.PCData.Learned[gsn] = 94 // adept-1
+	learnFromFailure(ch, gsn)
+	if ch.PCData.Learned[gsn] != 94 {
+		t.Errorf("learned should stay at adept-1, got %d", ch.PCData.Learned[gsn])
+	}
+}
+
+func TestLearnFromFailure_ClampAtAdeptMinusOne(t *testing.T) {
+	const gsn = 506
+	restore := installLearnTestSkill(t, gsn, 5, 95, "failclamp")
+	defer restore()
+	// learned=93, adept-1=94. chance = 93+25 = 118 -> both conditions easy.
+	// Pick roll=100 so chance-roll=18 (<=25) and roll<chance -> gain 1.
+	restoreRNG := withStubNumberPercent(100)
+	defer restoreRNG()
+
+	ch := newTestCharWithDesc()
+	ch.PCData.Learned[gsn] = 93
+	learnFromFailure(ch, gsn)
+	if ch.PCData.Learned[gsn] != 94 {
+		t.Errorf("should gain 1 up to adept-1 (94), got %d", ch.PCData.Learned[gsn])
+	}
+}
+
+func TestLearnFromSuccess(t *testing.T) {
+	// Regression: using the stubbed RNG and a known-good skill entry, a
+	// chain of high rolls must keep pushing learned upward until it caps.
+	const gsn = 507
+	restore := installLearnTestSkill(t, gsn, 5, 95, "regress")
+	defer restore()
+	restoreRNG := withStubNumberPercent(99) // always "roll >= chance", gain 2
+	defer restoreRNG()
+
+	ch := newTestCharWithDesc()
+	ch.PCData.Learned[gsn] = 50
+
+	for i := 0; i < 200; i++ {
+		learnFromSuccess(ch, gsn)
+	}
+	if ch.PCData.Learned[gsn] <= 50 {
+		t.Errorf("skill should have improved from 50, got %d", ch.PCData.Learned[gsn])
+	}
+	if ch.PCData.Learned[gsn] > 95 {
+		t.Errorf("skill should cap at adept=95, got %d", ch.PCData.Learned[gsn])
 	}
 }
 

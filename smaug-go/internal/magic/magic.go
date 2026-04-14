@@ -46,6 +46,7 @@ var spellRegistry = map[string]SpellFunc{
 	"spell_invis":          SpellInvis,
 	"spell_fly":            SpellFly,
 	"spell_heal":           SpellHeal,
+	"spell_smaug":          SpellSmaug,
 }
 
 // FindSpellFunc looks up a spell function by its code name.
@@ -83,6 +84,32 @@ func SavesSpellStaff(level int, victim *types.CharData) bool {
 // SavesPoisonDeath checks if a victim makes their saving throw vs poison/death.
 func SavesPoisonDeath(level int, victim *types.CharData) bool {
 	save := 50 + (victim.Level-level-victim.SavingPoisonDeath)*5
+	save = util.URANGE(5, save, 95)
+	return util.NumberPercent() <= save
+}
+
+// SavesWands checks if a victim makes their saving throw vs wands.
+// Returns true if the save succeeds.
+// RIS_MAGIC-immune victims auto-pass (C src/magic.c:1087).
+func SavesWands(level int, victim *types.CharData) bool {
+	if victim.Immune&int(types.RIS_MAGIC) != 0 {
+		return true
+	}
+	save := 50 + (victim.Level-level-victim.SavingWand)*5
+	save = util.URANGE(5, save, 95)
+	return util.NumberPercent() <= save
+}
+
+// SavesParaPetri checks if a victim makes their saving throw vs paralysis/petrification.
+func SavesParaPetri(level int, victim *types.CharData) bool {
+	save := 50 + (victim.Level-level-victim.SavingParaPetri)*5
+	save = util.URANGE(5, save, 95)
+	return util.NumberPercent() <= save
+}
+
+// SavesBreath checks if a victim makes their saving throw vs breath weapons.
+func SavesBreath(level int, victim *types.CharData) bool {
+	save := 50 + (victim.Level-level-victim.SavingBreath)*5
 	save = util.URANGE(5, save, 95)
 	return util.NumberPercent() <= save
 }

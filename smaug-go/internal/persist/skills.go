@@ -153,8 +153,9 @@ func readSkill(sc *Scanner) *types.SkillType {
 		case "Participants":
 			skill.Participants = sc.ReadNumber()
 		case "Value":
-			// Object value for create-type spells; read and discard
-			sc.ReadNumber()
+			// Vnum for create-type spells (SF_OBJECT / SC_LIFE create-mob).
+			// Referenced as skill->value in src/magic.c:7751, 7810.
+			skill.Value = sc.ReadNumber()
 		case "Class":
 			classIdx := sc.ReadNumber()
 			level := sc.ReadNumber()

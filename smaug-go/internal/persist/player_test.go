@@ -972,3 +972,152 @@ End
 		t.Errorf("Trust = %d, want 60", ch.Trust)
 	}
 }
+
+// TestSaveLoadSilverCopper verifies that Silver and Copper coin stashes
+// round-trip through SavePlayer/LoadPlayer (bug G5).
+func TestSaveLoadSilverCopper(t *testing.T) {
+	ch := &types.CharData{
+		Name:     "Coinage",
+		Level:    5,
+		Hit:      50,
+		MaxHit:   50,
+		Mana:     10,
+		MaxMana:  10,
+		Move:     40,
+		MaxMove:  40,
+		Gold:     111,
+		Silver:   222,
+		Copper:   333,
+		Position: types.POS_STANDING,
+		PermStr:  13, PermInt: 13, PermWis: 13, PermDex: 13,
+		PermCon: 13, PermCha: 13, PermLck: 13,
+		PCData: &types.PCData{Pwd: "pass", PagerLen: 24},
+	}
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+
+	saved := buf.String()
+	if !strings.Contains(saved, "Silver") {
+		t.Errorf("saved file missing Silver line:\n%s", saved)
+	}
+	if !strings.Contains(saved, "Copper") {
+		t.Errorf("saved file missing Copper line:\n%s", saved)
+	}
+
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Coinage")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+
+	if loaded.Gold != 111 {
+		t.Errorf("Gold = %d, want 111", loaded.Gold)
+	}
+	if loaded.Silver != 222 {
+		t.Errorf("Silver = %d, want 222", loaded.Silver)
+	}
+	if loaded.Copper != 333 {
+		t.Errorf("Copper = %d, want 333", loaded.Copper)
+	}
+}
+
+// TestSaveLoadSkills verifies that learned skill/spell/weapon/tongue
+// proficiencies round-trip through SavePlayer/LoadPlayer (bug G4).
+func TestSaveLoadSkills(t *testing.T) {
+	// Build a tiny skill table: gsn 0 = dodge (SKILL_SKILL),
+	// gsn 1 = fireball (SKILL_SPELL), gsn 2 = sword (SKILL_WEAPON),
+	// gsn 3 = common (SKILL_TONGUE).
+	skills := []*types.SkillType{
+		{Name: "dodge", Type: types.SKILL_SKILL},
+		{Name: "fireball", Type: types.SKILL_SPELL},
+		{Name: "sword", Type: types.SKILL_WEAPON},
+		{Name: "common", Type: types.SKILL_TONGUE},
+	}
+
+	prevLookup := SkillNameLookup
+	prevGetter := SkillGetter
+	SkillNameLookup = func(name string) int {
+		for i, sk := range skills {
+			if strings.EqualFold(sk.Name, name) {
+				return i
+			}
+		}
+		return -1
+	}
+	SkillGetter = func(gsn int) *types.SkillType {
+		if gsn < 0 || gsn >= len(skills) {
+			return nil
+		}
+		return skills[gsn]
+	}
+	defer func() {
+		SkillNameLookup = prevLookup
+		SkillGetter = prevGetter
+	}()
+
+	ch := &types.CharData{
+		Name:     "Skillful",
+		Level:    5,
+		Hit:      50,
+		MaxHit:   50,
+		Mana:     10,
+		MaxMana:  10,
+		Move:     40,
+		MaxMove:  40,
+		Position: types.POS_STANDING,
+		PermStr:  13, PermInt: 13, PermWis: 13, PermDex: 13,
+		PermCon: 13, PermCha: 13, PermLck: 13,
+		PCData: &types.PCData{Pwd: "pass", PagerLen: 24},
+	}
+	ch.PCData.Learned[0] = 42 // dodge
+	ch.PCData.Learned[1] = 77 // fireball
+	ch.PCData.Learned[2] = 55 // sword
+	ch.PCData.Learned[3] = 33 // common
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+
+	saved := buf.String()
+	if !strings.Contains(saved, "'dodge'") {
+		t.Errorf("saved file missing dodge entry:\n%s", saved)
+	}
+	if !strings.Contains(saved, "'fireball'") {
+		t.Errorf("saved file missing fireball entry:\n%s", saved)
+	}
+	if !strings.Contains(saved, "Skill") {
+		t.Errorf("saved file missing Skill keyword:\n%s", saved)
+	}
+	if !strings.Contains(saved, "Spell") {
+		t.Errorf("saved file missing Spell keyword:\n%s", saved)
+	}
+	if !strings.Contains(saved, "Weapon") {
+		t.Errorf("saved file missing Weapon keyword:\n%s", saved)
+	}
+	if !strings.Contains(saved, "Tongue") {
+		t.Errorf("saved file missing Tongue keyword:\n%s", saved)
+	}
+
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Skillful")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if loaded.PCData == nil {
+		t.Fatal("loaded PCData is nil")
+	}
+	if loaded.PCData.Learned[0] != 42 {
+		t.Errorf("Learned[dodge]=%d, want 42", loaded.PCData.Learned[0])
+	}
+	if loaded.PCData.Learned[1] != 77 {
+		t.Errorf("Learned[fireball]=%d, want 77", loaded.PCData.Learned[1])
+	}
+	if loaded.PCData.Learned[2] != 55 {
+		t.Errorf("Learned[sword]=%d, want 55", loaded.PCData.Learned[2])
+	}
+	if loaded.PCData.Learned[3] != 33 {
+		t.Errorf("Learned[common]=%d, want 33", loaded.PCData.Learned[3])
+	}
+}

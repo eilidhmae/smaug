@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"path/filepath"
@@ -140,6 +141,22 @@ func bootDB(w *world.World) error {
 		log.Printf("WARNING: failed to load skills: %v", err)
 	} else {
 		log.Printf("Loaded %d skills/spells.", len(w.Skills))
+	}
+
+	// Wire skill lookups so player save/load persists learned proficiencies.
+	persist.SkillNameLookup = func(name string) int {
+		for i, sk := range w.Skills {
+			if sk != nil && strings.EqualFold(sk.Name, name) {
+				return i
+			}
+		}
+		return -1
+	}
+	persist.SkillGetter = func(gsn int) *types.SkillType {
+		if gsn < 0 || gsn >= len(w.Skills) {
+			return nil
+		}
+		return w.Skills[gsn]
 	}
 
 	if len(w.Helps) > 0 {
