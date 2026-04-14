@@ -58,6 +58,10 @@ type BanData struct {
 	Note      string
 	BanBy     string
 	BanTime   string
+	// Type distinguishes site vs. class vs. race bans (BAN_SITE / BAN_CLASS /
+	// BAN_RACE). A zero value is treated as BAN_SITE for backward compatibility
+	// with ban files written before this field was persisted.
+	Type      int
 	Flag      int
 	UnbanDate int
 	Duration  int
@@ -65,6 +69,14 @@ type BanData struct {
 	Warn      bool
 	Prefix    bool
 	Suffix    bool
+}
+
+// BanType returns ban.Type, defaulting to BAN_SITE when unset.
+func (b *BanData) BanType() int {
+	if b == nil || b.Type == 0 {
+		return BAN_SITE
+	}
+	return b.Type
 }
 
 // SocialType for social commands.

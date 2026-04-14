@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/eilidhmae/smaug/internal/types"
@@ -13,7 +14,7 @@ import (
 
 // LoadBanList reads the ban list from the given file path.
 // File format: blocks separated by ~ on its own line.
-// Each block has 5 lines:
+// Each block is either the legacy 5-line site block:
 //
 //	Site~
 //	BanBy~
@@ -21,6 +22,15 @@ import (
 //	Prefix Suffix
 //	~
 //
+// …or the extended block with trailing "Type Level" on the flags line:
+//
+//	Name~
+//	BanBy~
+//	BanTime~
+//	Prefix Suffix Type Level
+//	~
+//
+// Unknown Type values default to BAN_SITE so legacy files parse cleanly.
 // If the file does not exist, returns nil with no error (no bans).
 func LoadBanList(w *world.World, path string) error {
 	f, err := os.Open(path)
@@ -41,7 +51,7 @@ func LoadBanList(w *world.World, path string) error {
 
 		ban := &types.BanData{}
 
-		// Line 1: Site~
+		// Line 1: Name~
 		ban.Name = strings.TrimSuffix(line, "~")
 
 		// Line 2: BanBy~
@@ -56,7 +66,7 @@ func LoadBanList(w *world.World, path string) error {
 		}
 		ban.BanTime = strings.TrimSuffix(scanner.Text(), "~")
 
-		// Line 4: Prefix Suffix (0/1 0/1)
+		// Line 4: Prefix Suffix [Type Level] (extended columns are optional).
 		if !scanner.Scan() {
 			break
 		}
@@ -65,6 +75,16 @@ func LoadBanList(w *world.World, path string) error {
 		if len(parts) >= 2 {
 			ban.Prefix = parts[0] == "1"
 			ban.Suffix = parts[1] == "1"
+		}
+		if len(parts) >= 3 {
+			if v, err := strconv.Atoi(parts[2]); err == nil {
+				ban.Type = v
+			}
+		}
+		if len(parts) >= 4 {
+			if v, err := strconv.Atoi(parts[3]); err == nil {
+				ban.Level = v
+			}
 		}
 
 		// Line 5: block terminator ~
@@ -95,7 +115,7 @@ func SaveBanList(w *world.World, path string) error {
 		fmt.Fprintf(writer, "%s~\n", ban.Name)
 		fmt.Fprintf(writer, "%s~\n", ban.BanBy)
 		fmt.Fprintf(writer, "%s~\n", ban.BanTime)
-		fmt.Fprintf(writer, "%d %d\n", prefixFlag, suffixFlag)
+		fmt.Fprintf(writer, "%d %d %d %d\n", prefixFlag, suffixFlag, ban.BanType(), ban.Level)
 		fmt.Fprintf(writer, "~\n")
 	}
 

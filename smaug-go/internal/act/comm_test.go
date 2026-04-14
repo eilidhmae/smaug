@@ -244,6 +244,97 @@ func TestDoSay_SilencedRoom(t *testing.T) {
 	}
 }
 
+// --- Tier 2: G5 language commands ---
+
+func TestDoSpeak_NoArgListsKnown(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Linguist")
+	defer client.Close()
+	ch.Speaks = int(types.LANG_COMMON | types.LANG_ELVEN)
+	ch.Speaking = int(types.LANG_COMMON)
+
+	DoSpeak(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "common") {
+		t.Errorf("listing should mention currently-spoken 'common', got: %q", out)
+	}
+	if !strings.Contains(out, "elven") {
+		t.Errorf("listing should include known 'elven', got: %q", out)
+	}
+}
+
+func TestDoSpeak_SwitchToKnown(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Speaker")
+	defer client.Close()
+	ch.Speaks = int(types.LANG_COMMON | types.LANG_DWARVEN)
+	ch.Speaking = int(types.LANG_COMMON)
+
+	DoSpeak(ch, "dwarven")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "dwarven") {
+		t.Errorf("switch should confirm 'dwarven', got: %q", out)
+	}
+	if uint32(ch.Speaking) != types.LANG_DWARVEN {
+		t.Errorf("Speaking should be LANG_DWARVEN, got %v", ch.Speaking)
+	}
+}
+
+func TestDoSpeak_RefusesUnknown(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("Mortal")
+	defer client.Close()
+	ch.Speaks = int(types.LANG_COMMON)
+
+	DoSpeak(ch, "elven")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "don't know") {
+		t.Errorf("unknown language should be refused, got: %q", out)
+	}
+}
+
+func TestDoLearn_ImmortalTeachesSelf(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeTestChar("God")
+	defer client.Close()
+	ch.Trust = types.LEVEL_IMMORTAL
+
+	DoLearn(ch, "orcish")
+	_ = readOutput(ch, client)
+	if uint32(ch.Speaks)&types.LANG_ORCISH == 0 {
+		t.Error("immortal should gain the language")
+	}
+}
+
+func TestDoSay_LanguageScrambledForNonSpeaker(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6200, Name: "Room"}
+	w.Rooms[6200] = room
+
+	sp, spClient := makeTestChar("Speaker")
+	defer spClient.Close()
+	sp.Speaks = int(types.LANG_ELVEN)
+	sp.Speaking = int(types.LANG_ELVEN)
+	handler.CharToRoom(sp, room)
+	w.AddChar(sp)
+
+	li, liClient := makeTestChar("Listener")
+	defer liClient.Close()
+	li.Speaks = int(types.LANG_COMMON) // no elven
+	handler.CharToRoom(li, room)
+	w.AddChar(li)
+
+	DoSay(sp, "hello friend")
+	liOut := readOutput(li, liClient)
+
+	if strings.Contains(liOut, "hello friend") {
+		t.Errorf("non-speaker should not see original text, got: %q", liOut)
+	}
+	if !strings.Contains(liOut, "Speaker says") {
+		t.Errorf("listener should still see 'Speaker says', got: %q", liOut)
+	}
+}
+
 func TestDoEmote_NoEmoteFlagBlocksSender(t *testing.T) {
 	w := setupCommWorld()
 	room := &types.RoomIndexData{Vnum: 6113, Name: "Room"}

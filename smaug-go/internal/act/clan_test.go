@@ -1,9 +1,11 @@
 package act
 
 import (
+	"net"
 	"strings"
 	"testing"
 
+	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -700,5 +702,130 @@ func TestCountNotesFor(t *testing.T) {
 	got := CountNotesFor(alice)
 	if got != 3 {
 		t.Errorf("CountNotesFor(Alice) = %d; want 3 (all, Alice, Alice Bob)", got)
+	}
+}
+
+// --- Tier 2: clan storeroom commands ---
+
+func newClannedPlayer(w *world.World, name string, clan *types.ClanData) (*types.CharData, net.Conn) {
+	ch, client := makeTestChar(name)
+	ch.PCData.Clan = clan
+	ch.PCData.ClanName = clan.Name
+	return ch, client
+}
+
+func TestDoClanDeposit_NotInClan(t *testing.T) {
+	_ = setupClanWorld()
+	ch, client := makeTestChar("Lone")
+	defer client.Close()
+
+	DoClanDeposit(ch, "anything")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "aren't in a clan") {
+		t.Errorf("expected 'aren't in a clan', got: %q", out)
+	}
+}
+
+func TestDoClanDeposit_NoStoreroom(t *testing.T) {
+	w := setupClanWorld()
+	clan := &types.ClanData{Name: "Testers", Storeroom: 0}
+	w.Clans = append(w.Clans, clan)
+
+	ch, client := newClannedPlayer(w, "Member", clan)
+	defer client.Close()
+
+	DoClanDeposit(ch, "anything")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "no storeroom") {
+		t.Errorf("expected 'no storeroom', got: %q", out)
+	}
+}
+
+func TestDoClanDeposit_MovesObjectToStoreroom(t *testing.T) {
+	w := setupClanWorld()
+	storeroom := &types.RoomIndexData{Vnum: 9090, Name: "Storage"}
+	w.Rooms[9090] = storeroom
+	clan := &types.ClanData{Name: "Testers", Storeroom: 9090}
+	w.Clans = append(w.Clans, clan)
+
+	ch, client := newClannedPlayer(w, "Member", clan)
+	defer client.Close()
+	room := &types.RoomIndexData{Vnum: 9091, Name: "Hall"}
+	handler.CharToRoom(ch, room)
+
+	idx := &types.ObjIndexData{Vnum: 6001, Name: "clan banner", ShortDescr: "a clan banner",
+		WearFlags: int(types.ITEM_TAKE)}
+	w.ObjIndex[6001] = idx
+	obj := handler.CreateObject(w, idx, 1)
+	handler.ObjToChar(obj, ch)
+
+	DoClanDeposit(ch, "banner")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(out, "deposit") {
+		t.Errorf("expected deposit message, got: %q", out)
+	}
+	if len(ch.Carrying) != 0 {
+		t.Errorf("object should have left inventory")
+	}
+	if len(storeroom.Contents) != 1 {
+		t.Errorf("object should be in storeroom; got %d", len(storeroom.Contents))
+	}
+}
+
+func TestDoClanWithdraw_RequiresInStoreroom(t *testing.T) {
+	w := setupClanWorld()
+	storeroom := &types.RoomIndexData{Vnum: 9092, Name: "Storage"}
+	w.Rooms[9092] = storeroom
+	clan := &types.ClanData{Name: "Testers", Storeroom: 9092}
+	w.Clans = append(w.Clans, clan)
+
+	ch, client := newClannedPlayer(w, "Member", clan)
+	defer client.Close()
+	hall := &types.RoomIndexData{Vnum: 9093, Name: "Hall"}
+	handler.CharToRoom(ch, hall)
+
+	idx := &types.ObjIndexData{Vnum: 6002, Name: "relic"}
+	w.ObjIndex[6002] = idx
+	obj := handler.CreateObject(w, idx, 1)
+	handler.ObjToRoom(obj, storeroom)
+
+	DoClanWithdraw(ch, "relic")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "must be in the clan storeroom") {
+		t.Errorf("withdraw from outside should refuse, got: %q", out)
+	}
+	if len(ch.Carrying) != 0 {
+		t.Errorf("item must not have moved")
+	}
+}
+
+func TestDoClanWithdraw_Success(t *testing.T) {
+	w := setupClanWorld()
+	storeroom := &types.RoomIndexData{Vnum: 9094, Name: "Storage"}
+	w.Rooms[9094] = storeroom
+	clan := &types.ClanData{Name: "Testers", Storeroom: 9094}
+	w.Clans = append(w.Clans, clan)
+
+	ch, client := newClannedPlayer(w, "Member", clan)
+	defer client.Close()
+	handler.CharToRoom(ch, storeroom)
+
+	idx := &types.ObjIndexData{Vnum: 6003, Name: "heirloom", ShortDescr: "an heirloom",
+		WearFlags: int(types.ITEM_TAKE)}
+	w.ObjIndex[6003] = idx
+	obj := handler.CreateObject(w, idx, 1)
+	handler.ObjToRoom(obj, storeroom)
+
+	DoClanWithdraw(ch, "heirloom")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "withdraw") {
+		t.Errorf("expected withdraw message, got: %q", out)
+	}
+	if len(ch.Carrying) != 1 {
+		t.Errorf("object should be in inventory; got %d", len(ch.Carrying))
+	}
+	if len(storeroom.Contents) != 0 {
+		t.Errorf("storeroom should be empty; got %d", len(storeroom.Contents))
 	}
 }

@@ -407,3 +407,78 @@ func DoSnoop(ch *types.CharData, argument string) {
 	victim.Desc.SnoopBy = ch.Desc
 	ch.Sendf("You begin snooping %s.\n\r", victim.Name)
 }
+
+// --- Clan storeroom commands ---
+
+// clanStoreroom resolves the caller's clan storeroom. Returns nil with an
+// appropriate player message on any failure (not in clan, no storeroom vnum
+// set, or the room doesn't exist in the world).
+func clanStoreroom(ch *types.CharData) *types.RoomIndexData {
+	if ch.IsNPC() || ch.PCData == nil || ch.PCData.Clan == nil {
+		ch.Send("You aren't in a clan.\n\r")
+		return nil
+	}
+	vnum := ch.PCData.Clan.Storeroom
+	if vnum <= 0 || WorldRef == nil {
+		ch.Send("Your clan has no storeroom.\n\r")
+		return nil
+	}
+	room := WorldRef.GetRoom(vnum)
+	if room == nil {
+		ch.Send("Your clan has no storeroom.\n\r")
+		return nil
+	}
+	return room
+}
+
+// DoClanDeposit moves a carried object from ch into the clan storeroom.
+func DoClanDeposit(ch *types.CharData, argument string) {
+	arg, _ := util.OneArgument(argument)
+	if arg == "" {
+		ch.Send("Deposit what?\n\r")
+		return
+	}
+	room := clanStoreroom(ch)
+	if room == nil {
+		return
+	}
+	obj := handler.GetObjCarry(ch, arg)
+	if obj == nil {
+		ch.Send("You do not have that item.\n\r")
+		return
+	}
+	if !handler.CanDropObj(obj) {
+		ch.Send("You can't let go of it.\n\r")
+		return
+	}
+	handler.ObjFromChar(obj)
+	handler.ObjToRoom(obj, room)
+	ch.Sendf("You deposit %s in the clan storeroom.\n\r", obj.ShortDescr)
+}
+
+// DoClanWithdraw moves an object out of the clan storeroom into ch's
+// inventory. The caller must physically be in the storeroom to prevent
+// long-distance looting.
+func DoClanWithdraw(ch *types.CharData, argument string) {
+	arg, _ := util.OneArgument(argument)
+	if arg == "" {
+		ch.Send("Withdraw what?\n\r")
+		return
+	}
+	room := clanStoreroom(ch)
+	if room == nil {
+		return
+	}
+	if ch.InRoom != room {
+		ch.Send("You must be in the clan storeroom to withdraw.\n\r")
+		return
+	}
+	obj := handler.GetObjList(room.Contents, arg)
+	if obj == nil {
+		ch.Sendf("I see no %s here.\n\r", arg)
+		return
+	}
+	handler.ObjFromRoom(obj)
+	handler.ObjToChar(obj, ch)
+	ch.Sendf("You withdraw %s from the clan storeroom.\n\r", obj.ShortDescr)
+}

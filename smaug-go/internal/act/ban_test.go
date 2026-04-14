@@ -263,3 +263,81 @@ func TestCheckBans_SuffixNoMatch(t *testing.T) {
 		t.Errorf("expected nil for non-suffix match, got %+v", result)
 	}
 }
+
+// --- Tier 2: class/race ban subcommands ---
+
+func TestDoBan_ClassSubcommand(t *testing.T) {
+	w := setupWizWorld()
+	ch, client := makeImmTestChar("Admin")
+	defer client.Close()
+
+	DoBan(ch, "class mage 5")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(out, "Class ban on mage") {
+		t.Errorf("expected class ban confirmation, got: %q", out)
+	}
+	if len(w.Bans) != 1 {
+		t.Fatalf("expected 1 ban, got %d", len(w.Bans))
+	}
+	b := w.Bans[0]
+	if b.BanType() != types.BAN_CLASS {
+		t.Errorf("ban Type = %d; want BAN_CLASS", b.BanType())
+	}
+	if b.Name != "mage" || b.Level != 5 {
+		t.Errorf("ban %+v: want name=mage level=5", b)
+	}
+}
+
+func TestDoBan_RaceSubcommand(t *testing.T) {
+	w := setupWizWorld()
+	ch, client := makeImmTestChar("Admin")
+	defer client.Close()
+
+	DoBan(ch, "race troll")
+	_ = readOutput(ch, client)
+
+	if len(w.Bans) != 1 {
+		t.Fatalf("expected 1 ban, got %d", len(w.Bans))
+	}
+	if w.Bans[0].BanType() != types.BAN_RACE {
+		t.Errorf("ban Type = %d; want BAN_RACE", w.Bans[0].BanType())
+	}
+}
+
+func TestIsClassBanned_BelowLevel(t *testing.T) {
+	w := world.New("/tmp/test")
+	w.Bans = append(w.Bans, &types.BanData{Name: "mage", Type: types.BAN_CLASS, Level: 10})
+
+	if b := IsClassBanned(w, "mage", 5); b == nil {
+		t.Error("level-5 mage should be banned when ban threshold is 10")
+	}
+	if b := IsClassBanned(w, "mage", 15); b != nil {
+		t.Error("level-15 mage should bypass ban threshold 10")
+	}
+	if b := IsClassBanned(w, "cleric", 1); b != nil {
+		t.Error("cleric is not banned; should return nil")
+	}
+}
+
+func TestIsRaceBanned_IgnoresClassEntries(t *testing.T) {
+	w := world.New("/tmp/test")
+	w.Bans = append(w.Bans,
+		&types.BanData{Name: "mage", Type: types.BAN_CLASS, Level: 99},
+		&types.BanData{Name: "troll", Type: types.BAN_RACE, Level: 50},
+	)
+	if b := IsRaceBanned(w, "mage", 1); b != nil {
+		t.Error("class ban should not match race lookup")
+	}
+	if b := IsRaceBanned(w, "troll", 10); b == nil {
+		t.Error("troll should match race ban")
+	}
+}
+
+func TestCheckBans_IgnoresNonSiteBans(t *testing.T) {
+	w := world.New("/tmp/test")
+	w.Bans = append(w.Bans, &types.BanData{Name: "mage", Type: types.BAN_CLASS, Level: 99})
+	if b := CheckBans(w, "mage"); b != nil {
+		t.Error("class ban must not be returned by CheckBans(site)")
+	}
+}

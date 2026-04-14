@@ -365,7 +365,7 @@ func DoSay(ch *types.CharData, argument string) {
 	if ch.InRoom != nil {
 		for _, rch := range ch.InRoom.People {
 			if rch != ch && rch.Desc != nil {
-				rch.Sendf("&C%s says '%s'&D\n\r", ch.Name, argument)
+				rch.Sendf("&C%s says '%s'&D\n\r", ch.Name, util.Translate(argument, ch, rch))
 			}
 		}
 	}

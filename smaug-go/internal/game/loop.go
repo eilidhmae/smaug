@@ -448,6 +448,14 @@ func (g *GameLoop) nannyGetNewClass(d *types.DescriptorData, line string) {
 		return
 	}
 
+	// Enforce class bans: mortals below the ban level are refused.
+	className := g.world.Classes[classIdx].WhoName
+	if ban := act.IsClassBanned(g.world, className, d.Character.Level); ban != nil && !d.Character.IsImmortal() {
+		d.WriteToBuffer("That class is currently restricted.\n\r")
+		g.showClassMenu(d)
+		return
+	}
+
 	d.Character.Class = classIdx
 
 	g.showRaceMenu(d)
@@ -481,6 +489,14 @@ func (g *GameLoop) nannyGetNewRace(d *types.DescriptorData, line string) {
 
 	if raceIdx < 0 {
 		d.WriteToBuffer("That's not a valid race.\n\r")
+		g.showRaceMenu(d)
+		return
+	}
+
+	// Enforce race bans.
+	raceName := g.world.Races[raceIdx].Name
+	if ban := act.IsRaceBanned(g.world, raceName, d.Character.Level); ban != nil && !d.Character.IsImmortal() {
+		d.WriteToBuffer("That race is currently restricted.\n\r")
 		g.showRaceMenu(d)
 		return
 	}
@@ -621,6 +637,11 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 	log.Printf("%s has entered the game from %s", ch.Name, d.Host)
 
 	d.WriteToBuffer("\n\rWelcome to SMAUG!\n\r\n\r")
+
+	// Report unread/addressed board notes.
+	if n := act.CountNotesFor(ch); n > 0 {
+		d.WriteToBufferf("You have %d note(s) waiting for you.\n\r\n\r", n)
+	}
 
 	// Auto-look
 	if ch.InRoom != nil {

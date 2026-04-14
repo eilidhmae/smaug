@@ -1,6 +1,8 @@
 package act
 
 import (
+	"strings"
+
 	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
@@ -66,14 +68,17 @@ func deliverTell(ch, victim *types.CharData, message string) bool {
 		return false
 	}
 
+	// Apply per-listener language translation.
+	heard := util.Translate(message, ch, victim)
+
 	// AFK: deliver, but tag both sides.
 	afk := !victim.IsNPC() && victim.Act.IsSet(types.PLR_AFK)
 	if afk {
 		ch.Sendf("%s is AFK. You tell %s '%s'\n\r", victim.Name, victim.Name, message)
-		victim.Sendf("(afk) %s tells you '%s'\n\r", ch.Name, message)
+		victim.Sendf("(afk) %s tells you '%s'\n\r", ch.Name, heard)
 	} else {
 		ch.Sendf("You tell %s '%s'\n\r", victim.Name, message)
-		victim.Sendf("%s tells you '%s'\n\r", ch.Name, message)
+		victim.Sendf("%s tells you '%s'\n\r", ch.Name, heard)
 	}
 	return true
 }
@@ -98,7 +103,7 @@ func DoYell(ch *types.CharData, argument string) {
 		}
 		if wch.InRoom != nil && ch.InRoom != nil &&
 			wch.InRoom.Area == ch.InRoom.Area {
-			wch.Sendf("%s yells '%s'\n\r", ch.Name, argument)
+			wch.Sendf("%s yells '%s'\n\r", ch.Name, util.Translate(argument, ch, wch))
 		}
 	}
 }
@@ -138,7 +143,7 @@ func DoShout(ch *types.CharData, argument string) {
 		if wch == ch || wch.Desc == nil {
 			continue
 		}
-		wch.Sendf("%s shouts '%s'\n\r", ch.Name, argument)
+		wch.Sendf("%s shouts '%s'\n\r", ch.Name, util.Translate(argument, ch, wch))
 	}
 }
 
@@ -165,6 +170,87 @@ func DoPmote(ch *types.CharData, argument string) {
 			msg := argument
 			rch.Sendf("%s's %s\n\r", ch.Name, msg)
 		}
+	}
+}
+
+// DoSpeak implements the 'speak' command. With no argument it reports the
+// currently-active tongue and those the character knows; with a language name
+// it switches the active language, provided the character actually knows it.
+func DoSpeak(ch *types.CharData, argument string) {
+	arg, _ := util.OneArgument(argument)
+	if arg == "" {
+		cur := "nothing"
+		for bit, name := range util.LangName {
+			if uint32(ch.Speaking) == bit {
+				cur = name
+				break
+			}
+		}
+		ch.Sendf("You are currently speaking %s.\n\r", cur)
+		// List known languages.
+		var known []string
+		for bit, name := range util.LangName {
+			if uint32(ch.Speaks)&bit != 0 {
+				known = append(known, name)
+			}
+		}
+		if len(known) == 0 {
+			ch.Send("You don't know any languages.\n\r")
+			return
+		}
+		ch.Sendf("You know: %s.\n\r", strings.Join(known, ", "))
+		return
+	}
+
+	bit, ok := util.LangBit(arg)
+	if !ok {
+		ch.Send("That is not a known language.\n\r")
+		return
+	}
+	if !ch.IsImmortal() && uint32(ch.Speaks)&bit == 0 {
+		ch.Send("You don't know that language.\n\r")
+		return
+	}
+	ch.Speaking = int(bit)
+	ch.Sendf("You now speak %s.\n\r", util.LangName[bit])
+}
+
+// DoLearn implements the 'learn' command. Immortals may teach a language to
+// the target (or themselves); mortals self-taught learning is handled by the
+// trainer/practice subsystem — this command is a stub for those callers.
+func DoLearn(ch *types.CharData, argument string) {
+	arg, rest := util.OneArgument(argument)
+	if arg == "" {
+		ch.Send("Learn what language (from whom)?\n\r")
+		return
+	}
+
+	bit, ok := util.LangBit(arg)
+	if !ok {
+		ch.Send("That is not a known language.\n\r")
+		return
+	}
+
+	target := ch
+	if rest != "" && ch.IsImmortal() {
+		victim := handler.GetCharRoom(ch, rest)
+		if victim == nil {
+			ch.Send("They aren't here.\n\r")
+			return
+		}
+		target = victim
+	} else if !ch.IsImmortal() {
+		// Mortal learn without a trainer NPC: stubbed — refer player to practice.
+		ch.Send("Find a trainer and use 'practice' to learn languages.\n\r")
+		return
+	}
+
+	target.Speaks |= int(bit)
+	if target == ch {
+		ch.Sendf("You can now speak %s.\n\r", util.LangName[bit])
+	} else {
+		target.Sendf("%s has taught you %s.\n\r", ch.Name, util.LangName[bit])
+		ch.Sendf("You teach %s %s.\n\r", target.Name, util.LangName[bit])
 	}
 }
 

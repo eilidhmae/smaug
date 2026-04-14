@@ -2,6 +2,7 @@ package act
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,7 +11,9 @@ import (
 	"github.com/eilidhmae/smaug/internal/world"
 )
 
-// DoBan handles the "ban" command for adding, listing, and removing site bans.
+// DoBan handles the "ban" command for adding, listing, and removing bans.
+// Subcommands: list, site <addr>, class <name> [lvl], race <name> [lvl],
+// remove <name>.
 func DoBan(ch *types.CharData, argument string) {
 	arg1, rest := util.OneArgument(argument)
 
@@ -21,7 +24,7 @@ func DoBan(ch *types.CharData, argument string) {
 			return
 		}
 		var buf strings.Builder
-		buf.WriteString("Banned sites:\r\n")
+		buf.WriteString("Bans:\r\n")
 		for _, ban := range WorldRef.Bans {
 			display := ban.Name
 			if ban.Prefix {
@@ -30,7 +33,9 @@ func DoBan(ch *types.CharData, argument string) {
 			if ban.Suffix {
 				display = "*" + display
 			}
-			buf.WriteString(fmt.Sprintf("  %-30s  (by %s on %s)\r\n", display, ban.BanBy, ban.BanTime))
+			kind := banKindLabel(ban)
+			buf.WriteString(fmt.Sprintf("  [%-5s] %-30s  (by %s on %s)\r\n",
+				kind, display, ban.BanBy, ban.BanTime))
 		}
 		ch.Send(buf.String())
 
@@ -44,6 +49,7 @@ func DoBan(ch *types.CharData, argument string) {
 		ban := &types.BanData{
 			BanBy:   ch.Name,
 			BanTime: time.Now().Format("2006-01-02"),
+			Type:    types.BAN_SITE,
 		}
 
 		if strings.HasPrefix(pattern, "*") {
@@ -59,33 +65,126 @@ func DoBan(ch *types.CharData, argument string) {
 		WorldRef.Bans = append(WorldRef.Bans, ban)
 		ch.Send(fmt.Sprintf("Ban on %s added.\r\n", pattern))
 
+	case "class":
+		name, rest2 := util.OneArgument(rest)
+		if name == "" {
+			ch.Send("Usage: ban class <name> [level]\r\n")
+			return
+		}
+		level := 0
+		if rest2 != "" {
+			if v, err := strconv.Atoi(strings.TrimSpace(rest2)); err == nil {
+				level = v
+			}
+		}
+		ban := &types.BanData{
+			Name:    name,
+			BanBy:   ch.Name,
+			BanTime: time.Now().Format("2006-01-02"),
+			Type:    types.BAN_CLASS,
+			Level:   level,
+		}
+		WorldRef.Bans = append(WorldRef.Bans, ban)
+		ch.Send(fmt.Sprintf("Class ban on %s added.\r\n", name))
+
+	case "race":
+		name, rest2 := util.OneArgument(rest)
+		if name == "" {
+			ch.Send("Usage: ban race <name> [level]\r\n")
+			return
+		}
+		level := 0
+		if rest2 != "" {
+			if v, err := strconv.Atoi(strings.TrimSpace(rest2)); err == nil {
+				level = v
+			}
+		}
+		ban := &types.BanData{
+			Name:    name,
+			BanBy:   ch.Name,
+			BanTime: time.Now().Format("2006-01-02"),
+			Type:    types.BAN_RACE,
+			Level:   level,
+		}
+		WorldRef.Bans = append(WorldRef.Bans, ban)
+		ch.Send(fmt.Sprintf("Race ban on %s added.\r\n", name))
+
 	case "remove":
-		site, _ := util.OneArgument(rest)
-		if site == "" {
-			ch.Send("Usage: ban remove <address>\r\n")
+		name, _ := util.OneArgument(rest)
+		if name == "" {
+			ch.Send("Usage: ban remove <name>\r\n")
 			return
 		}
 
-		siteLower := strings.ToLower(site)
+		nameLower := strings.ToLower(name)
 		for i, ban := range WorldRef.Bans {
-			if strings.EqualFold(ban.Name, siteLower) {
+			if strings.EqualFold(ban.Name, nameLower) {
 				WorldRef.Bans = append(WorldRef.Bans[:i], WorldRef.Bans[i+1:]...)
-				ch.Send(fmt.Sprintf("Ban on %s removed.\r\n", site))
+				ch.Send(fmt.Sprintf("Ban on %s removed.\r\n", name))
 				return
 			}
 		}
 		ch.Send("That ban was not found.\r\n")
 
 	default:
-		ch.Send("Usage: ban [site <address> | remove <address> | list]\r\n")
+		ch.Send("Usage: ban [site <addr>|class <name> [lvl]|race <name> [lvl]|remove <name>|list]\r\n")
 	}
 }
 
-// CheckBans checks whether a site matches any ban in the world's ban list.
-// Returns the matching BanData or nil if no match.
+func banKindLabel(ban *types.BanData) string {
+	switch ban.BanType() {
+	case types.BAN_CLASS:
+		return "class"
+	case types.BAN_RACE:
+		return "race"
+	default:
+		return "site"
+	}
+}
+
+// IsClassBanned reports whether the named class is currently banned for a
+// character of the given level. A ban's Level field is the minimum level a
+// character must have to bypass it — mortals below that level are refused.
+func IsClassBanned(w *world.World, className string, level int) *types.BanData {
+	if w == nil {
+		return nil
+	}
+	for _, ban := range w.Bans {
+		if ban.BanType() != types.BAN_CLASS {
+			continue
+		}
+		if strings.EqualFold(ban.Name, className) && level < ban.Level {
+			return ban
+		}
+	}
+	return nil
+}
+
+// IsRaceBanned mirrors IsClassBanned for BAN_RACE entries.
+func IsRaceBanned(w *world.World, raceName string, level int) *types.BanData {
+	if w == nil {
+		return nil
+	}
+	for _, ban := range w.Bans {
+		if ban.BanType() != types.BAN_RACE {
+			continue
+		}
+		if strings.EqualFold(ban.Name, raceName) && level < ban.Level {
+			return ban
+		}
+	}
+	return nil
+}
+
+// CheckBans checks whether a site matches any site-ban in the world's ban list.
+// Returns the matching BanData or nil if no match. Class and race bans are
+// ignored here — use IsClassBanned / IsRaceBanned for those.
 func CheckBans(w *world.World, site string) *types.BanData {
 	siteLower := strings.ToLower(site)
 	for _, ban := range w.Bans {
+		if ban.BanType() != types.BAN_SITE {
+			continue
+		}
 		nameLower := strings.ToLower(ban.Name)
 		if ban.Prefix && strings.HasPrefix(siteLower, nameLower) {
 			return ban
