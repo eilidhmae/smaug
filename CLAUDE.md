@@ -40,6 +40,10 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - `smaug-go/doc/phase4b-completed.md` — Phase 4b record (features: G6–G10, G12 complete; G11 deferred)
 - `smaug-go/doc/go-idiom-review.md` — Go idiom audit: 10 findings, all resolved
 - `smaug-go/doc/security-review.md` — Security audit: 16 findings, 14 fixed
+- `smaug-go/doc/phase5-tier1-foundation.md` — **Phase 5 Tier 1**: Act() dispatcher, spell_smaug, missing saves, skill-persistence + Silver/Copper save bugs, skill-learning formula
+- `smaug-go/doc/phase5-tier2-wiring.md` — **Phase 5 Tier 2**: honor already-defined flags (ROOM_*, ITEM_ANTI_*, PLR_*, EX_*), wire loaded-but-idle data (languages, repair shops, class/race bans, mail, clan storerooms)
+- `smaug-go/doc/phase5-tier3-mudprog.md` — **Phase 5 Tier 3**: ~86 missing if-checks, missing mob triggers, oprog + rprog subsystems, mpsleep runtime, ~35 missing mp commands
+- `smaug-go/doc/phase5-tier4-content.md` — **Phase 5 Tier 4**: missing spells, combat/utility skills, damage-message dispatcher, missing immortal/mortal commands, OLC interactivity
 
 ## Current Status
 
@@ -106,8 +110,16 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Integration tests: 9 end-to-end tests via programmatic TCP connections (server boot, char creation, commands, communication, multi-connection)
 - Security hardening: bcrypt passwords, connection limits, input/output bounds, path traversal defense, brute force protection, atomic saves, trust caps
 
-### What's next (Phase 5 — Optional Systems)
-Phase 4 is complete. See `smaug-go/doc/phase4b-completed.md` for the full record. G11 (hotboot/copyover) deferred — Go's net.Conn model doesn't support C's fd-inheritance approach. Candidates for Phase 5: overland maps, player housing, polymorph, archery, combat stances, dragon flight, arena PvP, planes, holidays, star maps, hotboot (simplified graceful restart).
+### What's next (Phase 5 — Depth-First Parity Closure)
+
+Phase 4 is complete. Before starting optional breadth systems (overland, housing, polymorph, archery, stances, dragon flight, arena, planes, hotboot), close the parity and correctness gaps found by the 2026-04 audit. Work proceeds in four tiers; do Tier 1 first — it unblocks the others.
+
+- **Tier 1 — Foundation + correctness.** Port the `Act()` message dispatcher and the data-driven `spell_smaug` dispatcher. Add the three missing saves (`SavesWands`, `SavesParaPetri`, `SavesBreath`). Fix two data-loss bugs: (1) learned skill/spell/weapon/tongue proficiencies are read-and-discarded on load and never written on save (`persist/player.go:277`); (2) Silver/Copper on-hand are loaded but never saved (`persist/player.go:449` writes only Gold). Fix the skill-learning formula to use `5 * Difficulty` as C does instead of the current flat `+20`. See `smaug-go/doc/phase5-tier1-foundation.md`.
+- **Tier 2 — Flag honoring + wire idle data.** ROOM_NOMAGIC/NOSUMMON/NORECALL/NOFLOOR/DEATH/SILENCE/NOMOB, ITEM_ANTI_*, PLR_AFK/NO_TELL/NO_EMOTE, EX_SECRET/HIDDEN are defined but not enforced. Languages, repair shops, class/race bans, mail targeting, and clan storerooms have their data model but no commands. See `smaug-go/doc/phase5-tier2-wiring.md`.
+- **Tier 3 — Mudprog depth.** Go has 29 if-checks vs C's ~115; 7 mob triggers vs C's ~13; no object-progs at all; no room-progs at all; `MProgSleepData` is defined but the queue/update are missing; 9 of C's ~44 mp commands implemented. See `smaug-go/doc/phase5-tier3-mudprog.md`.
+- **Tier 4 — Content breadth.** Registry has 30 of ~101 C spells; 15 of ~43 combat/utility skills; no damage-message dispatcher (`new_dam_message` equivalent); 14 missing immortal commands; 9 missing mortal commands; OLC has 6 redit subcommands vs C's ~20 and no interactive oedit/medit/mpedit/opedit/rpedit. See `smaug-go/doc/phase5-tier4-content.md`.
+
+Optional breadth systems (overland, housing, polymorph, archery, stances, dragon flight, arena, planes, holidays, star maps, hotboot) are now Phase 6 candidates.
 
 ## Building and Running the Go Port
 
