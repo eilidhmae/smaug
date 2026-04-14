@@ -98,3 +98,49 @@ func TestDoCast_OffensiveNoTarget(t *testing.T) {
 		t.Errorf("expected 'on whom' message, got: %q", out)
 	}
 }
+
+// --- Tier 2: ROOM_NO_MAGIC guard ---
+
+func TestDoCast_NoMagicRoom(t *testing.T) {
+	w := setupWizWorld()
+	room := &types.RoomIndexData{Vnum: 9210, Name: "Dead Magic Zone"}
+	room.RoomFlags.Set(types.ROOM_NO_MAGIC)
+	w.Rooms[9210] = room
+
+	ch, client := makeTestChar("Caster")
+	defer client.Close()
+	ch.Trust = 0
+	ch.Level = 10
+	ch.Mana = 100
+	handler.CharToRoom(ch, room)
+
+	DoCast(ch, "'magic missile' dummy")
+	out := readOutput(ch, client)
+	if !strings.Contains(strings.ToLower(out), "blocking your magic") {
+		t.Errorf("expected 'blocking your magic' in NO_MAGIC room, got: %q", out)
+	}
+	// Mana must not be deducted — the guard fires before dispatch.
+	if ch.Mana != 100 {
+		t.Errorf("Mana should be untouched in NO_MAGIC; got %d", ch.Mana)
+	}
+}
+
+func TestDoCast_NoMagicRoomImmortalBypass(t *testing.T) {
+	w := setupWizWorld()
+	room := &types.RoomIndexData{Vnum: 9211, Name: "Dead Magic Zone"}
+	room.RoomFlags.Set(types.ROOM_NO_MAGIC)
+	w.Rooms[9211] = room
+
+	ch, client := makeTestChar("God")
+	defer client.Close()
+	ch.Trust = types.LEVEL_IMMORTAL
+	ch.Mana = 100
+	handler.CharToRoom(ch, room)
+
+	// No spells defined → will fall through to "don't know" rather than NO_MAGIC.
+	DoCast(ch, "'magic missile' dummy")
+	out := readOutput(ch, client)
+	if strings.Contains(strings.ToLower(out), "blocking your magic") {
+		t.Errorf("immortal should bypass NO_MAGIC, got: %q", out)
+	}
+}

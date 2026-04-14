@@ -25,8 +25,9 @@ func DoTell(ch *types.CharData, argument string) {
 		return
 	}
 
-	ch.Sendf("You tell %s '%s'\n\r", victim.Name, message)
-	victim.Sendf("%s tells you '%s'\n\r", ch.Name, message)
+	if !deliverTell(ch, victim, message) {
+		return
+	}
 	victim.Reply = ch
 }
 
@@ -43,15 +44,49 @@ func DoReply(ch *types.CharData, argument string) {
 	}
 
 	victim := ch.Reply
-	ch.Sendf("You tell %s '%s'\n\r", victim.Name, argument)
-	victim.Sendf("%s tells you '%s'\n\r", ch.Name, argument)
+	if !deliverTell(ch, victim, argument) {
+		return
+	}
 	victim.Reply = ch
+}
+
+// deliverTell handles the common tell/reply delivery path with PLR_NO_TELL,
+// PLR_AFK, and room-silence gating. Returns true if the sender's confirmation
+// was emitted (caller may then update reply pointers).
+func deliverTell(ch, victim *types.CharData, message string) bool {
+	// Sender's room silences outbound tells.
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) && !ch.IsImmortal() {
+		ch.Send("You can't do that here.\n\r")
+		return false
+	}
+
+	// Receiver refusing tells — immortals bypass the block.
+	if !ch.IsImmortal() && !victim.IsNPC() && victim.Act.IsSet(types.PLR_NO_TELL) {
+		ch.Sendf("%s is not receiving tells.\n\r", victim.Name)
+		return false
+	}
+
+	// AFK: deliver, but tag both sides.
+	afk := !victim.IsNPC() && victim.Act.IsSet(types.PLR_AFK)
+	if afk {
+		ch.Sendf("%s is AFK. You tell %s '%s'\n\r", victim.Name, victim.Name, message)
+		victim.Sendf("(afk) %s tells you '%s'\n\r", ch.Name, message)
+	} else {
+		ch.Sendf("You tell %s '%s'\n\r", victim.Name, message)
+		victim.Sendf("%s tells you '%s'\n\r", ch.Name, message)
+	}
+	return true
 }
 
 // DoYell implements the 'yell' command: message to all in same area.
 func DoYell(ch *types.CharData, argument string) {
 	if argument == "" {
 		ch.Send("Yell what?\n\r")
+		return
+	}
+
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) && !ch.IsImmortal() {
+		ch.Send("You can't do that here.\n\r")
 		return
 	}
 
@@ -89,6 +124,11 @@ func DoGossip(ch *types.CharData, argument string) {
 func DoShout(ch *types.CharData, argument string) {
 	if argument == "" {
 		ch.Send("Shout what?\n\r")
+		return
+	}
+
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) && !ch.IsImmortal() {
+		ch.Send("You can't do that here.\n\r")
 		return
 	}
 
@@ -130,12 +170,23 @@ func DoPmote(ch *types.CharData, argument string) {
 
 // DoEmote implements the 'emote' command: roleplay action visible to room.
 func DoEmote(ch *types.CharData, argument string) {
+	// Silenced senders (PLR_NO_EMOTE) get a refusal; mirrors C src/act_comm.c do_emote.
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_NO_EMOTE) {
+		ch.Send("You can't show your emotions.\n\r")
+		return
+	}
+
 	if argument == "" {
 		ch.Send("Emote what?\n\r")
 		return
 	}
 
 	if ch.InRoom == nil {
+		return
+	}
+
+	if ch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) && !ch.IsImmortal() {
+		ch.Send("You can't do that here.\n\r")
 		return
 	}
 

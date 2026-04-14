@@ -601,3 +601,104 @@ func TestDoNote_NoBoard(t *testing.T) {
 		t.Errorf("expected 'no board', got: %q", out)
 	}
 }
+
+// --- Tier 2: note recipient filtering ---
+
+func TestIsNoteTo_Matches(t *testing.T) {
+	alice := &types.CharData{Name: "Alice", Trust: 0, Level: 10}
+	carol := &types.CharData{Name: "Carol", Trust: 0, Level: 10}
+
+	cases := []struct {
+		toList string
+		wantA  bool
+		wantC  bool
+	}{
+		{"all", true, true},
+		{"", true, true}, // empty treated as all
+		{"Alice", true, false},
+		{"Alice Bob", true, false},
+		{"alice", true, false}, // case-insensitive
+		{"Carol", false, true},
+		{"Dave", false, false},
+	}
+	for _, c := range cases {
+		note := &types.NoteData{ToList: c.toList}
+		if got := isNoteTo(alice, note); got != c.wantA {
+			t.Errorf("isNoteTo(Alice, %q) = %v; want %v", c.toList, got, c.wantA)
+		}
+		if got := isNoteTo(carol, note); got != c.wantC {
+			t.Errorf("isNoteTo(Carol, %q) = %v; want %v", c.toList, got, c.wantC)
+		}
+	}
+}
+
+func TestDoNote_ListFiltersByRecipient(t *testing.T) {
+	w := setupClanWorld()
+	board := &types.BoardData{
+		Notes: []*types.NoteData{
+			{Sender: "Admin", Subject: "ForAll", Date: "d", ToList: "all", Text: "x"},
+			{Sender: "Alice", Subject: "ForCarol", Date: "d", ToList: "Carol", Text: "y"},
+			{Sender: "Admin", Subject: "ForAlice", Date: "d", ToList: "Alice Dave", Text: "z"},
+		},
+	}
+	w.Boards = append(w.Boards, board)
+
+	alice, aliceClient := makeTestChar("Alice")
+	defer aliceClient.Close()
+	alice.InRoom = &types.RoomIndexData{Vnum: 1, Name: "Test"}
+
+	DoNote(alice, "list")
+	out := readOutput(alice, aliceClient)
+
+	if !strings.Contains(out, "ForAll") {
+		t.Errorf("Alice should see 'all' note, got: %q", out)
+	}
+	if !strings.Contains(out, "ForAlice") {
+		t.Errorf("Alice should see note addressed to her, got: %q", out)
+	}
+	if strings.Contains(out, "ForCarol") {
+		t.Errorf("Alice should NOT see Carol's note, got: %q", out)
+	}
+}
+
+func TestDoNote_ReadRefusesOtherRecipient(t *testing.T) {
+	w := setupClanWorld()
+	board := &types.BoardData{
+		Notes: []*types.NoteData{
+			{Sender: "Admin", Subject: "Private", Date: "d", ToList: "Carol", Text: "secret\n\r"},
+		},
+	}
+	w.Boards = append(w.Boards, board)
+
+	alice, client := makeTestChar("Alice")
+	defer client.Close()
+	alice.InRoom = &types.RoomIndexData{Vnum: 1, Name: "Test"}
+
+	DoNote(alice, "read 1")
+	out := readOutput(alice, client)
+	if !strings.Contains(out, "not addressed to you") {
+		t.Errorf("expected refusal for foreign note, got: %q", out)
+	}
+	if strings.Contains(out, "secret") {
+		t.Errorf("secret text leaked to wrong reader, got: %q", out)
+	}
+}
+
+func TestCountNotesFor(t *testing.T) {
+	w := setupClanWorld()
+	w.Boards = []*types.BoardData{
+		{Notes: []*types.NoteData{
+			{ToList: "all"},
+			{ToList: "Alice"},
+			{ToList: "Bob"},
+		}},
+		{Notes: []*types.NoteData{
+			{ToList: "Alice Bob"},
+		}},
+	}
+	alice := &types.CharData{Name: "Alice", Trust: 0, Level: 10}
+	got := CountNotesFor(alice)
+	if got != 3 {
+		t.Errorf("CountNotesFor(Alice) = %d; want 3 (all, Alice, Alice Bob)", got)
+	}
+}

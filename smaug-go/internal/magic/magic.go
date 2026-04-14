@@ -523,6 +523,14 @@ func SpellSummon(w *world.World, sn int, level int, ch *types.CharData, victim *
 	if victim.InRoom == nil || ch.InRoom == nil {
 		return
 	}
+	if ch.InRoom.RoomFlags.IsSet(types.ROOM_NO_SUMMON) && !ch.IsImmortal() {
+		ch.Send("Something is blocking your summons.\n\r")
+		return
+	}
+	if victim.InRoom.RoomFlags.IsSet(types.ROOM_NO_SUMMON) || victim.InRoom.RoomFlags.IsSet(types.ROOM_PRIVATE) {
+		ch.Send("You can't reach them.\n\r")
+		return
+	}
 	if victim.Fighting != nil {
 		ch.Send("They are too busy fighting.\n\r")
 		return

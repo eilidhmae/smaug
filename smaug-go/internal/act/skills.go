@@ -473,6 +473,11 @@ func DoRecall(ch *types.CharData, argument string) {
 		return
 	}
 
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_NO_RECALL) && !ch.IsImmortal() {
+		ch.Send("You failed!\n\r")
+		return
+	}
+
 	room := WorldRef.GetRoom(types.ROOM_VNUM_TEMPLE)
 	if room == nil {
 		ch.Send("You are completely lost.\n\r")

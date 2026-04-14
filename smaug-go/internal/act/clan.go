@@ -244,12 +244,16 @@ func DoNote(ch *types.CharData, argument string) {
 
 	switch strings.ToLower(arg) {
 	case "list":
-		if len(board.Notes) == 0 {
-			ch.Send("There are no notes.\n\r")
-			return
-		}
+		shown := 0
 		for i, note := range board.Notes {
+			if !isNoteTo(ch, note) {
+				continue
+			}
 			ch.Sendf("[%2d] %s: %s\n\r", i+1, note.Sender, note.Subject)
+			shown++
+		}
+		if shown == 0 {
+			ch.Send("There are no notes for you.\n\r")
 		}
 
 	case "read":
@@ -262,6 +266,10 @@ func DoNote(ch *types.CharData, argument string) {
 			return
 		}
 		note := board.Notes[num-1]
+		if !isNoteTo(ch, note) {
+			ch.Send("That note is not addressed to you.\n\r")
+			return
+		}
 		ch.Sendf("&W[%d] %s: %s&D\n\r", num, note.Sender, note.Subject)
 		ch.Sendf("Date: %s  To: %s\n\r", note.Date, note.ToList)
 		ch.Send(note.Text)
@@ -310,6 +318,48 @@ func DoNote(ch *types.CharData, argument string) {
 	default:
 		ch.Send("Note what? (list, read <#>, write, post, remove <#>)\n\r")
 	}
+}
+
+// isNoteTo reports whether a note is addressed to ch. A note with ToList "all"
+// or empty is visible to everyone; otherwise the ToList is tokenized and matched
+// case-insensitively against ch.Name. Immortals always see all notes.
+// Mirrors C src/boards.c is_note_to.
+func isNoteTo(ch *types.CharData, note *types.NoteData) bool {
+	if ch == nil || note == nil {
+		return false
+	}
+	if ch.IsImmortal() {
+		return true
+	}
+	to := strings.TrimSpace(note.ToList)
+	if to == "" {
+		return true
+	}
+	name := strings.ToLower(ch.Name)
+	for _, tok := range strings.Fields(to) {
+		t := strings.ToLower(tok)
+		if t == "all" || t == name {
+			return true
+		}
+	}
+	return false
+}
+
+// CountNotesFor returns the number of board notes addressed to ch across all
+// boards on the world. Used by the login hook to report unread-note counts.
+func CountNotesFor(ch *types.CharData) int {
+	if WorldRef == nil || ch == nil {
+		return 0
+	}
+	n := 0
+	for _, b := range WorldRef.Boards {
+		for _, note := range b.Notes {
+			if isNoteTo(ch, note) {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // --- Snoop Command (moved from wiz for dependency reasons) ---

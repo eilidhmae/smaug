@@ -86,6 +86,11 @@ func DoDrop(ch *types.CharData, argument string) {
 		return
 	}
 
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_NODROP) && !ch.IsImmortal() {
+		ch.Sendf("A magical force prevents you from dropping %s.\n\r", obj.ShortDescr)
+		return
+	}
+
 	handler.ObjFromChar(obj)
 	handler.ObjToRoom(obj, ch.InRoom)
 	ch.Sendf("You drop %s.\n\r", obj.ShortDescr)
@@ -179,6 +184,11 @@ func DoWear(ch *types.CharData, argument string) {
 	obj := handler.GetObjCarry(ch, arg)
 	if obj == nil {
 		ch.Send("You do not have that item.\n\r")
+		return
+	}
+
+	if msg := wearRestrictMessage(ch, obj); msg != "" {
+		ch.Send(msg)
 		return
 	}
 
@@ -305,6 +315,59 @@ func findWearLoc(obj *types.ObjData) int {
 		return types.WEAR_ANKLE_L
 	}
 	return types.WEAR_NONE
+}
+
+// wearRestrictMessage returns a refusal message when ch may not wear/wield obj
+// because of alignment-, class-, or race-anti flags. Empty string means allowed.
+// Immortals bypass these restrictions.
+func wearRestrictMessage(ch *types.CharData, obj *types.ObjData) string {
+	if ch.IsImmortal() {
+		return ""
+	}
+	flags := obj.ExtraFlags
+
+	// Alignment restrictions.
+	if flags.IsSet(types.ITEM_ANTI_EVIL) && ch.IsEvil() {
+		return "You are too evil to use that.\n\r"
+	}
+	if flags.IsSet(types.ITEM_ANTI_GOOD) && ch.IsGood() {
+		return "You are too good to use that.\n\r"
+	}
+	if flags.IsSet(types.ITEM_ANTI_NEUTRAL) && ch.IsNeutral() {
+		return "You are too neutral to use that.\n\r"
+	}
+
+	// Class restrictions — only apply to PCs (NPCs have Class -1 / template class).
+	if !ch.IsNPC() {
+		switch ch.Class {
+		case types.CLASS_MAGE:
+			if flags.IsSet(types.ITEM_ANTI_MAGE) {
+				return "A mage cannot use that.\n\r"
+			}
+		case types.CLASS_CLERIC:
+			if flags.IsSet(types.ITEM_ANTI_CLERIC) {
+				return "A cleric cannot use that.\n\r"
+			}
+		case types.CLASS_THIEF:
+			if flags.IsSet(types.ITEM_ANTI_THIEF) {
+				return "A thief cannot use that.\n\r"
+			}
+		case types.CLASS_WARRIOR:
+			if flags.IsSet(types.ITEM_ANTI_WARRIOR) {
+				return "A warrior cannot use that.\n\r"
+			}
+		case types.CLASS_VAMPIRE:
+			if flags.IsSet(types.ITEM_ANTI_VAMPIRE) {
+				return "A vampire cannot use that.\n\r"
+			}
+		case types.CLASS_DRUID:
+			if flags.IsSet(types.ITEM_ANTI_DRUID) {
+				return "A druid cannot use that.\n\r"
+			}
+		}
+	}
+
+	return ""
 }
 
 // wearVerb returns the appropriate verb for equipping at a wear location.

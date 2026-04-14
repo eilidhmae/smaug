@@ -162,6 +162,105 @@ func TestDoYell(t *testing.T) {
 	}
 }
 
+// --- Tier 2: player-flag filters (PLR_AFK / PLR_NO_TELL / PLR_NO_EMOTE) ---
+
+func TestDoTell_NoTellRefuses(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6110, Name: "Room"}
+	w.Rooms[6110] = room
+
+	ch, chClient := makeTestChar("Sender")
+	defer chClient.Close()
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim, victimClient := makeTestChar("Silent")
+	defer victimClient.Close()
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	victim.Act.Set(types.PLR_NO_TELL)
+
+	DoTell(ch, "Silent hi")
+
+	out := readOutput(ch, chClient)
+	if !strings.Contains(out, "not receiving tells") {
+		t.Errorf("sender should see refusal, got: %q", out)
+	}
+	// Victim should NOT receive the tell.
+	if victim.Desc.HasOutput() {
+		vOut := readOutput(victim, victimClient)
+		if strings.Contains(vOut, "hi") {
+			t.Errorf("no-tell victim unexpectedly received: %q", vOut)
+		}
+	}
+	// Reply pointer should NOT have been updated.
+	if victim.Reply == ch {
+		t.Error("no-tell receiver's reply should not be set")
+	}
+}
+
+func TestDoTell_AFKTagsBothSides(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6111, Name: "Room"}
+	w.Rooms[6111] = room
+
+	ch, chClient := makeTestChar("Sender")
+	defer chClient.Close()
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim, victimClient := makeTestChar("Away")
+	defer victimClient.Close()
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	victim.Act.Set(types.PLR_AFK)
+
+	DoTell(ch, "Away hi")
+
+	out := readOutput(ch, chClient)
+	if !strings.Contains(out, "AFK") {
+		t.Errorf("sender should be told AFK, got: %q", out)
+	}
+	vOut := readOutput(victim, victimClient)
+	if !strings.Contains(vOut, "(afk)") {
+		t.Errorf("afk receiver should get (afk) tag, got: %q", vOut)
+	}
+}
+
+func TestDoSay_SilencedRoom(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6112, Name: "Hush"}
+	room.RoomFlags.Set(types.ROOM_SILENCE)
+	w.Rooms[6112] = room
+
+	ch, client := makeTestChar("Speaker")
+	defer client.Close()
+	handler.CharToRoom(ch, room)
+
+	DoSay(ch, "Hello?")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "can't do that here") {
+		t.Errorf("silenced say should refuse, got: %q", out)
+	}
+}
+
+func TestDoEmote_NoEmoteFlagBlocksSender(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6113, Name: "Room"}
+	w.Rooms[6113] = room
+
+	ch, client := makeTestChar("Mute")
+	defer client.Close()
+	handler.CharToRoom(ch, room)
+	ch.Act.Set(types.PLR_NO_EMOTE)
+
+	DoEmote(ch, "waves")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "can't show your emotions") {
+		t.Errorf("NO_EMOTE sender should be blocked, got: %q", out)
+	}
+}
+
 // Suppress unused import
 func init() {
 	_ = net.Pipe

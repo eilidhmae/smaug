@@ -136,6 +136,8 @@ func showExits(ch *types.CharData, room *types.RoomIndexData) {
 	dirNames := []string{"north", "east", "south", "west", "up", "down",
 		"northeast", "northwest", "southeast", "southwest"}
 
+	holy := ch.Act.IsSet(types.PLR_HOLYLIGHT)
+
 	var exits []string
 	for _, ex := range room.Exits {
 		if ex.ToRoom == nil {
@@ -143,6 +145,9 @@ func showExits(ch *types.CharData, room *types.RoomIndexData) {
 		}
 		if ex.ExitInfo&int(types.EX_CLOSED) != 0 {
 			continue // don't show closed exits in brief
+		}
+		if !holy && ex.ExitInfo&(int(types.EX_SECRET)|int(types.EX_HIDDEN)) != 0 {
+			continue
 		}
 		if ex.Direction >= 0 && ex.Direction < len(dirNames) {
 			exits = append(exits, dirNames[ex.Direction])
@@ -352,6 +357,10 @@ func DoSay(ch *types.CharData, argument string) {
 		ch.Send("Say what?\n\r")
 		return
 	}
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) && !ch.IsImmortal() {
+		ch.Send("You can't do that here.\n\r")
+		return
+	}
 	ch.Sendf("&CYou say '%s'&D\n\r", argument)
 	if ch.InRoom != nil {
 		for _, rch := range ch.InRoom.People {
@@ -400,6 +409,36 @@ func MoveChar(ch *types.CharData, dir int) {
 		return
 	}
 
+	// NPC-only exit restriction.
+	if ch.IsNPC() && exit.ExitInfo&int(types.EX_NOMOB) != 0 {
+		return
+	}
+
+	dest := exit.ToRoom
+
+	// NPC cannot enter a NOMOB room.
+	if ch.IsNPC() && dest.RoomFlags.IsSet(types.ROOM_NO_MOB) {
+		ch.Send("Something prevents you from going that way.\n\r")
+		return
+	}
+
+	// NOFLOOR blocks descent for non-flyers.
+	if dir == types.DIR_DOWN && dest.RoomFlags.IsSet(types.ROOM_NOFLOOR) &&
+		!ch.AffectedBy.IsSet(types.AFF_FLYING) {
+		ch.Send("You can't fly.\n\r")
+		return
+	}
+
+	// SOLITARY blocks entry if another character already occupies the room.
+	if dest.RoomFlags.IsSet(types.ROOM_SOLITARY) && !ch.IsImmortal() {
+		for _, rch := range dest.People {
+			if rch != ch {
+				ch.Send("That room is too small for more than one person.\n\r")
+				return
+			}
+		}
+	}
+
 	dirNames := []string{"north", "east", "south", "west", "up", "down",
 		"northeast", "northwest", "southeast", "southwest"}
 	revDir := []int{2, 3, 0, 1, 5, 4, 9, 8, 7, 6}
@@ -418,7 +457,6 @@ func MoveChar(ch *types.CharData, dir int) {
 	removeFromRoom(ch, oldRoom)
 
 	// Add to new room
-	dest := exit.ToRoom
 	addToRoom(ch, dest)
 
 	// Arrive message
@@ -427,6 +465,27 @@ func MoveChar(ch *types.CharData, dir int) {
 		for _, rch := range dest.People {
 			if rch != ch && rch.Desc != nil {
 				rch.Sendf("%s arrives from the %s.\n\r", ch.Name, revName)
+			}
+		}
+	}
+
+	// ROOM_DEATH traps: slay the entrant. Immortals are exempt.
+	if dest.RoomFlags.IsSet(types.ROOM_DEATH) && !ch.IsImmortal() {
+		for _, rch := range dest.People {
+			if rch != ch && rch.Desc != nil {
+				rch.Sendf("%s has died!\n\r", ch.Name)
+			}
+		}
+		ch.Send("You have entered a death trap!\n\r")
+		ch.Hit = 1
+		ch.Position = types.POS_STANDING
+		// Recall survivor to temple if possible.
+		if WorldRef != nil {
+			if temple := WorldRef.GetRoom(types.ROOM_VNUM_TEMPLE); temple != nil && temple != dest {
+				removeFromRoom(ch, dest)
+				addToRoom(ch, temple)
+				DoLook(ch, "")
+				return
 			}
 		}
 	}

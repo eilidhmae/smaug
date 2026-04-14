@@ -369,6 +369,22 @@ func (ch *CharData) IsImmortal() bool {
 	return ch.GetTrust() >= LEVEL_IMMORTAL
 }
 
+// IsEvil returns true if the character's alignment is evil (< -350).
+// Thresholds mirror C's mprog and act_obj align checks.
+func (ch *CharData) IsEvil() bool {
+	return ch.Alignment < -350
+}
+
+// IsGood returns true if the character's alignment is good (> 350).
+func (ch *CharData) IsGood() bool {
+	return ch.Alignment > 350
+}
+
+// IsNeutral returns true when the character is neither IsEvil nor IsGood.
+func (ch *CharData) IsNeutral() bool {
+	return !ch.IsEvil() && !ch.IsGood()
+}
+
 // GetTrust returns the effective trust level.
 func (ch *CharData) GetTrust() int {
 	if ch.Trust != 0 {

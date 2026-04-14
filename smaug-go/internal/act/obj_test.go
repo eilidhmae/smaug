@@ -306,3 +306,141 @@ func TestDoSacrifice(t *testing.T) {
 		t.Errorf("Gold = %d, want %d", ch.Gold, goldBefore+1)
 	}
 }
+
+// --- Tier 2: flag-enforcement tests ---
+
+func TestDoDrop_RoomNoDrop(t *testing.T) {
+	w := setupObjWorld()
+	room := &types.RoomIndexData{Vnum: 5200, Name: "No Drop"}
+	room.RoomFlags.Set(types.ROOM_NODROP)
+	w.Rooms[5200] = room
+
+	ch, client := makeObjTestChar("Tester")
+	defer client.Close()
+	handler.CharToRoom(ch, room)
+
+	idx := &types.ObjIndexData{Vnum: 3100, Name: "iron sword", ShortDescr: "an iron sword",
+		WearFlags: int(types.ITEM_TAKE)}
+	w.ObjIndex[3100] = idx
+	obj := handler.CreateObject(w, idx, 1)
+	handler.ObjToChar(obj, ch)
+
+	DoDrop(ch, "sword")
+	out := readOutput(ch, client)
+
+	if len(ch.Carrying) != 1 {
+		t.Errorf("ROOM_NODROP should keep item; Carrying=%d", len(ch.Carrying))
+	}
+	if len(room.Contents) != 0 {
+		t.Errorf("ROOM_NODROP should leave room empty; Contents=%d", len(room.Contents))
+	}
+	if !strings.Contains(out, "magical force") {
+		t.Errorf("expected NODROP message, got: %q", out)
+	}
+}
+
+func TestDoWear_AntiEvilBlocksEvil(t *testing.T) {
+	w := setupObjWorld()
+	room := &types.RoomIndexData{Vnum: 5201, Name: "Room"}
+	w.Rooms[5201] = room
+
+	ch, client := makeObjTestChar("Evildoer")
+	defer client.Close()
+	ch.Alignment = -800 // Evil
+	handler.CharToRoom(ch, room)
+
+	idx := &types.ObjIndexData{Vnum: 3101, Name: "holy helm", ShortDescr: "a holy helm",
+		WearFlags: int(types.ITEM_TAKE | types.ITEM_WEAR_HEAD)}
+	w.ObjIndex[3101] = idx
+	obj := handler.CreateObject(w, idx, 1)
+	obj.ExtraFlags.Set(types.ITEM_ANTI_EVIL)
+	handler.ObjToChar(obj, ch)
+
+	DoWear(ch, "helm")
+	out := readOutput(ch, client)
+
+	if obj.WearLoc != types.WEAR_NONE {
+		t.Errorf("ANTI_EVIL should block evil wearer; WearLoc=%d", obj.WearLoc)
+	}
+	if !strings.Contains(out, "too evil") {
+		t.Errorf("expected 'too evil' refusal, got: %q", out)
+	}
+}
+
+func TestDoWear_AntiGoodBlocksGood(t *testing.T) {
+	w := setupObjWorld()
+	room := &types.RoomIndexData{Vnum: 5202, Name: "Room"}
+	w.Rooms[5202] = room
+
+	ch, client := makeObjTestChar("Paladin")
+	defer client.Close()
+	ch.Alignment = 800 // Good
+	handler.CharToRoom(ch, room)
+
+	idx := &types.ObjIndexData{Vnum: 3102, Name: "evil helm", ShortDescr: "an evil helm",
+		WearFlags: int(types.ITEM_TAKE | types.ITEM_WEAR_HEAD)}
+	w.ObjIndex[3102] = idx
+	obj := handler.CreateObject(w, idx, 1)
+	obj.ExtraFlags.Set(types.ITEM_ANTI_GOOD)
+	handler.ObjToChar(obj, ch)
+
+	DoWear(ch, "helm")
+	out := readOutput(ch, client)
+	if obj.WearLoc != types.WEAR_NONE {
+		t.Errorf("ANTI_GOOD should block good wearer")
+	}
+	if !strings.Contains(out, "too good") {
+		t.Errorf("expected 'too good' refusal, got: %q", out)
+	}
+}
+
+func TestDoWear_AntiClassBlocksMage(t *testing.T) {
+	w := setupObjWorld()
+	room := &types.RoomIndexData{Vnum: 5203, Name: "Room"}
+	w.Rooms[5203] = room
+
+	ch, client := makeObjTestChar("Wizard")
+	defer client.Close()
+	ch.Class = types.CLASS_MAGE
+	handler.CharToRoom(ch, room)
+
+	idx := &types.ObjIndexData{Vnum: 3103, Name: "fighter helm", ShortDescr: "a fighter's helm",
+		WearFlags: int(types.ITEM_TAKE | types.ITEM_WEAR_HEAD)}
+	w.ObjIndex[3103] = idx
+	obj := handler.CreateObject(w, idx, 1)
+	obj.ExtraFlags.Set(types.ITEM_ANTI_MAGE)
+	handler.ObjToChar(obj, ch)
+
+	DoWear(ch, "helm")
+	out := readOutput(ch, client)
+	if obj.WearLoc != types.WEAR_NONE {
+		t.Errorf("ANTI_MAGE should block mage")
+	}
+	if !strings.Contains(out, "mage") {
+		t.Errorf("expected class refusal, got: %q", out)
+	}
+}
+
+func TestDoWear_AntiClassAllowsDifferentClass(t *testing.T) {
+	w := setupObjWorld()
+	room := &types.RoomIndexData{Vnum: 5204, Name: "Room"}
+	w.Rooms[5204] = room
+
+	ch, client := makeObjTestChar("Fighter")
+	defer client.Close()
+	ch.Class = types.CLASS_WARRIOR
+	handler.CharToRoom(ch, room)
+
+	idx := &types.ObjIndexData{Vnum: 3104, Name: "fighter helm", ShortDescr: "a fighter's helm",
+		WearFlags: int(types.ITEM_TAKE | types.ITEM_WEAR_HEAD)}
+	w.ObjIndex[3104] = idx
+	obj := handler.CreateObject(w, idx, 1)
+	obj.ExtraFlags.Set(types.ITEM_ANTI_MAGE)
+	handler.ObjToChar(obj, ch)
+
+	DoWear(ch, "helm")
+	_ = readOutput(ch, client)
+	if obj.WearLoc != types.WEAR_HEAD {
+		t.Errorf("warrior should be allowed to wear ANTI_MAGE item; WearLoc=%d", obj.WearLoc)
+	}
+}

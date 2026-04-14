@@ -410,3 +410,187 @@ func TestShowExits_None(t *testing.T) {
 		t.Errorf("expected 'none' exits, got: %q", out)
 	}
 }
+
+// --- Tier 2: exit flag filtering ---
+
+func TestShowExits_HidesSecret(t *testing.T) {
+	setupTestWorld()
+	ch, client := makeTestChar("Mortal")
+	defer client.Close()
+
+	room := &types.RoomIndexData{Vnum: 60001, Name: "Room"}
+	other := &types.RoomIndexData{Vnum: 60002, Name: "Other"}
+	room.Exits = []*types.ExitData{
+		{Direction: types.DIR_NORTH, ToRoom: other, ExitInfo: int(types.EX_SECRET)},
+	}
+	ch.InRoom = room
+
+	showExits(ch, room)
+	out := readOutput(ch, client)
+	if strings.Contains(out, "north") {
+		t.Errorf("secret exit should be hidden, got: %q", out)
+	}
+	if !strings.Contains(out, "none") {
+		t.Errorf("expected 'none' after hiding secret, got: %q", out)
+	}
+}
+
+func TestShowExits_HolyLightSeesSecret(t *testing.T) {
+	setupTestWorld()
+	ch, client := makeTestChar("Immortal")
+	defer client.Close()
+	ch.Act.Set(types.PLR_HOLYLIGHT)
+
+	room := &types.RoomIndexData{Vnum: 60003, Name: "Room"}
+	other := &types.RoomIndexData{Vnum: 60004, Name: "Other"}
+	room.Exits = []*types.ExitData{
+		{Direction: types.DIR_NORTH, ToRoom: other, ExitInfo: int(types.EX_SECRET)},
+	}
+	ch.InRoom = room
+
+	showExits(ch, room)
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "north") {
+		t.Errorf("holylight should see secret exit, got: %q", out)
+	}
+}
+
+func TestShowExits_HidesHidden(t *testing.T) {
+	setupTestWorld()
+	ch, client := makeTestChar("Mortal")
+	defer client.Close()
+
+	room := &types.RoomIndexData{Vnum: 60005, Name: "Room"}
+	other := &types.RoomIndexData{Vnum: 60006, Name: "Other"}
+	room.Exits = []*types.ExitData{
+		{Direction: types.DIR_EAST, ToRoom: other, ExitInfo: int(types.EX_HIDDEN)},
+	}
+	ch.InRoom = room
+
+	showExits(ch, room)
+	out := readOutput(ch, client)
+	if strings.Contains(out, "east") {
+		t.Errorf("hidden exit should not display, got: %q", out)
+	}
+}
+
+// --- Tier 2: MoveChar flag-honoring ---
+
+func TestMoveChar_DeathTrap_SurvivorRecalled(t *testing.T) {
+	w := setupTestWorld()
+	// Build a deadly destination
+	trap := &types.RoomIndexData{Vnum: 60010, Name: "Trap"}
+	trap.RoomFlags.Set(types.ROOM_DEATH)
+	start := &types.RoomIndexData{Vnum: 60011, Name: "Start"}
+	start.Exits = []*types.ExitData{{Direction: types.DIR_NORTH, ToRoom: trap}}
+	w.Rooms[60010] = trap
+	w.Rooms[60011] = start
+
+	ch, client := makeTestChar("Victim")
+	defer client.Close()
+	ch.Trust = 0
+	ch.Level = 10
+	ch.Hit = 100
+	ch.InRoom = start
+	start.People = append(start.People, ch)
+
+	MoveChar(ch, types.DIR_NORTH)
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "death trap") {
+		t.Errorf("expected death-trap message, got: %q", out)
+	}
+	if ch.Hit != 1 {
+		t.Errorf("expected Hit=1 after death trap, got %d", ch.Hit)
+	}
+	// Should be in temple (setupTestWorld creates temple at ROOM_VNUM_TEMPLE only
+	// if the vnum matches). For this test we just ensure ch is not in the trap.
+	if ch.InRoom == trap {
+		t.Error("survivor should not remain in death-trap room")
+	}
+}
+
+func TestMoveChar_NPC_BlockedByNoMob(t *testing.T) {
+	w := setupTestWorld()
+	dest := &types.RoomIndexData{Vnum: 60020, Name: "Dest"}
+	dest.RoomFlags.Set(types.ROOM_NO_MOB)
+	start := &types.RoomIndexData{Vnum: 60021, Name: "Start"}
+	start.Exits = []*types.ExitData{{Direction: types.DIR_NORTH, ToRoom: dest}}
+	w.Rooms[60020] = dest
+	w.Rooms[60021] = start
+
+	npc, client := makeTestChar("Guard")
+	defer client.Close()
+	npc.Act.Set(types.ACT_IS_NPC)
+	npc.InRoom = start
+	start.People = append(start.People, npc)
+
+	MoveChar(npc, types.DIR_NORTH)
+	_ = readOutput(npc, client)
+
+	if npc.InRoom == dest {
+		t.Error("NPC should be blocked by ROOM_NO_MOB")
+	}
+}
+
+func TestMoveChar_NoFloor_NonFlyerCannotDescend(t *testing.T) {
+	w := setupTestWorld()
+	dest := &types.RoomIndexData{Vnum: 60030, Name: "Void"}
+	dest.RoomFlags.Set(types.ROOM_NOFLOOR)
+	start := &types.RoomIndexData{Vnum: 60031, Name: "Ledge"}
+	start.Exits = []*types.ExitData{{Direction: types.DIR_DOWN, ToRoom: dest}}
+	w.Rooms[60030] = dest
+	w.Rooms[60031] = start
+
+	ch, client := makeTestChar("Walker")
+	defer client.Close()
+	ch.InRoom = start
+	start.People = append(start.People, ch)
+
+	MoveChar(ch, types.DIR_DOWN)
+	out := readOutput(ch, client)
+
+	if ch.InRoom == dest {
+		t.Error("non-flyer should not descend into NOFLOOR room")
+	}
+	if !strings.Contains(out, "can't fly") {
+		t.Errorf("expected 'can't fly' message, got: %q", out)
+	}
+
+	// Now grant flying and retry
+	ch.AffectedBy.Set(types.AFF_FLYING)
+	MoveChar(ch, types.DIR_DOWN)
+	_ = readOutput(ch, client)
+	if ch.InRoom != dest {
+		t.Error("flyer should be allowed through NOFLOOR")
+	}
+}
+
+func TestMoveChar_Solitary_BlocksSecondOccupant(t *testing.T) {
+	w := setupTestWorld()
+	dest := &types.RoomIndexData{Vnum: 60040, Name: "Hermit"}
+	dest.RoomFlags.Set(types.ROOM_SOLITARY)
+	start := &types.RoomIndexData{Vnum: 60041, Name: "Path"}
+	start.Exits = []*types.ExitData{{Direction: types.DIR_NORTH, ToRoom: dest}}
+	w.Rooms[60040] = dest
+	w.Rooms[60041] = start
+
+	// First occupant is already inside the solitary room.
+	first, firstClient := makeTestChar("Alice")
+	defer firstClient.Close()
+	first.InRoom = dest
+	dest.People = append(dest.People, first)
+
+	ch, client := makeTestChar("Bob")
+	defer client.Close()
+	ch.InRoom = start
+	start.People = append(start.People, ch)
+
+	MoveChar(ch, types.DIR_NORTH)
+	out := readOutput(ch, client)
+	if ch.InRoom == dest {
+		t.Error("solitary room should reject second occupant")
+	}
+	if !strings.Contains(out, "too small") {
+		t.Errorf("expected solitary message, got: %q", out)
+	}
+}

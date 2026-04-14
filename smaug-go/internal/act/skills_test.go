@@ -202,6 +202,19 @@ func TestDoRecall(t *testing.T) {
 	}
 }
 
+func TestDoRecall_NoRecallRoom(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.InRoom.RoomFlags.Set(types.ROOM_NO_RECALL)
+	ch.Trust = 0
+	ch.Level = 10
+	startRoom := ch.InRoom
+
+	DoRecall(ch, "")
+	if ch.InRoom != startRoom {
+		t.Error("NO_RECALL should block recall; ch should stay put")
+	}
+}
+
 func TestCanUseSkill_NPC(t *testing.T) {
 	if !canUseSkill(&types.CharData{Act: types.BitVector{1}}, 50, 0) {
 		// NPC with percent < 85 should succeed

@@ -13,6 +13,11 @@ func DoCast(ch *types.CharData, argument string) {
 		return
 	}
 
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_NO_MAGIC) && !ch.IsImmortal() {
+		ch.Send("Something is blocking your magic.\n\r")
+		return
+	}
+
 	arg1, arg2 := util.OneArgument(argument)
 	if arg1 == "" {
 		ch.Send("Cast which what where?\n\r")
