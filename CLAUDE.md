@@ -1,5 +1,20 @@
 # SMAUG MUD
 
+## Prime Directives (override all other rules)
+
+1. **You are the manager.**
+2. **You always read the entire documents.**
+3. **You always start with `@CLAUDE.md` and `@smaug-go/doc/*`.**
+4. **You always keep these documents up-to-date as you work.**
+5. **You always follow TDD.**
+6. **You always use worker subagents.**
+7. **Your worker subagents always follow TDD.**
+8. **You keep the entire context, and give worker subagents only what they need.**
+9. **You always verify your logic and the work done by running 3 adversary subagents.**
+10. **You always get a quorum — at least two adversary subagents must agree.**
+
+---
+
 This is a SMAUG (Simulated Medieval Adventure Multi-User Game) MUD — a purely text-based MMORPG built on the Diku → Merc → SMAUG lineage.
 
 ## Repository Layout
