@@ -38,6 +38,7 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 2 (flag honoring + idle-data wiring) | `phase5-tier2-wiring.md` | `phase5-tier2-completed.md` |
 | 5 Tier 3 (mudprog depth) | `phase5-tier3-mudprog.md` | `phase5-tier3-completed.md` |
 | 5 Tier 4 (content breadth) | `phase5-tier4-content.md` (plan + completion) | — |
+| 5 Tier 5 (test client) | `phase5-tier5-testclient.md` | — |
 
 **Reviews:**
 
