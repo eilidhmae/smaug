@@ -62,6 +62,13 @@ func (r *Registry) Register(cmd *Command) {
 	})
 }
 
+// All returns the sorted list of registered commands. The returned slice
+// is a shared view for iteration (wizhelp, help, etc.) — callers must not
+// mutate it. Safe because the game is single-threaded.
+func (r *Registry) All() []*Command {
+	return r.sorted
+}
+
 // Find looks up a command by name or prefix.
 func (r *Registry) Find(name string, trust int) *Command {
 	name = strings.ToLower(name)
@@ -83,6 +90,41 @@ func (r *Registry) Interpret(ch *types.CharData, argument string) {
 	argument = strings.TrimSpace(argument)
 	if argument == "" {
 		return
+	}
+
+	// Alias expansion. Aliases only apply to PCs, and use C alias.c:42's
+	// prefix-match semantics (`!str_prefix(argument, pal->name)`): typing "g"
+	// fires an alias named "get". We track CmdRecurse on the character to
+	// prevent infinite alias loops (e.g. "alias g get" where g expands to a
+	// chain that eventually hits g again).
+	if ch != nil && !ch.IsNPC() && ch.PCData != nil && len(ch.PCData.Aliases) > 0 {
+		cmdWord, rest := util.OneArgument(argument)
+		lc := strings.ToLower(cmdWord)
+		for _, a := range ch.PCData.Aliases {
+			if a.Cmd != "" && strings.HasPrefix(strings.ToLower(a.Name), lc) {
+				if ch.CmdRecurse < 0 {
+					// Marked exhausted earlier this dispatch chain.
+					ch.CmdRecurse = 0
+					return
+				}
+				ch.CmdRecurse++
+				if ch.CmdRecurse > 50 {
+					ch.Send("Unable to further process command, recurses too much.\n\r")
+					ch.CmdRecurse = -1
+					return
+				}
+				expanded := a.Cmd
+				if rest != "" {
+					expanded += " " + rest
+				}
+				r.Interpret(ch, expanded)
+				ch.CmdRecurse--
+				if ch.CmdRecurse < 0 {
+					ch.CmdRecurse = 0
+				}
+				return
+			}
+		}
 	}
 
 	cmdWord, rest := util.OneArgument(argument)

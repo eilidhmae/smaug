@@ -70,6 +70,8 @@ func main() {
 	// Wire combat → mudprog hooks (combat cannot import mudprog directly:
 	// mudprog already imports combat, so combat publishes func vars and main
 	// wires them to break the cycle).
+	// DamMessage needs the skill registry to dispatch skill hit/miss strings.
+	combat.WorldRef = w
 	combat.HitprcntHook = mudprog.TrigHitprcnt
 	combat.VoidHook = mudprog.CheckVoid
 	combat.ObjDamageHook = mudprog.OprogDamageTrigger
@@ -80,6 +82,30 @@ func main() {
 
 	// Wire OLC editor function
 	act.StartEditingFunc = game.StartEditing
+
+	// Wire immortal shutdown/reboot and disconnect hooks. The shutdown hook
+	// saves every connected player, then exits the process. Exit code 0 =
+	// clean shutdown, 2 = reboot (signal to supervisor to relaunch). This is
+	// MVP: a production deployment would drain pulses first. See
+	// phase5-tier4-content.md.
+	act.ShutdownFunc = func(reboot bool) {
+		for _, d := range w.Descriptors {
+			if d.Character != nil && !d.Character.IsNPC() {
+				gameLoop.SavePlayer(d.Character)
+			}
+		}
+		if reboot {
+			log.Println("Reboot requested by immortal — exiting with code 2.")
+			os.Exit(2)
+		}
+		log.Println("Shutdown requested by immortal — exiting.")
+		os.Exit(0)
+	}
+	act.DisconnectFunc = func(d *types.DescriptorData) {
+		if d != nil && d.Conn != nil {
+			_ = d.Conn.Close()
+		}
+	}
 
 	// Start network server
 	if err := server.Start(*port); err != nil {
@@ -323,6 +349,37 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "aid", DoFun: act.DoAid, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "recall", DoFun: act.DoRecall, Position: types.POS_STANDING, Level: 0})
 
+	// Combat/utility skills — Phase 5 Tier 4 G4
+	reg.Register(&command.Command{Name: "bite", DoFun: act.DoBite, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "claw", DoFun: act.DoClaw, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "punch", DoFun: act.DoPunch, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "sting", DoFun: act.DoSting, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "tail", DoFun: act.DoTail, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "circle", DoFun: act.DoCircle, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "gouge", DoFun: act.DoGouge, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "stun", DoFun: act.DoStun, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "grapple", DoFun: act.DoGrapple, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "cleave", DoFun: act.DoCleave, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "hitall", DoFun: act.DoHitall, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "berserk", DoFun: act.DoBerserk, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "meditate", DoFun: act.DoMeditate, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "trance", DoFun: act.DoTrance, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "search", DoFun: act.DoSearch, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "detrap", DoFun: act.DoDetrap, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "dig", DoFun: act.DoDig, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "visible", DoFun: act.DoVisible, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "style", DoFun: act.DoStyle, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "stance", DoFun: act.DoStance, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "mistwalk", DoFun: act.DoMistwalk, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "feed", DoFun: act.DoFeed, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "skin", DoFun: act.DoSkin, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "poison", DoFun: act.DoPoisonWeapon, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "fire", DoFun: act.DoFire, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "scribe", DoFun: act.DoScribe, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "cook", DoFun: act.DoCook, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "slookup", DoFun: act.DoSlookup, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "sset", DoFun: act.DoSset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
 	// Quest
 	reg.Register(&command.Command{Name: "quest", DoFun: act.DoQuest, Position: types.POS_RESTING, Level: 0})
 
@@ -373,6 +430,29 @@ func registerCommands() *command.Registry {
 	// Immortal system
 	reg.Register(&command.Command{Name: "echo", DoFun: act.DoEcho, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "recho", DoFun: act.DoRecho, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "aecho", DoFun: act.DoAecho, Position: types.POS_DEAD, Level: types.LEVEL_TRUEIMM})
+
+	// Possession / return — switch into an NPC body (act_wiz.c:3760).
+	reg.Register(&command.Command{Name: "switch", DoFun: act.DoSwitch, Position: types.POS_DEAD, Level: types.LEVEL_CREATOR})
+	reg.Register(&command.Command{Name: "return", DoFun: act.DoReturn, Position: types.POS_DEAD, Level: 0})
+
+	// Lockout / lifecycle — wizlock/shutdown/reboot are reserved to the
+	// very top tier of imms. See act_wiz.c:6075/3606/3554.
+	reg.Register(&command.Command{Name: "wizlock", DoFun: act.DoWizlock, Position: types.POS_DEAD, Level: types.LEVEL_ASCENDANT})
+	reg.Register(&command.Command{Name: "shutdown", DoFun: act.DoShutdown, Position: types.POS_DEAD, Level: types.LEVEL_ASCENDANT})
+	reg.Register(&command.Command{Name: "reboot", DoFun: act.DoReboot, Position: types.POS_DEAD, Level: types.LEVEL_GREATER})
+
+	// Help / discipline / mudprog inspection
+	reg.Register(&command.Command{Name: "wizhelp", DoFun: act.DoWizhelp, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "hell", DoFun: act.DoHell, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "log", DoFun: act.DoLog, Position: types.POS_DEAD, Level: types.LEVEL_DEMI})
+	reg.Register(&command.Command{Name: "deny", DoFun: act.DoDeny, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "pardon", DoFun: act.DoPardon, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "disconnect", DoFun: act.DoDisconnect, Position: types.POS_DEAD, Level: types.LEVEL_LESSER})
+	reg.Register(&command.Command{Name: "mortalize", DoFun: act.DoMortalize, Position: types.POS_DEAD, Level: types.LEVEL_LESSER})
+	reg.Register(&command.Command{Name: "mpstat", DoFun: act.DoMpstat, Position: types.POS_DEAD, Level: types.LEVEL_TRUEIMM})
+	reg.Register(&command.Command{Name: "opstat", DoFun: act.DoOpstat, Position: types.POS_DEAD, Level: types.LEVEL_TRUEIMM})
+	reg.Register(&command.Command{Name: "rpstat", DoFun: act.DoRpstat, Position: types.POS_DEAD, Level: types.LEVEL_TRUEIMM})
 
 	// OLC commands
 	reg.Register(&command.Command{Name: "redit", DoFun: act.DoRedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
@@ -388,6 +468,14 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "rset", DoFun: act.DoRset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "aset", DoFun: act.DoAset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "astat", DoFun: act.DoAstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "oedit", DoFun: act.DoOedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "medit", DoFun: act.DoMedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "rdelete", DoFun: act.DoRdelete, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "odelete", DoFun: act.DoOdelete, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "mdelete", DoFun: act.DoMdelete, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "mpedit", DoFun: act.DoMpedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "opedit", DoFun: act.DoOpedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "rpedit", DoFun: act.DoRpedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 
 	// Banking
 	reg.Register(&command.Command{Name: "bank", DoFun: act.DoBank, Position: types.POS_STANDING, Level: 0})
@@ -423,6 +511,17 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "northwest", DoFun: act.DoNorthwest, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "southeast", DoFun: act.DoSoutheast, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "southwest", DoFun: act.DoSouthwest, Position: types.POS_STANDING, Level: 0})
+
+	// Tier-4 G6 mortal commands
+	reg.Register(&command.Command{Name: "split", DoFun: act.DoSplit, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "light", DoFun: act.DoLight, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "throw", DoFun: act.DoThrow, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "alias", DoFun: act.DoAlias, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "unalias", DoFun: act.DoUnalias, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "areas", DoFun: act.DoAreas, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "altscore", DoFun: act.DoAltscore, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "color", DoFun: act.DoColor, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "compress", DoFun: act.DoCompress, Position: types.POS_DEAD, Level: 0})
 
 	return reg
 }

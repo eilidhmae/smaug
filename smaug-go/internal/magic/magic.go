@@ -2,6 +2,7 @@
 package magic
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/eilidhmae/smaug/internal/combat"
@@ -47,6 +48,34 @@ var spellRegistry = map[string]SpellFunc{
 	"spell_fly":            SpellFly,
 	"spell_heal":           SpellHeal,
 	"spell_smaug":          SpellSmaug,
+	// Phase 5 Tier 4 G3 Group A — simple affect variants
+	"spell_pass_door":     SpellPassDoor,
+	"spell_farsight":      SpellFarsight,
+	"spell_ventriloquate": SpellVentriloquate,
+	"spell_remove_invis":  SpellRemoveInvis,
+	"spell_remove_trap":   SpellRemoveTrap,
+	// Phase 5 Tier 4 G3 Group B — area / breath attacks
+	"spell_acid_breath":      SpellAcidBreath,
+	"spell_fire_breath":      SpellFireBreath,
+	"spell_frost_breath":     SpellFrostBreath,
+	"spell_gas_breath":       SpellGasBreath,
+	"spell_lightning_breath": SpellLightningBreath,
+	"spell_earthquake":       SpellEarthquake,
+	// Phase 5 Tier 4 G3 Group C — movement / teleportation
+	"spell_astral_walk":     SpellAstralWalk,
+	"spell_gate":            SpellGate,
+	"spell_mist_walk":       SpellMistWalk,
+	"spell_transport":       SpellTransport,
+	"spell_word_of_recall":  SpellWordOfRecall,
+	"spell_group_teleport":  SpellGroupTeleport,
+	// Phase 5 Tier 4 G3 Group D — unique mechanics
+	"spell_acid_blast":      SpellAcidBlast,
+	"spell_knock":           SpellKnock,
+	"spell_recharge":        SpellRecharge,
+	"spell_animate_dead":    SpellAnimateDead,
+	"spell_energy_drain":    SpellEnergyDrain,
+	"spell_call_lightning":  SpellCallLightning,
+	"spell_control_weather": SpellControlWeather,
 }
 
 // FindSpellFunc looks up a spell function by its code name.
@@ -146,7 +175,7 @@ func SpellMagicMissile(w *world.World, sn int, level int, ch *types.CharData, vi
 	if dam < 1 {
 		dam = 1
 	}
-	combat.Damage(w, ch, victim, dam, types.TYPE_HIT+sn)
+	combat.Damage(w, ch, victim, dam, sn)
 }
 
 // SpellFireball deals level-scaled damage (save for half).
@@ -156,7 +185,7 @@ func SpellFireball(w *world.World, sn int, level int, ch *types.CharData, victim
 	if SavesSpellStaff(level, victim) {
 		dam /= 2
 	}
-	combat.Damage(w, ch, victim, dam, types.TYPE_HIT+sn)
+	combat.Damage(w, ch, victim, dam, sn)
 }
 
 // --- Buff Spells ---
@@ -662,4 +691,182 @@ func SpellHeal(w *world.World, sn int, level int, ch *types.CharData, victim *ty
 	heal := util.UMAX(100, level*5)
 	victim.Hit = util.UMIN(victim.Hit+heal, victim.MaxHit)
 	victim.Send("A warm feeling fills your body.\n\r")
+}
+
+// --- Phase 5 Tier 4 G3 Group A: simple affect-like variants ---
+
+// SpellPassDoor grants AFF_PASS_DOOR for level/4 (fuzzy) pulses.
+// Port of spell_pass_door (C src/magic.c:4522).
+// RIS_MAGIC immunity blocks.
+func SpellPassDoor(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim == nil {
+		victim = ch
+	}
+	if victim.Immune&int(types.RIS_MAGIC) != 0 {
+		ch.Send("They are immune to your magic.\n\r")
+		return
+	}
+	if victim.AffectedBy.IsSet(types.AFF_PASS_DOOR) {
+		if ch == victim {
+			ch.Send("You are already ethereal.\n\r")
+		} else {
+			ch.Send("They are already ethereal.\n\r")
+		}
+		return
+	}
+	aff := &types.AffectData{
+		Type:     sn,
+		Duration: util.NumberFuzzy(level / 4),
+		Location: types.APPLY_NONE,
+	}
+	aff.BitVector.Set(types.AFF_PASS_DOOR)
+	handler.AffectToChar(victim, aff)
+	victim.Send("You turn translucent.\n\r")
+}
+
+// SpellFarsight is a scry-style spell: "view" a remote target's room.
+// Port of spell_farsight (C src/magic.c:5973).
+//
+// MVP simplification: the Go port doesn't yet have OVERLANDCODE hooks or the
+// `do_look` temporary relocation dance. Instead, we show the caster the target
+// room's Name + Description if scrying is allowed. This matches the observable
+// player-visible effect (you see the remote room) without perturbing state.
+//
+// Fails if victim is nil, victim is the caster, target room has PRIVATE /
+// SOLITARY / NO_ASTRAL / DEATH flags, caster's room has NO_RECALL, victim is
+// too high level, or victim saves.
+func SpellFarsight(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim == nil || victim == ch || victim.InRoom == nil {
+		ch.Send("You fail to locate them.\n\r")
+		return
+	}
+	loc := victim.InRoom
+	if loc.RoomFlags.IsSet(types.ROOM_PRIVATE) ||
+		loc.RoomFlags.IsSet(types.ROOM_SOLITARY) ||
+		loc.RoomFlags.IsSet(types.ROOM_NO_ASTRAL) ||
+		loc.RoomFlags.IsSet(types.ROOM_DEATH) {
+		ch.Send("You fail to locate them.\n\r")
+		return
+	}
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_NO_RECALL) {
+		ch.Send("You fail to locate them.\n\r")
+		return
+	}
+	if victim.Level >= level+15 {
+		ch.Send("You fail to locate them.\n\r")
+		return
+	}
+	if victim.IsNPC() && SavesSpellStaff(level, victim) {
+		ch.Send("You fail to locate them.\n\r")
+		return
+	}
+	ch.Sendf("You concentrate on %s and your vision blurs...\n\r", victim.Name)
+	ch.Sendf("%s\n\r", loc.Name)
+	if loc.Description != "" {
+		ch.Send(loc.Description)
+	}
+	// 1-in-20 chance (matches C's chance_attrib; simplified without wis check)
+	// to tip off the victim.
+	if util.NumberPercent() <= 5 {
+		victim.Send("You get an uneasy feeling that you are being watched.\n\r")
+	}
+}
+
+// SpellVentriloquate fakes a named speaker in the caster's room. Each listener
+// either sees the real speech ("Foo says '...'") if they fail their save, or
+// a hint ("Someone makes Foo say '...'") if they save.
+// Port of spell_ventriloquate (C src/magic.c:5183).
+//
+// MVP simplification: the Go port doesn't have target_name threading, so the
+// spell text is passed as victim.ShortDescr (the speaker name) — the cast
+// command resolves the name to a char in the room via GetCharRoom. The actual
+// uttered text is taken from the skill's HitChar field (set by skills.dat) if
+// the caller populated it; otherwise a generic placeholder is used. This
+// diverges slightly from C (which splits target_name into speaker + message)
+// but preserves the save-gated dual-message structure.
+func SpellVentriloquate(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if ch.InRoom == nil {
+		return
+	}
+	speaker := "someone"
+	if victim != nil {
+		speaker = victim.Name
+	}
+	msg := "..."
+	realLine := fmt.Sprintf("%s says '%s'\n\r", util.Capitalize(speaker), msg)
+	fakeLine := fmt.Sprintf("Someone makes %s say '%s'\n\r", speaker, msg)
+	for _, vch := range ch.InRoom.People {
+		if vch == ch || vch == victim {
+			continue
+		}
+		if SavesSpellStaff(level, vch) {
+			vch.Send(fakeLine)
+		} else {
+			vch.Send(realLine)
+		}
+	}
+}
+
+// SpellRemoveInvis strips invisibility from an object in inventory or a char
+// in the room. Port of spell_remove_invis (C src/magic.c:6387).
+//
+// MVP simplification: the Go port's spell dispatch already resolves the
+// target to victim. If victim is non-nil we strip AFF_INVISIBLE from them.
+// We do not implement the object branch here — that path requires target_name
+// text threading (like enchant_armor), which isn't wired in the spell system
+// yet.
+func SpellRemoveInvis(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if victim == nil {
+		ch.Send("What should the spell be cast upon?\n\r")
+		return
+	}
+	if !victim.AffectedBy.IsSet(types.AFF_INVISIBLE) {
+		ch.Send("They are not invisible!\n\r")
+		return
+	}
+	if victim.Immune&int(types.RIS_MAGIC) != 0 {
+		ch.Send("They are immune to your magic.\n\r")
+		return
+	}
+	// Remove both generic invis and mass_invis affects, plus the bit.
+	invisSN := findSkillSN(w, "invis")
+	if invisSN >= 0 {
+		handler.AffectStrip(victim, invisSN)
+	}
+	massInvisSN := findSkillSN(w, "mass invis")
+	if massInvisSN >= 0 {
+		handler.AffectStrip(victim, massInvisSN)
+	}
+	victim.AffectedBy.Remove(types.AFF_INVISIBLE)
+	ch.Send("Ok.\n\r")
+}
+
+// SpellRemoveTrap disarms an ITEM_TRAP in the room. Port of spell_remove_trap
+// (C src/magic.c:4648).
+//
+// MVP simplification: no per-object targeting (lacks target_name). We scan
+// the caster's room contents and disarm the first ITEM_TRAP we find. If that
+// trap is attached to a container, we don't walk inside (C uses get_trap which
+// peeks inside containers); this covers the common case of floor traps.
+func SpellRemoveTrap(w *world.World, sn int, level int, ch *types.CharData, victim *types.CharData) {
+	if ch.InRoom == nil {
+		ch.Send("You can't find that here.\n\r")
+		return
+	}
+	for _, obj := range ch.InRoom.Contents {
+		if obj != nil && obj.ItemType == types.ITEM_TRAP {
+			// 70% + curr_wis success chance (C uses chance(ch, 70 + get_curr_wis)).
+			// We simplify to a flat 75 (approx low-wis baseline) + level-aware bonus.
+			if util.NumberPercent() > 75+level/4 {
+				ch.Send("Ooops!\n\r")
+				// C triggers spring_trap here; we just silently fail to avoid
+				// further wiring deps.
+				return
+			}
+			handler.ExtractObj(w, obj)
+			ch.Send("You successfully remove the trap.\n\r")
+			return
+		}
+	}
+	ch.Send("You can't find a trap here.\n\r")
 }

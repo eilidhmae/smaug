@@ -1121,3 +1121,46 @@ func TestSaveLoadSkills(t *testing.T) {
 		t.Errorf("Learned[common]=%d, want 33", loaded.PCData.Learned[3])
 	}
 }
+
+func TestSaveLoadAliases(t *testing.T) {
+	ch := &types.CharData{
+		Name:     "Aliased",
+		Level:    3,
+		Hit:      30,
+		MaxHit:   30,
+		Position: types.POS_STANDING,
+		PCData: &types.PCData{
+			Pwd:      "pw",
+			PagerLen: 24,
+			Aliases: []*types.AliasData{
+				{Name: "g", Cmd: "get all corpse"},
+				{Name: "k", Cmd: "kill"},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Aliased")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if loaded.PCData == nil {
+		t.Fatal("PCData nil after load")
+	}
+	if len(loaded.PCData.Aliases) != 2 {
+		t.Fatalf("expected 2 aliases, got %d: %+v",
+			len(loaded.PCData.Aliases), loaded.PCData.Aliases)
+	}
+	want := map[string]string{"g": "get all corpse", "k": "kill"}
+	for _, a := range loaded.PCData.Aliases {
+		if w, ok := want[a.Name]; !ok {
+			t.Errorf("unexpected alias %q", a.Name)
+		} else if a.Cmd != w {
+			t.Errorf("alias %q = %q, want %q", a.Name, a.Cmd, w)
+		}
+	}
+}

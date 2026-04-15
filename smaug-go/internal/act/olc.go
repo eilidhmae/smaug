@@ -91,12 +91,259 @@ func DoRedit(ch *types.CharData, argument string) {
 		})
 		ch.Sendf("Extra description '%s' added.\n\r", kw)
 
+	case "ed":
+		// Launch string editor seeded with existing description (if the keyword
+		// already matches) or empty for a new extra-descr.
+		kw := strings.TrimSpace(rest)
+		if kw == "" {
+			ch.Send("Usage: redit ed <keyword>\n\r")
+			return
+		}
+		var existing *types.ExtraDescrData
+		for _, ed := range room.ExtraDescr {
+			if strings.EqualFold(ed.Keyword, kw) {
+				existing = ed
+				break
+			}
+		}
+		if existing == nil {
+			existing = &types.ExtraDescrData{Keyword: kw}
+			room.ExtraDescr = append(room.ExtraDescr, existing)
+		}
+		ch.Substate = types.SUB_ROOM_EXTRA
+		ch.InterEditing = kw
+		if StartEditingFunc != nil {
+			StartEditingFunc(ch, existing.Description)
+		} else {
+			ch.Sendf("Extra description '%s' ready for editing.\n\r", kw)
+		}
+
+	case "rmed":
+		kw := strings.TrimSpace(rest)
+		if kw == "" {
+			ch.Send("Usage: redit rmed <keyword>\n\r")
+			return
+		}
+		before := len(room.ExtraDescr)
+		filtered := make([]*types.ExtraDescrData, 0, before)
+		for _, ed := range room.ExtraDescr {
+			if !strings.EqualFold(ed.Keyword, kw) {
+				filtered = append(filtered, ed)
+			}
+		}
+		if len(filtered) == before {
+			ch.Sendf("No extra description matches '%s'.\n\r", kw)
+			return
+		}
+		room.ExtraDescr = filtered
+		ch.Sendf("Extra description '%s' removed.\n\r", kw)
+
 	case "exit":
 		editExit(ch, rest)
 
+	case "bexit":
+		editBidirExit(ch, rest)
+
+	case "exflags":
+		editExitFlags(ch, rest)
+
+	case "exname":
+		editExitKeyword(ch, rest)
+
+	case "exkey":
+		editExitKey(ch, rest)
+
+	case "teledelay":
+		val, err := strconv.Atoi(strings.TrimSpace(rest))
+		if err != nil || val < 0 {
+			ch.Send("Teledelay must be a non-negative number.\n\r")
+			return
+		}
+		room.TeleDelay = val
+		ch.Sendf("Teledelay set to %d.\n\r", val)
+
+	case "televnum":
+		val, err := strconv.Atoi(strings.TrimSpace(rest))
+		if err != nil || val < 0 {
+			ch.Send("Televnum must be a non-negative number.\n\r")
+			return
+		}
+		room.TeleVnum = val
+		ch.Sendf("Televnum set to %d.\n\r", val)
+
+	case "tunnel":
+		val, err := strconv.Atoi(strings.TrimSpace(rest))
+		if err != nil || val < 0 {
+			ch.Send("Tunnel must be a non-negative number.\n\r")
+			return
+		}
+		room.Tunnel = val
+		ch.Sendf("Tunnel set to %d.\n\r", val)
+
+	case "rlist":
+		DoRlist(ch, rest)
+
 	default:
-		ch.Send("Redit what? (name, desc, sector, flags, exdesc, exit)\n\r")
+		ch.Send("Redit what? (name, desc, sector, flags, exdesc, ed, rmed, exit, bexit, exflags, exname, exkey, teledelay, televnum, tunnel, rlist)\n\r")
 	}
+}
+
+// parseDirection parses a direction name prefix (north/east/south/west/up/down).
+// Returns -1 if not found.
+func parseDirection(s string) int {
+	dirNames := []string{"north", "east", "south", "west", "up", "down"}
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return -1
+	}
+	for i, name := range dirNames {
+		if strings.HasPrefix(name, s) {
+			return i
+		}
+	}
+	return -1
+}
+
+// reverseDir returns the opposite direction constant.
+func reverseDir(dir int) int {
+	rev := []int{2, 3, 0, 1, 5, 4}
+	if dir < 0 || dir >= len(rev) {
+		return -1
+	}
+	return rev[dir]
+}
+
+// editBidirExit creates a bidirectional exit: dig to destination + auto-add reverse.
+// Differs from rdig: does not create a new room, links to an EXISTING room.
+func editBidirExit(ch *types.CharData, args string) {
+	dir, rest := util.OneArgument(args)
+	dirNum := parseDirection(dir)
+	if dirNum < 0 {
+		ch.Send("Usage: redit bexit <direction> <vnum>\n\r")
+		return
+	}
+	vnum, err := strconv.Atoi(strings.TrimSpace(rest))
+	if err != nil || vnum <= 0 {
+		ch.Send("Usage: redit bexit <direction> <vnum>\n\r")
+		return
+	}
+	dest := WorldRef.GetRoom(vnum)
+	if dest == nil {
+		ch.Sendf("Room %d does not exist.\n\r", vnum)
+		return
+	}
+	room := ch.InRoom
+
+	// Forward exit
+	var fwd *types.ExitData
+	for _, ex := range room.Exits {
+		if ex.Direction == dirNum {
+			fwd = ex
+			break
+		}
+	}
+	if fwd == nil {
+		fwd = &types.ExitData{Direction: dirNum}
+		room.Exits = append(room.Exits, fwd)
+	}
+	fwd.ToRoom = dest
+	fwd.Vnum = vnum
+	fwd.RVnum = vnum
+
+	// Reverse exit
+	rev := reverseDir(dirNum)
+	if rev >= 0 {
+		var back *types.ExitData
+		for _, ex := range dest.Exits {
+			if ex.Direction == rev {
+				back = ex
+				break
+			}
+		}
+		if back == nil {
+			back = &types.ExitData{Direction: rev}
+			dest.Exits = append(dest.Exits, back)
+		}
+		back.ToRoom = room
+		back.Vnum = room.Vnum
+		back.RVnum = room.Vnum
+	}
+
+	ch.Sendf("Bidirectional exit created to room %d.\n\r", vnum)
+}
+
+// exitFlagBits maps flag names to EX_* bits.
+var exitFlagBits = map[string]uint32{
+	"isdoor":    types.EX_ISDOOR,
+	"closed":    types.EX_CLOSED,
+	"locked":    types.EX_LOCKED,
+	"secret":    types.EX_SECRET,
+	"pickproof": types.EX_PICKPROOF,
+	"hidden":    types.EX_HIDDEN,
+	"nomob":     types.EX_NOMOB,
+	"nopassdoor": types.EX_NOPASSDOOR,
+	"nopass":    types.EX_NOPASSDOOR,
+	"bashed":    types.EX_BASHED,
+	"bashproof": types.EX_BASHPROOF,
+}
+
+func editExitFlags(ch *types.CharData, args string) {
+	dir, rest := util.OneArgument(args)
+	dirNum := parseDirection(dir)
+	if dirNum < 0 {
+		ch.Send("Usage: redit exflags <direction> <flag>\n\r")
+		return
+	}
+	flagName := strings.ToLower(strings.TrimSpace(rest))
+	bit, ok := exitFlagBits[flagName]
+	if !ok {
+		ch.Send("Valid flags: isdoor, closed, locked, secret, pickproof, hidden, nomob, nopassdoor, bashed, bashproof\n\r")
+		return
+	}
+	ex := ch.InRoom.GetExit(dirNum)
+	if ex == nil {
+		ch.Sendf("No exit %s.\n\r", dir)
+		return
+	}
+	ex.ExitInfo ^= int(bit)
+	ch.Sendf("Exit flag '%s' toggled.\n\r", flagName)
+}
+
+func editExitKeyword(ch *types.CharData, args string) {
+	dir, rest := util.OneArgument(args)
+	dirNum := parseDirection(dir)
+	if dirNum < 0 {
+		ch.Send("Usage: redit exname <direction> <keyword>\n\r")
+		return
+	}
+	ex := ch.InRoom.GetExit(dirNum)
+	if ex == nil {
+		ch.Sendf("No exit %s.\n\r", dir)
+		return
+	}
+	ex.Keyword = strings.TrimSpace(rest)
+	ch.Sendf("Exit keyword set to '%s'.\n\r", ex.Keyword)
+}
+
+func editExitKey(ch *types.CharData, args string) {
+	dir, rest := util.OneArgument(args)
+	dirNum := parseDirection(dir)
+	if dirNum < 0 {
+		ch.Send("Usage: redit exkey <direction> <vnum>\n\r")
+		return
+	}
+	vnum, err := strconv.Atoi(strings.TrimSpace(rest))
+	if err != nil {
+		ch.Send("Usage: redit exkey <direction> <vnum>\n\r")
+		return
+	}
+	ex := ch.InRoom.GetExit(dirNum)
+	if ex == nil {
+		ch.Sendf("No exit %s.\n\r", dir)
+		return
+	}
+	ex.Key = vnum
+	ch.Sendf("Exit key vnum set to %d.\n\r", vnum)
 }
 
 func editExit(ch *types.CharData, args string) {

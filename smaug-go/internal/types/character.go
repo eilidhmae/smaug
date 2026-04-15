@@ -27,6 +27,11 @@ type CharData struct {
 	MpActNum    int
 	MpScriptPos int
 
+	// Alias-expansion recursion guard. Maps to C char_data.cmd_recurse.
+	// -1 means "abort further dispatch for this chain"; otherwise the current
+	// nesting depth. See alias.c:check_alias.
+	CmdRecurse int
+
 	// Template (NPC only)
 	IndexData *MobIndexData
 
@@ -221,6 +226,12 @@ type CharData struct {
 	Y      int
 	Map    int
 	Sector int
+
+	// OLC deletion confirmation (rdelete/odelete/mdelete require a repeated
+	// command within a short window). LastDeleteKind is "room", "obj", or "mob".
+	LastDeleteVnum int
+	LastDeleteKind string
+	LastDeleteTime time.Time
 }
 
 // FightData tracks active combat. Maps to C struct fighting_data.

@@ -325,6 +325,23 @@ func (g *GameLoop) nannyGetOldPassword(d *types.DescriptorData, line string) {
 		return
 	}
 
+	// Wizlock blocks new logins from non-immortals. Immortal trust level
+	// clears the lock. Mirrors C smaug.c check_parse_name() behavior.
+	if g.world.SysData.Wizlock && d.Character.GetTrust() < types.LEVEL_IMMORTAL {
+		d.WriteToBuffer("The game is wizlocked. Try again later.\n\r")
+		d.Character = nil
+		d.Connected = -1
+		return
+	}
+	// PLR_DENY blocks login entirely.
+	if d.Character.Act.IsSet(types.PLR_DENY) {
+		log.Printf("Denied login for %s from %s", d.User, d.Host)
+		d.WriteToBuffer("You are denied access.\n\r")
+		d.Character = nil
+		d.Connected = -1
+		return
+	}
+
 	// Record the login site
 	d.Character.PCData.RecentSite = d.Host
 

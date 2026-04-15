@@ -227,12 +227,19 @@ func OneHit(w *world.World, ch *types.CharData, victim *types.CharData, dt int) 
 		dam /= 2
 	}
 
-	Damage(w, ch, victim, dam, dt)
+	damageWith(w, ch, victim, dam, dt, wield)
 }
 
 // Damage applies damage to a victim. Returns a retcode indicating if
-// the victim died.
+// the victim died. Callers without a wielded-weapon context pass no obj;
+// DamMessage will pick verbs from the attackTable/skill registry instead.
 func Damage(w *world.World, ch *types.CharData, victim *types.CharData, dam int, dt int) int {
+	return damageWith(w, ch, victim, dam, dt, nil)
+}
+
+// damageWith is the shared worker for OneHit and external callers. It threads
+// the attacker's wielded obj (or nil) through to the damage-message dispatcher.
+func damageWith(w *world.World, ch, victim *types.CharData, dam, dt int, obj *types.ObjData) int {
 	if victim.Hit <= 0 {
 		return rNONE
 	}
@@ -268,14 +275,11 @@ func Damage(w *world.World, ch *types.CharData, victim *types.CharData, dam int,
 		HitprcntHook(victim, ch)
 	}
 
-	// Send damage messages
-	if dam == 0 {
-		ch.Sendf("You miss %s.\n\r", victim.Name)
-		victim.Sendf("%s misses you.\n\r", ch.Name)
-	} else {
-		ch.Sendf("You hit %s for %d damage.\n\r", victim.Name, dam)
-		victim.Sendf("%s hits you for %d damage.\n\r", ch.Name, dam)
-	}
+	// Send damage messages via the SMAUG damage-message dispatcher. For
+	// weapon hits (dt >= TYPE_HIT) we pass the attacker's wielded obj so
+	// the message uses the weapon's short_descr as the attack word; for
+	// skill/spell sn we pass nil (the skill's own strings take over).
+	DamMessage(ch, victim, dam, dt, obj)
 
 	// Update position and send status messages
 	oldPos := victim.Position

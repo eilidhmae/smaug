@@ -1,5 +1,29 @@
 # Phase 5 — Tier 4: Content Breadth
 
+## Progress
+
+All 7 task groups landed 2026-04-14. 13 packages pass `go test -count=1 ./...`; ~1,914 top-level tests. Three rounds of adversary review (G1, G5, G6, G4, G3) caught a total of 14 load-bearing findings; all fixed with TDD before land.
+
+- **G1 — Damage-message dispatcher.** ✓ New `combat/dammessage.go` (+ test) with 18×24 verb tables and `DamMessage(ch, victim, dam, dt, obj)` ported from `src/fight.c:4410` + `src/const.c:422-544`. Wired into `combat.Damage` via `damageWith` helper; `combat.WorldRef` set at boot. Adversary caught a load-bearing divergence in the skill hit-path short-circuit (C falls through to generic verb line after hit_* strings fire; Go was returning early) — fixed, test strengthened. Latent bug fix: magic callers were passing `TYPE_HIT+sn` to `combat.Damage`; changed to pass `sn` directly (C convention).
+- **G2 — spell_smaug audit.** ✓ 145 entries in `skills.dat` use `Code=spell_smaug` — 3× the plan's initial estimate. Combat skills (blitz, cuff, elbow, headbutt, etc.) also route through `spell_smaug` via SA_DESTROY+SC_LIFE info bits. New `TestSpellSmaug_AllLoadedSpellsCastable` exercises all 145 twice (with victim, without victim) → 290 invocations, 0 panics.
+- **G3 — Custom-port spells (24).** ✓ Four sub-groups: A (pass_door, farsight, ventriloquate, remove_invis, remove_trap), B (6 breath attacks + earthquake), C (6 teleport family), D (7 unique — acid_blast, knock, recharge, animate_dead, energy_drain, call_lightning, control_weather). ~50 new tests. Adversary caught 4 load-bearing issues: breath spells wrongly AoE (C takes single victim), acid container dissolution missing, fire/frost iteration stopped after first item (C continues), animate_dead missing -5 cost sentinel. All fixed pre-land. Documented MVP divergences: spell_gate uses task-described portal (not C's legacy vampire summon), spell_group_teleport pulls followers (vs C's random-room), spell_control_weather random-direction nudge (since target_name not threaded).
+- **G4 — Combat/utility skills (27).** ✓ Waves: unarmed (bite/claw/punch/sting/tail), offensive (circle/gouge/stun/grapple/cleave/hitall/berserk), utility (meditate/trance/search/detrap/dig/visible/style/stance), crafting (scribe/cook/feed), admin (slookup/sset), niche (mistwalk/skin/poison_weapon/fire). Skipped: bloodlet/pounce/broach (Phase 6). 46 new tests. Adversary caught 5 load-bearing issues: DoCook was checking ITEM_FOOD (C needs ITEM_COOK) with no fire-in-room guard; DoPoisonWeapon set Value[5]=1 instead of ExtraFlags|=ITEM_POISONED; DoScribe checked `Value[1]==0` (C uses `!=-1`) and missed vnum OBJ_VNUM_SCROLL_SCRIBING; DoHitall had no same-group skip. All fixed pre-land.
+- **G5 — Immortal commands (16).** ✓ switch/return (via Descriptor.Original), wizlock, shutdown, reboot, wizhelp, aecho, hell, log, mpstat/opstat/rpstat, deny, pardon, disconnect, mortalize. 19 tests + Hell persistence round-trip. Adversary caught: DoHell wrote Hell state before checking hell room (could strand players in ghost-hell), trust-comparison vs IS_IMMORTAL guard, no already-in-hell check; DoSwitch missing ACT_STATSHIELD guard; DoDeny didn't kick; DoPardon missing "attacker" case. All fixed pre-land.
+- **G6 — Mortal commands (8 + alias).** ✓ split, light, throw, alias/unalias, areas, altscore, color, compress (appraise already landed in Tier 2). New alias subsystem with `PCData.Aliases` persistence + interpreter expansion + recursion guard. 30 tests. Adversary caught: DoSplit missed coin-type arg (Go supports Silver/Copper), DoLight checked Value[2] (C uses Value[1]), alias exact-match vs C's prefix-match. All fixed pre-land.
+- **G7 — OLC interactivity.** ✓ `redit` expanded with 10 new subcommands (ed, rmed, bexit, exflags, exname, exkey, teledelay, televnum, tunnel, rlist). New oedit/medit as flat-dispatch MVP (not interactive substate — noted follow-up). rdelete/odelete/mdelete with repeat-within-10s confirmation + world-wide instance scrub. mpedit/opedit/rpedit as read-only inspectors (editable form follow-up). ~50 new tests. foldarea skipped (stretch).
+
+## Known follow-ups for Phase 6
+
+- Interactive CON_OEDITING / CON_MEDITING substate for oedit/medit.
+- Editable mudprog editors (currently inspector-only).
+- `foldarea` area vnum repack.
+- Archery/ranged full system (fire is a stub; throw is MVP).
+- Full polymorph subsystem (spell_polymorph deferred).
+- `possess` spell + switch's layered plumbing.
+- `revive` resurrection mechanics.
+- Per-target `spell_control_weather` (needs target_name threading through cast pipeline).
+- PLR_LOG command-interpreter hook (flag is set/persisted but not consumed).
+
 ## Goal
 
 With Tier 1's foundations (`Act()`, `spell_smaug`, saves), Tier 2's flag enforcement, and Tier 3's mudprog depth in place, Tier 4 is the content fill: the long tail of spells, combat skills, damage messages, missing player/immortal commands, and OLC interactivity that brings a Go builder and player experience up to C parity. After Tier 4:

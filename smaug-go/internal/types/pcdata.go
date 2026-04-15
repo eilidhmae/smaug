@@ -50,6 +50,10 @@ type PCData struct {
 	OutcastTime int64
 	RestoreTime int64
 	ReleaseDate int64
+	// Hell is the Unix timestamp at which a player was sent to hell.
+	// Zero means not in hell. Maps to C pcdata->release_date/hell combo;
+	// the Go port keeps it as a simple int64 timestamp for "hell" command.
+	Hell int64
 
 	// Building ranges
 	RRangeLo int

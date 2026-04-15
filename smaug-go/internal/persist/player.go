@@ -283,6 +283,10 @@ func parsePlayerField(ch *types.CharData, word string, sc *Scanner) {
 		ch.PCData.Lang = sc.ReadString()
 	case "Spouse":
 		ch.Spouse = sc.ReadString()
+	case "Hell":
+		ch.PCData.Hell = int64(sc.ReadNumber())
+	case "HelledBy":
+		ch.PCData.HelledBy = sc.ReadString()
 	case "Skill", "Spell", "Weapon", "Tongue":
 		pct := sc.ReadNumber()
 		name := sc.ReadWord()
@@ -295,6 +299,14 @@ func parsePlayerField(ch *types.CharData, word string, sc *Scanner) {
 	case "Killed":
 		_ = sc.ReadNumber()
 		_ = sc.ReadNumber()
+	case "Alias":
+		// Format: Alias <name>~ <expansion>~
+		name := sc.ReadString()
+		cmd := sc.ReadString()
+		if name != "" && cmd != "" && ch.PCData != nil {
+			ch.PCData.Aliases = append(ch.PCData.Aliases,
+				&types.AliasData{Name: name, Cmd: cmd})
+		}
 	case "Coordinates":
 		ch.X = sc.ReadNumber()
 		ch.Y = sc.ReadNumber()
@@ -513,12 +525,28 @@ func SavePlayer(w io.Writer, ch *types.CharData) error {
 	if ch.Trust != 0 {
 		fmt.Fprintf(w, "Trust      %d\n", ch.Trust)
 	}
+	if p.Hell != 0 {
+		fmt.Fprintf(w, "Hell       %d\n", p.Hell)
+	}
+	if p.HelledBy != "" {
+		fmt.Fprintf(w, "HelledBy   %s~\n", p.HelledBy)
+	}
 
 	// Save affects
 	for _, aff := range ch.Affects {
 		fmt.Fprintf(w, "Affect       %d %d %d %d %s\n",
 			aff.Type, aff.Duration, aff.Modifier, aff.Location,
 			aff.BitVector.String())
+	}
+
+	// Save aliases (one per line). Tildes are stripped by util.SmashTilde —
+	// DoAlias already refuses literal ~ input so this is belt-and-braces.
+	for _, a := range p.Aliases {
+		if a == nil || a.Name == "" || a.Cmd == "" {
+			continue
+		}
+		fmt.Fprintf(w, "Alias      %s~ %s~\n",
+			util.SmashTilde(a.Name), util.SmashTilde(a.Cmd))
 	}
 
 	// Save learned skill/spell/weapon/tongue proficiencies (bug G4).

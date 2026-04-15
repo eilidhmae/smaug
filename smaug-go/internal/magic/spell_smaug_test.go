@@ -1,10 +1,13 @@
 package magic
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -688,5 +691,136 @@ func TestSpellSmaug_RegistryKeyMatchesDatCode(t *testing.T) {
 	// Sanity: uppercase variant not matched.
 	if FindSpellFunc(strings.ToUpper(key)) != nil {
 		t.Errorf("registry matched uppercase variant; should be case-sensitive")
+	}
+}
+
+// TestSpellSmaug_AllLoadedSpellsCastable boots the real db/system/en/skills.dat
+// through persist.LoadSkills, iterates every entry whose dispatch Code is
+// "spell_smaug", and invokes SpellSmaug for each with a fresh caster/victim.
+// This is the G2 audit-in-test form: we do NOT assert about specific game
+// effects — only that none of the ~145 entries panic or nil-deref.
+//
+// To keep SA_CREATE + SF_OBJECT / SC_LIFE spells from failing their
+// vnum lookups (and subsequently logging util.Bug but continuing), we
+// populate ObjIndex / MobIndex with dummy records for every skill.Value
+// referenced. That lets the create path actually run its happy-path.
+func TestSpellSmaug_AllLoadedSpellsCastable(t *testing.T) {
+	skillsPath := filepath.Join("..", "..", "..", "db", "system", "en", "skills.dat")
+	if _, err := os.Stat(skillsPath); err != nil {
+		t.Skipf("real skills.dat not present at %s: %v", skillsPath, err)
+	}
+
+	w := newMagicWorld()
+	if err := persist.LoadSkills(w, skillsPath); err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	if len(w.Skills) == 0 {
+		t.Fatalf("no skills loaded")
+	}
+
+	// Pre-populate ObjIndex / MobIndex for every Value vnum that a
+	// spell_smaug skill might reference, so spellCreateObj / spellCreateMob
+	// find something and exercise their happy path.
+	for _, sk := range w.Skills {
+		if sk == nil || sk.SpellFunName != "spell_smaug" || sk.Value <= 0 {
+			continue
+		}
+		if w.ObjIndex[sk.Value] == nil {
+			w.ObjIndex[sk.Value] = &types.ObjIndexData{
+				Vnum:       sk.Value,
+				Name:       "test obj",
+				ShortDescr: "a test object",
+				ItemType:   types.ITEM_LIGHT,
+			}
+		}
+		if w.MobIndex[sk.Value] == nil {
+			w.MobIndex[sk.Value] = &types.MobIndexData{
+				Vnum:       sk.Value,
+				PlayerName: "testmob",
+				ShortDescr: "a test mob",
+				Level:      5,
+			}
+		}
+	}
+
+	// Skip-list: spells whose dispatch path is either known-unimplemented
+	// by design (TAR_OBJ_INV returns a "not implemented" message) or that
+	// need a specific world shape we don't replicate here. We still INVOKE
+	// them below — they just carry a note for the audit record.
+	// TAR_OBJ_INV targets are currently handled with a Bug() + user message
+	// only; they're covered by the TAR_OBJ_INV guard in SpellSmaug itself.
+	notes := map[string]string{
+		// All TAR_OBJ_INV entries route through the "not implemented" branch.
+	}
+
+	tested := 0
+	skipped := 0
+	var skippedNames []string
+
+	for sn, sk := range w.Skills {
+		if sk == nil || sk.SpellFunName != "spell_smaug" {
+			continue
+		}
+
+		// Build a fresh caster + victim in a fresh room every iteration so
+		// earlier spells (charm, sleep, summon-from-room) can't bleed state.
+		room := &types.RoomIndexData{Vnum: 1000 + sn, Name: "TestArena"}
+		ch := newCaster("Caster", 30)
+		victim := newNPCVictim("dummy", 20)
+		handler.CharToRoom(ch, room)
+		handler.CharToRoom(victim, room)
+		w.AddChar(ch)
+		w.AddChar(victim)
+		defer func(c, v *types.CharData) {
+			// Best-effort cleanup so we don't accumulate garbage.
+			handler.CharFromRoom(c)
+			handler.CharFromRoom(v)
+		}(ch, victim)
+
+		if _, ok := notes[sk.Name]; ok {
+			// Still execute — the notes map is purely informational.
+			_ = ok
+		}
+
+		func(sn int, sk *types.SkillType) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("spell %q (sn=%d, Target=%d, Info=%d, Flags=%d) PANICKED: %v",
+						sk.Name, sn, sk.Target, sk.Info, sk.Flags, r)
+				}
+			}()
+			SpellSmaug(w, sn, 30, ch, victim)
+			tested++
+		}(sn, sk)
+	}
+
+	// Also exercise the nil-victim path for each — several dispatcher
+	// branches accept victim == nil (TAR_IGNORE / area / create).
+	for sn, sk := range w.Skills {
+		if sk == nil || sk.SpellFunName != "spell_smaug" {
+			continue
+		}
+		room := &types.RoomIndexData{Vnum: 2000 + sn, Name: "SoloArena"}
+		ch := newCaster("Solo", 30)
+		handler.CharToRoom(ch, room)
+		w.AddChar(ch)
+
+		func(sn int, sk *types.SkillType) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("spell %q nil-victim (sn=%d) PANICKED: %v",
+						sk.Name, sn, r)
+				}
+			}()
+			SpellSmaug(w, sn, 30, ch, nil)
+		}(sn, sk)
+	}
+
+	if tested == 0 {
+		t.Fatalf("no spell_smaug spells found in skills.dat")
+	}
+	t.Logf("exercised %d spell_smaug spells with fresh caster+victim (no panics)", tested)
+	if skipped > 0 {
+		t.Logf("skipped %d: %v", skipped, skippedNames)
 	}
 }

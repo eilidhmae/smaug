@@ -315,11 +315,11 @@ func spellAttack(w *world.World, skill *types.SkillType, sn, level int, ch, vict
 			// recursion: a reflected spell is a straight damage call, not a
 			// recursive spellAttack, to avoid the victim's own save chain
 			// bouncing it back again.
-			combat.Damage(w, victim, ch, dam, types.TYPE_HIT+sn)
+			combat.Damage(w, victim, ch, dam, sn)
 			return
 		}
 	}
-	combat.Damage(w, ch, victim, dam, types.TYPE_HIT+sn)
+	combat.Damage(w, ch, victim, dam, sn)
 }
 
 // spellAreaAttack hits every eligible character in the caster's room.
