@@ -3,7 +3,11 @@
 ## Prime Directives (override all other rules)
 
 1. **Assume the manager role defined in `@.claude/agents/manager.md` and follow its Prime Directives in full — they carry equal weight to the ones here.**
-2. **Read the documentation in `@smaug-go/doc/`.**
+2. **On session start, read these foundation docs to resume context:**
+   - `@smaug-go/doc/plan.md` — architecture, C→Go mapping, testing strategy
+   - `@smaug-go/doc/phases.md` — phase roadmap and overall status
+   - The most recent phase record (see the index under *Active Work* below)
+3. **Consult other `smaug-go/doc/` files on demand via the index — do not preload the whole directory.**
 
 ---
 
@@ -32,28 +36,36 @@ smaug-go/     # Go port (in progress)
 
 The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-go/`.
 
-**Read `smaug-go/doc/` for detailed documentation:**
+### Documentation index (`smaug-go/doc/`)
 
-- `smaug-go/doc/plan.md` — Full architectural plan: C architecture summary, Go design decisions, project structure, C→Go file mapping, data file mapping, testing strategy
-- `smaug-go/doc/phases.md` — All 5 implementation phases with detailed deliverables and verification criteria (Phases 1–4 complete)
-- `smaug-go/doc/phase1-completed.md` — Phase 1 record (per-package breakdown with files, structs, functions, test results)
-- `smaug-go/doc/phase1-remaining.md` — Phase 1 status (complete)
-- `smaug-go/doc/phase2-completed.md` — Phase 2 record (completed work so far)
-- `smaug-go/doc/phase2-remaining.md` — Phase 2 task breakdown with priority order
-- `smaug-go/doc/phase3-plan.md` — Phase 3 implementation plan: 12 task groups with dependencies and execution order
-- `smaug-go/doc/phase3-completed.md` — Phase 3 record (all 12 task groups complete)
-- `smaug-go/doc/phase4-plan.md` — Phase 4 plan: 12 task groups (5 quality + 7 features) — COMPLETE (G11 hotboot moved to Phase 5)
-- `smaug-go/doc/phase4a-completed.md` — Phase 4a record (quality pass: G1–G5 complete)
-- `smaug-go/doc/phase4b-completed.md` — Phase 4b record (features: G6–G10, G12 complete; G11 deferred)
-- `smaug-go/doc/go-idiom-review.md` — Go idiom audit: 10 findings, all resolved
-- `smaug-go/doc/security-review.md` — Security audit: 16 findings, 14 fixed
-- `smaug-go/doc/phase5-tier1-foundation.md` — **Phase 5 Tier 1** plan: Act() dispatcher, spell_smaug, missing saves, skill-persistence + Silver/Copper save bugs, skill-learning formula
-- `smaug-go/doc/phase5-tier1-completed.md` — Phase 5 Tier 1 record (G1–G6 complete; adversary + quorum verified)
-- `smaug-go/doc/phase5-tier2-wiring.md` — **Phase 5 Tier 2** plan: honor already-defined flags, wire loaded-but-idle data
-- `smaug-go/doc/phase5-tier2-completed.md` — Phase 5 Tier 2 record (G1–G9 complete; three-agent adversary quorum verified)
-- `smaug-go/doc/phase5-tier3-mudprog.md` — **Phase 5 Tier 3** plan: ~86 missing if-checks, missing mob triggers, oprog + rprog subsystems, mpsleep runtime, ~35 missing mp commands
-- `smaug-go/doc/phase5-tier3-completed.md` — Phase 5 Tier 3 record (G1–G6 complete; three-agent adversary quorum verified; 7 load-bearing findings fixed before land)
-- `smaug-go/doc/phase5-tier4-content.md` — **Phase 5 Tier 4**: missing spells, combat/utility skills, damage-message dispatcher, missing immortal/mortal commands, OLC interactivity
+Files live in `smaug-go/doc/` (paths below are relative). Read foundation docs every session; fetch phase records only when touching that phase; consult review docs on demand.
+
+**Foundation — read every session:**
+
+| File | Contents |
+|---|---|
+| `plan.md` | Architecture, C→Go mapping, design decisions, testing strategy |
+| `phases.md` | All 5 phases: deliverables, verification criteria, current status |
+
+**Phase records — fetch the relevant ones:**
+
+| Phase | Plan / scope | Completion record |
+|---|---|---|
+| 1 | — | `phase1-completed.md`, `phase1-remaining.md` |
+| 2 | `phase2-remaining.md` | `phase2-completed.md` |
+| 3 | `phase3-plan.md` | `phase3-completed.md` |
+| 4 | `phase4-plan.md` | `phase4a-completed.md`, `phase4b-completed.md` |
+| 5 Tier 1 (Act/spell_smaug/saves/persistence) | `phase5-tier1-foundation.md` | `phase5-tier1-completed.md` |
+| 5 Tier 2 (flag honoring + idle-data wiring) | `phase5-tier2-wiring.md` | `phase5-tier2-completed.md` |
+| 5 Tier 3 (mudprog depth) | `phase5-tier3-mudprog.md` | `phase5-tier3-completed.md` |
+| 5 Tier 4 (content breadth) | `phase5-tier4-content.md` (plan + completion in one doc) | — |
+
+**Reviews — consult on demand:**
+
+| File | Contents |
+|---|---|
+| `security-review.md` | 16 findings, 14 fixed |
+| `go-idiom-review.md` | Go idiom audit: 10 findings, all resolved |
 
 ## Current Status
 
