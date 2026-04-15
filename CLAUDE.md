@@ -59,12 +59,13 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - `smaug-go/doc/phase5-tier1-completed.md` — Phase 5 Tier 1 record (G1–G6 complete; adversary + quorum verified)
 - `smaug-go/doc/phase5-tier2-wiring.md` — **Phase 5 Tier 2** plan: honor already-defined flags, wire loaded-but-idle data
 - `smaug-go/doc/phase5-tier2-completed.md` — Phase 5 Tier 2 record (G1–G9 complete; three-agent adversary quorum verified)
-- `smaug-go/doc/phase5-tier3-mudprog.md` — **Phase 5 Tier 3**: ~86 missing if-checks, missing mob triggers, oprog + rprog subsystems, mpsleep runtime, ~35 missing mp commands
+- `smaug-go/doc/phase5-tier3-mudprog.md` — **Phase 5 Tier 3** plan: ~86 missing if-checks, missing mob triggers, oprog + rprog subsystems, mpsleep runtime, ~35 missing mp commands
+- `smaug-go/doc/phase5-tier3-completed.md` — Phase 5 Tier 3 record (G1–G6 complete; three-agent adversary quorum verified; 7 load-bearing findings fixed before land)
 - `smaug-go/doc/phase5-tier4-content.md` — **Phase 5 Tier 4**: missing spells, combat/utility skills, damage-message dispatcher, missing immortal/mortal commands, OLC interactivity
 
 ## Current Status
 
-**Phases 1–4 complete. Phase 5 Tiers 1–2 (foundation + flag-honoring + idle-data wiring) complete.** 82 source files, 65 test files, 2,007 top-level test cases — all passing across 13 packages. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races, 8 clans, 2 deities, 496 socials, 2 boards.
+**Phases 1–4 complete. Phase 5 Tiers 1–3 (foundation + flag-honoring + mudprog depth) complete.** 85 source files, 69 test files, 2,205 top-level test cases — all passing across 13 packages. Boot loads 1,909 rooms, 4,299 exits, 505 mob templates, 821 obj templates, 406 mob instances, 710 obj instances, 1,603 helps, 325 skills/spells, 17 classes, 15 races, 8 clans, 2 deities, 496 socials, 2 boards.
 
 ### What works
 - TCP server with goroutine-per-connection I/O
@@ -110,7 +111,7 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 - Clan commands: clans, claninfo, clantalk, join, leave — with member tracking
 - Deity commands: deities, devote (with worshipper tracking)
 - Board/note commands: note list/read/write/post/remove
-- MUD Programs: script interpreter with if/or/else/endif, ~25 if-checks (rand, level, hp, ispc, isevil, etc.), variable substitution ($n/$t/$o etc.), 7 trigger types (greet, speech, fight, death, rand, give, entry), mp commands (mpecho, mpgoto, mptransfer, mpforce, mpkill, mpdamage, mppurge)
+- MUD Programs: script interpreter with if/or/else/endif, 106 if-checks (Tier 3 added 77 across object/mob lookup, char state, room/exit state, social, misc), variable substitution ($n/$t/$o etc.), 13 mob + 19 obj + 13 room trigger types, full object-prog and room-prog subsystems via supermob pattern, mpsleep delayed-execution runtime, 44 mp commands (mpecho variants, mpmload/mpoload, mpat, mpadvance, mpslay, mprestore, mpbodybag, mpopen/close/fillpassage, mppeace, mpdeposit/mpwithdraw, mpapplyaffect, mpscatter, mpstrew, and more)
 - OLC: redit (name/desc/sector/flags/exdesc/exit), ocreate, mcreate, rdig, rlist, olist, mlist, savearea, mset, oset, rset, aset, astat
 - Area save: persist/area_write.go writes rooms, mobs, objects, resets, shops to .are files
 - Protocol support: telnet negotiation helpers, MCCP2 zlib compression, MSDP variable reporting, MSSP server status
@@ -130,11 +131,11 @@ The C codebase is being ported to pure Go (no Cgo). All work happens in `smaug-g
 
 ### What's next (Phase 5 — Depth-First Parity Closure)
 
-Phase 4 is complete. Tier 1 landed 2026-04-13 — see `smaug-go/doc/phase5-tier1-completed.md`. Tier 2 landed 2026-04-14 — see `smaug-go/doc/phase5-tier2-completed.md`. Remaining Tier 3/4 close remaining parity and correctness gaps from the 2026-04 audit before optional breadth systems (overland, housing, polymorph, archery, stances, dragon flight, arena, planes, hotboot) in Phase 6.
+Phase 4 is complete. Tier 1 landed 2026-04-13. Tiers 2 and 3 landed 2026-04-14. Remaining Tier 4 closes remaining parity gaps from the 2026-04 audit before optional breadth systems (overland, housing, polymorph, archery, stances, dragon flight, arena, planes, hotboot) in Phase 6.
 
 - **Tier 1 — Foundation + correctness.** ✓ Complete. `Act()` dispatcher, `spell_smaug` data-driven dispatcher, three missing saves, skill/Silver/Copper persistence bugs fixed, skill-learning formula corrected. See `smaug-go/doc/phase5-tier1-completed.md`.
 - **Tier 2 — Flag honoring + wire idle data.** ✓ Complete. Enforced ROOM_NO_MAGIC (+ AFLAG_NOMAGIC) / NO_SUMMON / NO_RECALL / NOFLOOR / DEATH / SILENCE / NO_MOB / PRIVATE / SOLITARY / NODROP, ITEM_ANTI_* wear restrictions, EX_SECRET/EX_HIDDEN exit hiding, EX_NOMOB, PLR_AFK/NO_TELL/NO_EMOTE; added language scrambler + speak/learn commands, repair/appraise commands (damage-aware cost), class/race bans with nanny enforcement, note recipient filtering + login-greeting mail count, clan storeroom deposit/withdraw (leader-gated). Three-agent adversary quorum reviewed all changes; all load-bearing findings addressed. See `smaug-go/doc/phase5-tier2-completed.md`.
-- **Tier 3 — Mudprog depth.** Go has 29 if-checks vs C's ~115; 7 mob triggers vs C's ~13; no object-progs at all; no room-progs at all; `MProgSleepData` is defined but the queue/update are missing; 9 of C's ~44 mp commands implemented. See `smaug-go/doc/phase5-tier3-mudprog.md`.
+- **Tier 3 — Mudprog depth.** ✓ Complete. 77 new if-checks (29→106), LOGIN/VOID/TELL/HOUR/TIME/SELL mob triggers + HITPRCNT wired, full object-prog subsystem (19 fire helpers via supermob pattern), full room-prog subsystem (13 helpers), mpsleep delayed-execution runtime, +35 mp commands (44 total). Two rounds of three-agent adversary quorum raised 10 load-bearing findings total — all fixed with TDD (prog-bit widening, command-hook precedence, indoors flag, mpScatter/mpDeposit/mpBodybag semantics, level→GetTrust, class/race string compare, cansee blind+dark checks). Two adversary claims (mpAdvance AVATAR cap, mpSlay raw_kill) turned out to match C correctly on closer inspection. See `smaug-go/doc/phase5-tier3-completed.md`.
 - **Tier 4 — Content breadth.** Registry has 30 of ~101 C spells; 15 of ~43 combat/utility skills; no damage-message dispatcher (`new_dam_message` equivalent); 14 missing immortal commands; 9 missing mortal commands; OLC has 6 redit subcommands vs C's ~20 and no interactive oedit/medit/mpedit/opedit/rpedit. See `smaug-go/doc/phase5-tier4-content.md`.
 
 Optional breadth systems (overland, housing, polymorph, archery, stances, dragon flight, arena, planes, holidays, star maps, hotboot) are now Phase 6 candidates.

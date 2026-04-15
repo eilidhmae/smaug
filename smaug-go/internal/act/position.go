@@ -1,6 +1,9 @@
 package act
 
-import "github.com/eilidhmae/smaug/internal/types"
+import (
+	"github.com/eilidhmae/smaug/internal/mudprog"
+	"github.com/eilidhmae/smaug/internal/types"
+)
 
 func isFighting(pos int) bool {
 	return pos == types.POS_FIGHTING || pos == types.POS_EVASIVE ||
@@ -10,6 +13,7 @@ func isFighting(pos int) bool {
 
 // DoRest implements the 'rest' command.
 func DoRest(ch *types.CharData, argument string) {
+	oldPos := ch.Position
 	switch {
 	case isFighting(ch.Position):
 		ch.Send("You are busy fighting!\n\r")
@@ -30,6 +34,10 @@ func DoRest(ch *types.CharData, argument string) {
 	case ch.Position == types.POS_STANDING:
 		ch.Send("You sprawl out haphazardly.\n\r")
 		ch.Position = types.POS_RESTING
+	}
+	// Room-prog REST trigger fires once on the transition into POS_RESTING.
+	if oldPos != types.POS_RESTING && ch.Position == types.POS_RESTING {
+		mudprog.RprogRestTrigger(ch)
 	}
 }
 
@@ -83,6 +91,7 @@ func DoStand(ch *types.CharData, argument string) {
 
 // DoSleep implements the 'sleep' command.
 func DoSleep(ch *types.CharData, argument string) {
+	oldPos := ch.Position
 	switch {
 	case isFighting(ch.Position):
 		ch.Send("You are busy fighting!\n\r")
@@ -99,6 +108,10 @@ func DoSleep(ch *types.CharData, argument string) {
 	case ch.Position == types.POS_STANDING:
 		ch.Send("You collapse into a deep sleep.\n\r")
 		ch.Position = types.POS_SLEEPING
+	}
+	// Room-prog SLEEP trigger fires once on the transition into POS_SLEEPING.
+	if oldPos != types.POS_SLEEPING && ch.Position == types.POS_SLEEPING {
+		mudprog.RprogSleepTrigger(ch)
 	}
 }
 

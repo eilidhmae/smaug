@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eilidhmae/smaug/internal/types"
+	"github.com/eilidhmae/smaug/internal/world"
 )
 
 func TestTriggerMatches_Rand(t *testing.T) {
@@ -138,7 +139,7 @@ func TestTriggerMatches_HitPrcnt(t *testing.T) {
 
 func TestTriggerMatches_Default(t *testing.T) {
 	// Default triggers (GREET, ENTRY, FIGHT, DEATH, etc.) always fire
-	defaultTypes := []int{
+	defaultTypes := []int64{
 		types.MPROG_GREET,
 		types.MPROG_ALL_GREET,
 		types.MPROG_ENTRY,
@@ -192,7 +193,7 @@ func TestMobTrigger_NoProgs(t *testing.T) {
 	mob := makeNPC("guard")
 	mob.IndexData = &types.MobIndexData{}
 	mob.IndexData.ProgTypes.Set(0) // has prog types set but empty list
-	// Should bail on the ProgTypes.IsSet(0) && len == 0 check
+	// Should bail on the len(MudProgs) == 0 early-exit in MobTrigger.
 	MobTrigger(types.MPROG_GREET, mob, nil, nil, nil, nil, "")
 }
 
@@ -480,4 +481,315 @@ func TestTrigGive_NilMob(t *testing.T) {
 func TestTrigGive_NotNPC(t *testing.T) {
 	ch := &types.CharData{Name: "Player"}
 	TrigGive(ch, nil, nil)
+}
+
+// --- New Tier 3 G2 triggers ---
+
+// makeMobWithProg wires a mob into a room with a single MudProg entry that
+// echoes "fired" when triggered. The capturing PC's descriptor receives the
+// mpecho output via the shared room.
+func makeMobWithProg(t *testing.T, progType int64, argList string) (mob *types.CharData, pc *types.CharData, client net.Conn, room *types.RoomIndexData) {
+	t.Helper()
+	room = &types.RoomIndexData{Vnum: 3001, Name: "Test Room"}
+	mob = makeNPC("guard")
+	mob.InRoom = room
+	room.People = append(room.People, mob)
+	mob.IndexData = &types.MobIndexData{
+		MudProgs: []*types.MProgData{
+			{Type: progType, ArgList: argList, ComList: "mpecho fired"},
+		},
+	}
+	pc, client = makeDescChar("Witness")
+	pc.InRoom = room
+	room.People = append(room.People, pc)
+	return mob, pc, client, room
+}
+
+func TestTrigLogin_FiresOnNPCInRoom(t *testing.T) {
+	_, pc, client, _ := makeMobWithProg(t, types.MPROG_LOGIN, "")
+	defer client.Close()
+	progNest = 0
+	TrigLogin(pc)
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Errorf("login trigger should fire, got %q", out)
+	}
+}
+
+func TestTrigLogin_SkipsFightingMob(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_LOGIN, "")
+	defer client.Close()
+	mob.Fighting = &types.FightData{Who: pc}
+	progNest = 0
+	TrigLogin(pc)
+	out := readTrigOutput(pc, client)
+	if strings.Contains(out, "fired") {
+		t.Error("login trigger should skip fighting mob")
+	}
+}
+
+func TestTrigLogin_NilChar(t *testing.T) {
+	TrigLogin(nil)
+	TrigLogin(&types.CharData{Name: "a"})
+}
+
+func TestCheckVoid_FiresOnAloneMob(t *testing.T) {
+	// Mob alone in the room, with a second NPC witness that has a Desc
+	// attached solely so we can observe the mpecho fire from VoidHook.
+	_, pc, client, room := makeMobWithProg(t, types.MPROG_VOID, "")
+	defer client.Close()
+	// Remove the PC so only NPCs remain.
+	for i, p := range room.People {
+		if p == pc {
+			room.People = append(room.People[:i], room.People[i+1:]...)
+			break
+		}
+	}
+	// Attach a descriptor to a second NPC as our silent listener.
+	witness, wc := makeDescChar("witness")
+	defer wc.Close()
+	witness.Act.Set(types.ACT_IS_NPC) // mark as NPC so void precondition holds
+	witness.InRoom = room
+	room.People = append(room.People, witness)
+	progNest = 0
+	CheckVoid(room)
+	out := readTrigOutput(witness, wc)
+	if !strings.Contains(out, "fired") {
+		t.Errorf("void trigger should fire when no PC is in room, got %q", out)
+	}
+}
+
+func TestCheckVoid_SkipsWhenPCPresent(t *testing.T) {
+	mob, pc, client, room := makeMobWithProg(t, types.MPROG_VOID, "")
+	defer client.Close()
+	_ = mob
+	progNest = 0
+	CheckVoid(room)
+	out := readTrigOutput(pc, client)
+	if strings.Contains(out, "fired") {
+		t.Error("void trigger should not fire while a PC is in the room")
+	}
+}
+
+func TestCheckVoid_NilRoom(t *testing.T) {
+	CheckVoid(nil)
+}
+
+func TestTrigVoid_FiresOnNPC(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_VOID, "")
+	defer client.Close()
+	progNest = 0
+	TrigVoid(mob)
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Errorf("void trigger should fire on NPC, got %q", out)
+	}
+}
+
+func TestTrigVoid_NilMob(t *testing.T) {
+	TrigVoid(nil)
+	TrigVoid(&types.CharData{Name: "Player"})
+}
+
+func TestTrigTell_FiresOnNPCTarget(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_TELL, "hello")
+	defer client.Close()
+	progNest = 0
+	TrigTell(pc, mob, "hello there, guard")
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Errorf("tell trigger should match keyword, got %q", out)
+	}
+}
+
+func TestTrigTell_NoMatchOnMissingKeyword(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_TELL, "hello")
+	defer client.Close()
+	progNest = 0
+	TrigTell(pc, mob, "goodbye")
+	out := readTrigOutput(pc, client)
+	if strings.Contains(out, "fired") {
+		t.Error("tell trigger should not fire without keyword match")
+	}
+}
+
+func TestTrigTell_SkipsPCTarget(t *testing.T) {
+	pc1, client1 := makeDescChar("Alice")
+	defer client1.Close()
+	pc2, client2 := makeDescChar("Bob")
+	defer client2.Close()
+	_ = pc2
+	_ = client2
+	// Neither is an NPC; must not panic or fire.
+	TrigTell(pc1, pc2, "anything")
+}
+
+func TestTrigTell_NilCases(t *testing.T) {
+	TrigTell(nil, nil, "")
+	ch := &types.CharData{Name: "Player"}
+	TrigTell(ch, nil, "hi")
+}
+
+func TestTrigHour_FiresOnMatchingHour(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_HOUR, "14")
+	defer client.Close()
+	w := world.New("/tmp/test-hour")
+	w.Characters = append(w.Characters, mob, pc)
+	progNest = 0
+	TrigHour(14, w)
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Errorf("hour 14 should fire hour-prog with arg 14, got %q", out)
+	}
+}
+
+func TestTrigHour_EmptyArgFiresAlways(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_HOUR, "")
+	defer client.Close()
+	w := world.New("/tmp/test-hour")
+	w.Characters = append(w.Characters, mob, pc)
+	progNest = 0
+	TrigHour(3, w)
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Error("hour trigger with empty arg should fire every hour")
+	}
+}
+
+func TestTrigHour_SkipsNonMatchingHour(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_HOUR, "9")
+	defer client.Close()
+	w := world.New("/tmp/test-hour")
+	w.Characters = append(w.Characters, mob, pc)
+	progNest = 0
+	TrigHour(10, w)
+	out := readTrigOutput(pc, client)
+	if strings.Contains(out, "fired") {
+		t.Error("hour trigger should not fire when arg hour does not match")
+	}
+}
+
+func TestTrigHour_NilWorld(t *testing.T) {
+	TrigHour(0, nil)
+}
+
+func TestTrigTime_FiresOnMatchingHour(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_TIME, "6")
+	defer client.Close()
+	w := world.New("/tmp/test-time")
+	w.Characters = append(w.Characters, mob, pc)
+	progNest = 0
+	TrigTime(6, w)
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Errorf("time trigger should fire when hour matches arg, got %q", out)
+	}
+}
+
+func TestTrigTime_LatchesUntilHourChanges(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_TIME, "5")
+	defer client.Close()
+	w := world.New("/tmp/test-time")
+	w.Characters = append(w.Characters, mob, pc)
+	progNest = 0
+	// First fire at hour 5 should succeed.
+	TrigTime(5, w)
+	_ = readTrigOutput(pc, client)
+	progNest = 0
+	// Second call at the same hour must not re-fire (TIME latches).
+	TrigTime(5, w)
+	out := readTrigOutput(pc, client)
+	if strings.Contains(out, "fired") {
+		t.Errorf("time trigger should latch at same hour, got %q", out)
+	}
+}
+
+func TestTrigTime_NilWorld(t *testing.T) {
+	TrigTime(0, nil)
+}
+
+func TestTrigSell_FiresWithMatchingVnum(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_SELL, "100")
+	defer client.Close()
+	idx := &types.ObjIndexData{Vnum: 100}
+	obj := &types.ObjData{Name: "sword", IndexData: idx}
+	progNest = 0
+	TrigSell(mob, pc, obj)
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Errorf("sell trigger should fire for matching vnum, got %q", out)
+	}
+}
+
+func TestTrigSell_FiresWithWildcardArg(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_SELL, "0")
+	defer client.Close()
+	idx := &types.ObjIndexData{Vnum: 42}
+	obj := &types.ObjData{Name: "stuff", IndexData: idx}
+	progNest = 0
+	TrigSell(mob, pc, obj)
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Error("sell trigger arg 0 should fire for any item")
+	}
+}
+
+func TestTrigSell_SkipsNonMatchingVnum(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_SELL, "100")
+	defer client.Close()
+	idx := &types.ObjIndexData{Vnum: 200}
+	obj := &types.ObjData{Name: "other", IndexData: idx}
+	progNest = 0
+	TrigSell(mob, pc, obj)
+	out := readTrigOutput(pc, client)
+	if strings.Contains(out, "fired") {
+		t.Error("sell trigger should not fire for non-matching vnum")
+	}
+}
+
+func TestTrigSell_NilCases(t *testing.T) {
+	TrigSell(nil, nil, nil)
+	ch := &types.CharData{Name: "Player"}
+	TrigSell(ch, nil, nil)
+}
+
+func TestTrigHitprcnt_FiresWhenBelowThreshold(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_HITPRCNT, "50")
+	defer client.Close()
+	mob.Hit = 20
+	mob.MaxHit = 100 // 20% HP, below 50
+	progNest = 0
+	TrigHitprcnt(mob, pc)
+	out := readTrigOutput(pc, client)
+	if !strings.Contains(out, "fired") {
+		t.Errorf("hitprcnt should fire when HP%% (20) < threshold (50), got %q", out)
+	}
+}
+
+func TestTrigHitprcnt_SkipsAboveThreshold(t *testing.T) {
+	mob, pc, client, _ := makeMobWithProg(t, types.MPROG_HITPRCNT, "50")
+	defer client.Close()
+	mob.Hit = 80
+	mob.MaxHit = 100 // 80% HP
+	progNest = 0
+	TrigHitprcnt(mob, pc)
+	out := readTrigOutput(pc, client)
+	if strings.Contains(out, "fired") {
+		t.Error("hitprcnt should not fire when HP%% is above threshold")
+	}
+}
+
+func TestTrigHitprcnt_NilCases(t *testing.T) {
+	TrigHitprcnt(nil, nil)
+	ch := &types.CharData{Name: "Player"}
+	TrigHitprcnt(ch, nil)
+	// NPC with zero MaxHit should no-op, not divide by zero.
+	mob := makeNPC("broken")
+	mob.IndexData = &types.MobIndexData{
+		MudProgs: []*types.MProgData{
+			{Type: types.MPROG_HITPRCNT, ArgList: "50", ComList: "mpecho fired"},
+		},
+	}
+	mob.MaxHit = 0
+	TrigHitprcnt(mob, nil)
 }

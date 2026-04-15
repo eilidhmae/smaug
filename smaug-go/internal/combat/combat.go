@@ -18,6 +18,25 @@ const (
 	rBOTH_DIED = 3
 )
 
+// Hook variables populated at boot to avoid an import cycle with mudprog.
+// When nil, combat silently skips the trigger fire.
+var (
+	// HitprcntHook is called after HP has been reduced on an NPC victim to
+	// allow MPROG_HITPRCNT progs to fire. Signature: (mob, attacker).
+	HitprcntHook func(*types.CharData, *types.CharData)
+	// VoidHook is called on a room whenever a PC leaves (via death/flee).
+	VoidHook func(*types.RoomIndexData)
+	// ObjDamageHook is called on each worn obj on the victim whenever damage
+	// lands, so obj-prog MPROG_DAMAGE progs can fire. Signature: (attacker, obj).
+	ObjDamageHook func(*types.CharData, *types.ObjData)
+	// RfightHook is called on the initial StartFighting transition so a room
+	// can fire its RFIGHT progs. Signature: (ch).
+	RfightHook func(*types.CharData)
+	// DeathRoomHook is called when a victim dies so the room can fire its
+	// RDEATH progs before the corpse is generated. Signature: (victim).
+	DeathRoomHook func(*types.CharData)
+)
+
 // StartFighting initiates combat between ch and victim.
 func StartFighting(ch *types.CharData, victim *types.CharData) {
 	if ch.Fighting != nil {
@@ -28,6 +47,10 @@ func StartFighting(ch *types.CharData, victim *types.CharData) {
 	}
 	ch.NumFighting = 1
 	ch.Position = types.POS_FIGHTING
+	// Room-prog RFIGHT trigger: fires once when combat begins in the room.
+	if RfightHook != nil {
+		RfightHook(ch)
+	}
 }
 
 // StopFighting ends combat for a character. If fBoth is true, also stops
@@ -52,6 +75,12 @@ func StopFighting(ch *types.CharData, fBoth bool) {
 				}
 			}
 		}
+	}
+
+	// After combat ends, a room that ended up with only NPCs (e.g., the PC
+	// fled or was extracted) should see their VOID progs fire.
+	if VoidHook != nil && ch.InRoom != nil {
+		VoidHook(ch.InRoom)
 	}
 }
 
@@ -219,6 +248,26 @@ func Damage(w *world.World, ch *types.CharData, victim *types.CharData, dam int,
 	// Apply damage
 	victim.Hit -= dam
 
+	// Fire obj-prog DAMAGE on every worn/equipped item on victim whenever
+	// damage lands. MVP: iterate carrying and pick items at a wear loc other
+	// than WEAR_NONE. C-fidelity is weaker (C's damage_obj is per-hit on one
+	// item) but this preserves test hooks on equipped obj progs.
+	if dam > 0 && ObjDamageHook != nil {
+		for _, obj := range victim.Carrying {
+			if obj == nil || obj.WearLoc == types.WEAR_NONE {
+				continue
+			}
+			ObjDamageHook(ch, obj)
+		}
+	}
+
+	// Fire HITPRCNT progs on NPC victims now that HP has been reduced. Do
+	// this before position/death processing so that progs (e.g., calling for
+	// help, teleporting) can run while the mob is still alive.
+	if victim.IsNPC() && victim.Hit > 0 && HitprcntHook != nil {
+		HitprcntHook(victim, ch)
+	}
+
 	// Send damage messages
 	if dam == 0 {
 		ch.Sendf("You miss %s.\n\r", victim.Name)
@@ -245,6 +294,11 @@ func Damage(w *world.World, ch *types.CharData, victim *types.CharData, dam int,
 
 	// Death check
 	if victim.Position == types.POS_DEAD {
+		// Room-prog RDEATH fires before corpse generation / ExtractChar so
+		// the prog sees the victim still in room.People.
+		if DeathRoomHook != nil {
+			DeathRoomHook(victim)
+		}
 		StopFighting(ch, true)
 
 		// XP gain for killer (player killing NPC)

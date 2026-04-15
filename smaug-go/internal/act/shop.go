@@ -2,6 +2,7 @@ package act
 
 import (
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -134,6 +135,9 @@ func DoSell(ch *types.CharData, argument string) {
 	keeper.Carrying = append(keeper.Carrying, obj)
 
 	ch.Sendf("You sell %s for %d gold.\n\r", obj.ShortDescr, cost)
+
+	// Fire SELL progs on the shopkeeper now that the trade is complete.
+	mudprog.TrigSell(keeper, ch, obj)
 }
 
 // DoList implements the 'list' command: show items for sale.

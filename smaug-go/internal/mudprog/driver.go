@@ -1,6 +1,7 @@
 package mudprog
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/eilidhmae/smaug/internal/command"
@@ -90,6 +91,58 @@ func Driver(comList string, mob *types.CharData, actor *types.CharData,
 			progNest--
 			return
 
+		case "mpsleep":
+			// Only defer if we're in an executing state. (C handles mpsleep
+			// before if-state evaluation, causing it to always fire; we instead
+			// gate it on if-state for consistency with every other command. This
+			// is a deliberate Go-side divergence — see sleep_test.go.)
+			if ifLevel != 0 && ifState[ifLevel] != 0 {
+				continue
+			}
+			// Parse timer arg. C: missing arg -> 4; arg < 1 -> bug + 4.
+			ticks := 4
+			if rest != "" {
+				if n, err := strconv.Atoi(strings.TrimSpace(strings.Fields(rest)[0])); err == nil {
+					ticks = n
+				}
+			}
+			if ticks < 1 {
+				util.Bug("MudProg mpsleep: bad arg, using default (mob %s)", mob.Name)
+				ticks = 4
+			}
+			// Build remaining ComList: all lines AFTER the mpsleep line.
+			var remaining string
+			if i+1 < len(lines) {
+				remaining = strings.Join(lines[i+1:], "\n")
+			}
+			sd := &types.MProgSleepData{
+				Timer:      ticks,
+				Type:       types.MP_MOB,
+				IfLevel:    ifLevel,
+				ComList:    remaining,
+				Mob:        mob,
+				Actor:      actor,
+				Obj:        obj,
+				Victim:     victim,
+				Target:     target,
+				SingleStep: singleStep,
+			}
+			// Encode int ifState into [MAX_IFS][2]bool.
+			// Mapping: state==1 (skip-if)   -> [i][0]=true
+			//          state==2 (skip-else) -> [i][1]=true
+			//          state==0 (execute)   -> both false
+			for k := 0; k < types.MAX_IFS; k++ {
+				switch ifState[k] {
+				case 1:
+					sd.IfState[k][0] = true
+				case 2:
+					sd.IfState[k][1] = true
+				}
+			}
+			SleepAdd(sd)
+			progNest--
+			return
+
 		default:
 			// Execute command if we're in an executing state
 			if ifLevel == 0 || ifState[ifLevel] == 0 {
@@ -143,6 +196,129 @@ func executeCommand(mob *types.CharData, line string) {
 		return
 	case "mppurge":
 		mpPurge(mob, line[len("mppurge"):])
+		return
+	case "mpasound":
+		mpAsound(mob, line[len("mpasound"):])
+		return
+	case "mpsound":
+		mpEcho(mob, line[len("mpsound"):])
+		return
+	case "mpsoundat":
+		mpEchoAt(mob, line[len("mpsoundat"):])
+		return
+	case "mpsoundaround":
+		mpEchoAround(mob, line[len("mpsoundaround"):])
+		return
+	case "mpmusic":
+		mpEcho(mob, line[len("mpmusic"):])
+		return
+	case "mpmusicat":
+		mpEchoAt(mob, line[len("mpmusicat"):])
+		return
+	case "mpmusicaround":
+		mpEchoAround(mob, line[len("mpmusicaround"):])
+		return
+	case "mpechozone":
+		mpEchoZone(mob, line[len("mpechozone"):])
+		return
+	case "mpmload":
+		mpMload(mob, line[len("mpmload"):])
+		return
+	case "mpoload":
+		mpOload(mob, line[len("mpoload"):])
+		return
+	case "mpinvis":
+		mpInvis(mob, line[len("mpinvis"):])
+		return
+	case "mpat":
+		mpAt(mob, line[len("mpat"):])
+		return
+	case "mpadvance":
+		mpAdvance(mob, line[len("mpadvance"):])
+		return
+	case "mpslay":
+		mpSlay(mob, line[len("mpslay"):])
+		return
+	case "mplog":
+		mpLog(mob, line[len("mplog"):])
+		return
+	case "mprestore":
+		mpRestore(mob, line[len("mprestore"):])
+		return
+	case "mpfavor":
+		mpFavor(mob, line[len("mpfavor"):])
+		return
+	case "mpnuisance":
+		mpNuisance(mob, line[len("mpnuisance"):])
+		return
+	case "mpunnuisance":
+		mpUnnuisance(mob, line[len("mpunnuisance"):])
+		return
+	case "mpbodybag":
+		mpBodybag(mob, line[len("mpbodybag"):])
+		return
+	case "mpmorph":
+		mpMorph(mob, line[len("mpmorph"):])
+		return
+	case "mpunmorph":
+		mpUnmorph(mob, line[len("mpunmorph"):])
+		return
+	case "mppractice":
+		mpPractice(mob, line[len("mppractice"):])
+		return
+	case "mpopenpassage":
+		mpOpenPassage(mob, line[len("mpopenpassage"):])
+		return
+	case "mpclosepassage":
+		mpClosePassage(mob, line[len("mpclosepassage"):])
+		return
+	case "mpfillin":
+		mpFillIn(mob, line[len("mpfillin"):])
+		return
+	case "mppeace":
+		mpPeace(mob, line[len("mppeace"):])
+		return
+	case "mppkset":
+		mpPkset(mob, line[len("mppkset"):])
+		return
+	case "mpoowner":
+		mpOowner(mob, line[len("mpoowner"):])
+		return
+	case "mphunt":
+		mpHunt(mob, line[len("mphunt"):])
+		return
+	case "mphate":
+		mpHate(mob, line[len("mphate"):])
+		return
+	case "mpdeposit":
+		mpDeposit(mob, line[len("mpdeposit"):])
+		return
+	case "mpwithdraw":
+		mpWithdraw(mob, line[len("mpwithdraw"):])
+		return
+	case "mpapply":
+		mpApply(mob, line[len("mpapply"):])
+		return
+	case "mpapplyb":
+		mpApplyB(mob, line[len("mpapplyb"):])
+		return
+	case "mpapplyaffect":
+		mpApplyAffect(mob, line[len("mpapplyaffect"):])
+		return
+	case "mpdelay":
+		mpDelay(mob, line[len("mpdelay"):])
+		return
+	case "mpstrew":
+		mpStrew(mob, line[len("mpstrew"):])
+		return
+	case "mpscatter":
+		mpScatter(mob, line[len("mpscatter"):])
+		return
+	case "mpdream":
+		mpDream(mob, line[len("mpdream"):])
+		return
+	case "mpnothing":
+		mpNothing(mob, line[len("mpnothing"):])
 		return
 	}
 

@@ -2,6 +2,7 @@ package act
 
 import (
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -59,6 +60,11 @@ func DoTell(ch *types.CharData, argument string) {
 		victim.Sendf("%s tells you '%s'\n\r", ch.Name, heard)
 	}
 	victim.Reply = ch
+
+	// Fire TELL progs on NPC targets after the message has been delivered.
+	if victim.IsNPC() {
+		mudprog.TrigTell(ch, victim, message)
+	}
 }
 
 // DoReply implements the 'reply' command: reply to last tell sender.
@@ -110,6 +116,8 @@ func DoYell(ch *types.CharData, argument string) {
 			wch.Sendf("%s yells '%s'\n\r", ch.Name, translateFor(ch, wch, argument))
 		}
 	}
+	mudprog.OprogSpeechTrigger(ch, argument)
+	mudprog.RprogSpeechTrigger(ch, argument)
 }
 
 // DoGossip implements the 'gossip' command: global channel message.
@@ -131,6 +139,8 @@ func DoGossip(ch *types.CharData, argument string) {
 		}
 		wch.Sendf("%s gossips '%s'\n\r", ch.Name, argument)
 	}
+	mudprog.OprogSpeechTrigger(ch, argument)
+	mudprog.RprogSpeechTrigger(ch, argument)
 }
 
 // DoShout implements the 'shout' command: message heard by all players.
@@ -152,6 +162,8 @@ func DoShout(ch *types.CharData, argument string) {
 		}
 		wch.Sendf("%s shouts '%s'\n\r", ch.Name, translateFor(ch, wch, argument))
 	}
+	mudprog.OprogSpeechTrigger(ch, argument)
+	mudprog.RprogSpeechTrigger(ch, argument)
 }
 
 // DoPmote implements the 'pmote' command: possessive emote.

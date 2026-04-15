@@ -164,6 +164,12 @@ func TestDoIfCheck_IsCharmed(t *testing.T) {
 	if DoIfCheck("ischarmed($n)", nil, normal, nil, nil, nil) {
 		t.Error("normal char should not be ischarmed")
 	}
+	// C IS_AFFECTED(AFF_CHARM) || IS_AFFECTED(AFF_POSSESS).
+	possessed := &types.CharData{Name: "Possessed"}
+	possessed.AffectedBy.Set(types.AFF_POSSESS)
+	if !DoIfCheck("ischarmed($n)", nil, possessed, nil, nil, nil) {
+		t.Error("possessed char should also count as ischarmed")
+	}
 }
 
 func TestDoIfCheck_IsFlying(t *testing.T) {

@@ -4,9 +4,14 @@ import (
 	"github.com/eilidhmae/smaug/internal/act"
 	"github.com/eilidhmae/smaug/internal/combat"
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
+
+// lastHour caches the last in-game hour so TrigHour/TrigTime only fire on
+// hour transitions. Package-level so the game loop can advance it.
+var lastHour = -1
 
 // hitGain calculates HP regeneration per tick for a character.
 func hitGain(ch *types.CharData) int {
@@ -124,6 +129,41 @@ func moveGain(ch *types.CharData) int {
 	return util.UMIN(gain, ch.MaxMove-ch.Move)
 }
 
+// weatherUpdate advances the in-game clock by one hour per PULSE_TICK and
+// fires HOUR/TIME mudprogs on hour boundaries. Mirrors the tick-based clock
+// advancement in C's weather_update/time_update.
+func (g *GameLoop) weatherUpdate() {
+	g.world.TimeInfo.Hour++
+	if g.world.TimeInfo.Hour >= 24 {
+		g.world.TimeInfo.Hour = 0
+		g.world.TimeInfo.Day++
+	}
+	hour := g.world.TimeInfo.Hour
+	if hour == lastHour {
+		return
+	}
+	lastHour = hour
+	mudprog.TrigHour(hour, g.world)
+	mudprog.TrigTime(hour, g.world)
+	mudprog.RprogHourTrigger(hour, g.world)
+	mudprog.RprogTimeTrigger(hour, g.world)
+}
+
+// roomRandomUpdate fires RAND progs on every loaded room that carries any
+// MudProgs. Cheap guard: skip rooms with no progs entirely. Called once per
+// violence pulse by the game loop.
+func (g *GameLoop) roomRandomUpdate() {
+	if g.world == nil {
+		return
+	}
+	for _, room := range g.world.Rooms {
+		if room == nil || len(room.MudProgs) == 0 {
+			continue
+		}
+		mudprog.RprogRandomTrigger(room)
+	}
+}
+
 // charUpdate runs per-tick character updates: regen, affect duration, hunger/thirst.
 func (g *GameLoop) charUpdate() {
 	for _, ch := range g.world.Characters {
@@ -201,8 +241,21 @@ func (g *GameLoop) charUpdate() {
 	}
 }
 
-// objUpdate runs per-tick object updates: timers, corpse decay.
+// objUpdate runs per-tick object updates: timers, corpse decay, obj-prog
+// RAND/RANDIW triggers.
 func (g *GameLoop) objUpdate() {
+	// Fire RAND/RANDIW obj-progs first (C matches: oprog_random_trigger is
+	// at the very top of obj_update, before timer decay). Use a snapshot in
+	// case a prog extracts the obj mid-iteration.
+	objs := make([]*types.ObjData, len(g.world.Objects))
+	copy(objs, g.world.Objects)
+	for _, obj := range objs {
+		if obj == nil {
+			continue
+		}
+		mudprog.OprogRandomTrigger(obj)
+	}
+
 	for i := len(g.world.Objects) - 1; i >= 0; i-- {
 		if i >= len(g.world.Objects) {
 			continue

@@ -2,6 +2,7 @@ package act
 
 import (
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -34,6 +35,7 @@ func DoGet(ch *types.CharData, argument string) {
 		}
 		handler.ObjToChar(obj, ch)
 		ch.Sendf("You get %s.\n\r", obj.ShortDescr)
+		mudprog.OprogGetTrigger(ch, obj)
 		return
 	}
 
@@ -65,6 +67,7 @@ func DoGet(ch *types.CharData, argument string) {
 	handler.ObjFromObj(obj)
 	handler.ObjToChar(obj, ch)
 	ch.Sendf("You get %s from %s.\n\r", obj.ShortDescr, container.ShortDescr)
+	mudprog.OprogGetTrigger(ch, obj)
 }
 
 // DoDrop implements the 'drop' command: drop objects to room.
@@ -94,6 +97,7 @@ func DoDrop(ch *types.CharData, argument string) {
 	handler.ObjFromChar(obj)
 	handler.ObjToRoom(obj, ch.InRoom)
 	ch.Sendf("You drop %s.\n\r", obj.ShortDescr)
+	mudprog.OprogDropTrigger(ch, obj)
 }
 
 // DoPut implements the 'put' command: put object in container.
@@ -213,6 +217,7 @@ func DoWear(ch *types.CharData, argument string) {
 	handler.ObjFromChar(obj)
 	handler.EquipChar(ch, obj, wearLoc)
 	ch.Sendf("You %s %s.\n\r", wearVerb(wearLoc), obj.ShortDescr)
+	mudprog.OprogWearTrigger(ch, obj)
 }
 
 // DoRemove implements the 'remove' command: remove worn equipment.
@@ -236,6 +241,7 @@ func DoRemove(ch *types.CharData, argument string) {
 
 	handler.UnequipChar(ch, obj)
 	ch.Sendf("You stop using %s.\n\r", obj.ShortDescr)
+	mudprog.OprogRemoveTrigger(ch, obj)
 }
 
 // DoSacrifice implements the 'sacrifice' command: destroy object for gold.
@@ -263,6 +269,7 @@ func DoSacrifice(ch *types.CharData, argument string) {
 		return
 	}
 
+	mudprog.OprogSacTrigger(ch, obj)
 	ch.Gold++
 	handler.ExtractObj(WorldRef, obj)
 	ch.Sendf("The gods give you one gold coin for your sacrifice of %s.\n\r", obj.ShortDescr)

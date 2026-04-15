@@ -3,6 +3,7 @@ package act
 import (
 	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/magic"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -83,6 +84,7 @@ func DoQuaff(ch *types.CharData, argument string) {
 	objItemCastSpell(obj.Value[2], obj.Value[0], ch, ch)
 	objItemCastSpell(obj.Value[3], obj.Value[0], ch, ch)
 
+	mudprog.OprogUseTrigger(ch, obj)
 	handler.ExtractObj(WorldRef, obj)
 }
 
@@ -134,6 +136,7 @@ func DoRecite(ch *types.CharData, argument string) {
 	objItemCastSpell(obj.Value[2], obj.Value[0], ch, victim)
 	objItemCastSpell(obj.Value[3], obj.Value[0], ch, victim)
 
+	mudprog.OprogUseTrigger(ch, obj)
 	handler.ExtractObj(WorldRef, obj)
 }
 
@@ -171,6 +174,8 @@ func DoBrandish(ch *types.CharData, argument string) {
 			objItemCastSpell(staff.Value[3], staff.Value[0], ch, rch)
 		}
 	}
+
+	mudprog.OprogUseTrigger(ch, staff)
 
 	if staff.Value[2] <= 0 {
 		ch.Send("The staff crumbles to dust.\n\r")
@@ -221,6 +226,9 @@ func DoZap(ch *types.CharData, argument string) {
 	}
 
 	objItemCastSpell(wand.Value[3], wand.Value[0], ch, victim)
+
+	mudprog.OprogUseTrigger(ch, wand)
+	mudprog.OprogZapTrigger(ch, wand)
 
 	if wand.Value[2] <= 0 {
 		ch.Send("The wand crumbles to dust.\n\r")

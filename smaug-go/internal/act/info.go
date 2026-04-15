@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 	"github.com/eilidhmae/smaug/internal/world"
@@ -80,6 +81,7 @@ func DoLook(ch *types.CharData, argument string) {
 	for _, obj := range room.Contents {
 		if util.IsName(arg, obj.Name) {
 			ch.Sendf("%s\n\r", obj.Description)
+			mudprog.OprogLookTrigger(ch, obj)
 			return
 		}
 	}
@@ -88,6 +90,7 @@ func DoLook(ch *types.CharData, argument string) {
 	for _, obj := range ch.Carrying {
 		if util.IsName(arg, obj.Name) {
 			ch.Sendf("%s\n\r", obj.Description)
+			mudprog.OprogLookTrigger(ch, obj)
 			return
 		}
 	}
@@ -111,6 +114,7 @@ func DoExamine(ch *types.CharData, argument string) {
 	if obj == nil {
 		return
 	}
+	mudprog.OprogExamineTrigger(ch, obj)
 
 	switch obj.ItemType {
 	case types.ITEM_DRINK_CON:
@@ -368,6 +372,8 @@ func DoSay(ch *types.CharData, argument string) {
 			}
 		}
 	}
+	mudprog.OprogSpeechTrigger(ch, argument)
+	mudprog.RprogSpeechTrigger(ch, argument)
 }
 
 // DoNorth etc. — movement commands
@@ -448,10 +454,16 @@ func MoveChar(ch *types.CharData, dir int) {
 
 	// Remove from old room
 	oldRoom := ch.InRoom
+	// Room-prog LEAVE fires BEFORE CharFromRoom so the prog still sees ch
+	// in room.People. C calls it at the same point in move_char.
+	mudprog.RprogLeaveTrigger(ch, oldRoom)
 	removeFromRoom(ch, oldRoom)
 
 	// Add to new room
 	addToRoom(ch, dest)
+	// Room-prog ENTER fires after ch is in the destination room, next to
+	// where mob-prog GREET and obj-prog GREET would fire.
+	mudprog.RprogEnterTrigger(ch)
 
 	// Arrive message
 	if dir < len(revDir) {
@@ -465,6 +477,10 @@ func MoveChar(ch *types.CharData, dir int) {
 
 	// Auto-look
 	DoLook(ch, "")
+
+	// Object-prog GREET fires after arrival. Mob-prog GREET is handled
+	// elsewhere (TrigGreet); this is the obj-prog G3 addition.
+	mudprog.OprogGreetTrigger(ch)
 
 	// ROOM_DEATH: entering a death trap kills the character.
 	if dest.RoomFlags.IsSet(types.ROOM_DEATH) && !ch.IsNPC() {

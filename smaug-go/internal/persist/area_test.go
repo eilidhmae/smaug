@@ -616,7 +616,7 @@ func TestCapitalizeFirst(t *testing.T) {
 func TestMprogNameToType(t *testing.T) {
 	tests := []struct {
 		name string
-		want int
+		want int64
 	}{
 		{"act_prog", types.MPROG_ACT},
 		{"speech_prog", types.MPROG_SPEECH},
@@ -779,5 +779,116 @@ func TestLoadAreas_NonAreFileSkipped(t *testing.T) {
 	}
 	if len(w.Areas) != 0 {
 		t.Errorf("Areas = %d, want 0 (non-.are file should be skipped)", len(w.Areas))
+	}
+}
+
+// --------------- mob/obj/room mudprog ProgTypes bit indexing ---------------
+
+// progTypeBitIndex returns the bit-index that ProgTypes.Set() must set for
+// a given MPROG_* flag value. Mirrors the production conversion using
+// math/bits.TrailingZeros64.
+func progTypeBitIndex(t *testing.T, flag int64) int {
+	t.Helper()
+	if flag == 0 {
+		t.Fatal("zero flag has no bit index")
+	}
+	idx := 0
+	v := uint64(flag)
+	for v&1 == 0 {
+		v >>= 1
+		idx++
+	}
+	return idx
+}
+
+func TestLoadMobProgs_SetsCorrectBitIndex_LowFlag(t *testing.T) {
+	// speech_prog (1<<1) -> ProgTypes bit index 1.
+	mob := &types.MobIndexData{Vnum: 1}
+	input := ">speech_prog hello~\nsay hi\n~\n|\n"
+	sc := NewScanner(strings.NewReader(input), "test")
+	loadMobProgs(sc, mob)
+
+	if len(mob.MudProgs) != 1 {
+		t.Fatalf("expected 1 prog, got %d", len(mob.MudProgs))
+	}
+	want := progTypeBitIndex(t, types.MPROG_SPEECH)
+	if !mob.ProgTypes.IsSet(want) {
+		t.Errorf("ProgTypes bit %d not set for speech_prog", want)
+	}
+}
+
+func TestLoadMobProgs_SetsCorrectBitIndex_HighFlag(t *testing.T) {
+	// login_prog (1<<32) — must convert flag → bit index 32, not pass raw flag.
+	mob := &types.MobIndexData{Vnum: 1}
+	input := ">login_prog 100~\nmpecho welcome\n~\n|\n"
+	sc := NewScanner(strings.NewReader(input), "test")
+	loadMobProgs(sc, mob)
+
+	if len(mob.MudProgs) != 1 {
+		t.Fatalf("expected 1 prog, got %d", len(mob.MudProgs))
+	}
+	want := progTypeBitIndex(t, types.MPROG_LOGIN)
+	if !mob.ProgTypes.IsSet(want) {
+		t.Errorf("ProgTypes bit %d not set for login_prog (raw flag=%d)", want, types.MPROG_LOGIN)
+	}
+}
+
+func TestLoadMobProgs_SetsCorrectBitIndex_CmdProg(t *testing.T) {
+	// cmd_prog (1<<37) — even higher bit.
+	mob := &types.MobIndexData{Vnum: 1}
+	input := ">cmd_prog dance~\nmpecho cant\n~\n|\n"
+	sc := NewScanner(strings.NewReader(input), "test")
+	loadMobProgs(sc, mob)
+
+	want := progTypeBitIndex(t, types.MPROG_CMD)
+	if !mob.ProgTypes.IsSet(want) {
+		t.Errorf("ProgTypes bit %d not set for cmd_prog", want)
+	}
+}
+
+func TestLoadObjExtras_SetsCorrectProgBitIndex_HighFlag(t *testing.T) {
+	obj := &types.ObjIndexData{Vnum: 1, Name: "thing"}
+	input := ">use_prog use~\nmpecho ok\n~\n|\n"
+	sc := NewScanner(strings.NewReader(input), "test")
+	loadObjExtras(sc, obj)
+
+	want := progTypeBitIndex(t, types.MPROG_USE)
+	if !obj.ProgTypes.IsSet(want) {
+		t.Errorf("ProgTypes bit %d not set for use_prog (raw flag=%d)", want, types.MPROG_USE)
+	}
+}
+
+func TestLoadRoomContents_SetsCorrectProgBitIndex_HighFlag(t *testing.T) {
+	room := &types.RoomIndexData{Vnum: 1}
+	input := ">login_prog 100~\nrpecho welcome\n~\n|\nS\n"
+	sc := NewScanner(strings.NewReader(input), "test")
+	loadRoomContents(sc, room, 1)
+
+	want := progTypeBitIndex(t, types.MPROG_LOGIN)
+	if !room.ProgTypes.IsSet(want) {
+		t.Errorf("room ProgTypes bit %d not set for login_prog", want)
+	}
+}
+
+func TestLoadMobProgs_MultiProg_SetsBothLowAndHighBits(t *testing.T) {
+	// Verifies a mob with BOTH act_prog (1<<0) and login_prog (1<<32) defined
+	// ends up with both bit indices set on ProgTypes — guarding against any
+	// regression that would clobber the low bit when the high bit is set.
+	mob := &types.MobIndexData{Vnum: 1}
+	input := ">act_prog p ~\nmpecho first\n~\n" +
+		">login_prog 100~\nmpecho second\n~\n|\n"
+	sc := NewScanner(strings.NewReader(input), "test")
+	loadMobProgs(sc, mob)
+
+	if len(mob.MudProgs) != 2 {
+		t.Fatalf("expected 2 progs, got %d", len(mob.MudProgs))
+	}
+	wantAct := progTypeBitIndex(t, types.MPROG_ACT)
+	wantLogin := progTypeBitIndex(t, types.MPROG_LOGIN)
+	if !mob.ProgTypes.IsSet(wantAct) {
+		t.Errorf("ProgTypes bit %d (act_prog) not set on multi-prog mob", wantAct)
+	}
+	if !mob.ProgTypes.IsSet(wantLogin) {
+		t.Errorf("ProgTypes bit %d (login_prog) not set on multi-prog mob", wantLogin)
 	}
 }

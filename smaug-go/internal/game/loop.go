@@ -13,6 +13,7 @@ import (
 
 	"github.com/eilidhmae/smaug/internal/act"
 	"github.com/eilidhmae/smaug/internal/command"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
@@ -124,8 +125,10 @@ func (g *GameLoop) pulse() {
 	g.pulseTick--
 	if g.pulseTick <= 0 {
 		g.pulseTick = types.PULSE_TICK
+		g.weatherUpdate()
 		g.charUpdate()
 		g.objUpdate()
+		g.roomRandomUpdate()
 		act.QuestUpdate(g.world)
 	}
 
@@ -134,6 +137,9 @@ func (g *GameLoop) pulse() {
 		g.pulseSave = types.PULSE_SAVE
 		g.autosave()
 	}
+
+	// Resume any suspended mudprogs whose timer has elapsed.
+	mudprog.SleepUpdate()
 
 	// 4. Flush output for all descriptors
 	g.flushOutput()
@@ -668,6 +674,10 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 		}
 	}
 
+	// Fire LOGIN progs on every NPC in the arrival room. Mirrors C's
+	// mprog_login_trigger call after room placement in smaug.c.
+	mudprog.TrigLogin(ch)
+
 	// Send initial prompt
 	d.WriteToBuffer(FormatPrompt(ch))
 }
@@ -771,6 +781,9 @@ func (g *GameLoop) closeDescriptor(d *types.DescriptorData) {
 					break
 				}
 			}
+			// After the PC has left the room, fire VOID progs on any NPCs
+			// the room now contains alone. Mirrors C's mprog_void_trigger.
+			mudprog.CheckVoid(ch.InRoom)
 		}
 
 		// Remove from world

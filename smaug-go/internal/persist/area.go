@@ -2,6 +2,7 @@ package persist
 
 import (
 	"fmt"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -504,7 +505,13 @@ func loadMobProgs(sc *Scanner, mob *types.MobIndexData) {
 			ComList: comList,
 		}
 		mob.MudProgs = append(mob.MudProgs, prog)
-		mob.ProgTypes.Set(prog.Type)
+		if prog.Type != 0 {
+			// MPROG_* values are bit-flags (e.g. MPROG_LOGIN = 1<<32). Convert
+			// the flag value to a bit-index for BitVector.Set, which expects an
+			// index in [0,128). Without this, high-bit triggers (USE/LOGIN/...)
+			// silently no-op.
+			mob.ProgTypes.Set(bits.TrailingZeros64(uint64(prog.Type)))
+		}
 
 		// After comlist, check for '|' separator
 		sep := sc.ReadLetter()
@@ -745,7 +752,9 @@ func loadObjExtras(sc *Scanner, obj *types.ObjIndexData) {
 				ComList: comList,
 			}
 			obj.MudProgs = append(obj.MudProgs, prog)
-			obj.ProgTypes.Set(prog.Type)
+			if prog.Type != 0 {
+				obj.ProgTypes.Set(bits.TrailingZeros64(uint64(prog.Type)))
+			}
 			// Consume '|' separator if present
 			sep := sc.ReadLetter()
 			if sep != '|' {
@@ -888,7 +897,9 @@ func loadRoomContents(sc *Scanner, room *types.RoomIndexData, vnum int) {
 				ComList: comList,
 			}
 			room.MudProgs = append(room.MudProgs, prog)
-			room.ProgTypes.Set(prog.Type)
+			if prog.Type != 0 {
+				room.ProgTypes.Set(bits.TrailingZeros64(uint64(prog.Type)))
+			}
 			sep := sc.ReadLetter()
 			if sep != '|' {
 				sc.unreadByte()
@@ -1142,7 +1153,7 @@ func parseUint32(s string) uint32 {
 
 // mprogNameToType converts a mudprog type name like "speech_prog" to its
 // MPROG_* constant bit value.
-func mprogNameToType(name string) int {
+func mprogNameToType(name string) int64 {
 	name = strings.ToLower(strings.TrimSpace(name))
 	switch name {
 	case "act_prog":
@@ -1209,6 +1220,28 @@ func mprogNameToType(name string) int {
 		return types.MPROG_SCRIPT
 	case "use_prog":
 		return types.MPROG_USE
+	case "login_prog":
+		return types.MPROG_LOGIN
+	case "void_prog":
+		return types.MPROG_VOID
+	case "tell_prog":
+		return types.MPROG_TELL
+	case "sell_prog":
+		return types.MPROG_SELL
+	case "imminfo_prog":
+		return types.MPROG_IMMINFO
+	case "cmd_prog":
+		return types.MPROG_CMD
+	// Room-prog compatibility aliases (mud.h #define ENTER_PROG ENTRY_PROG,
+	// RFIGHT_PROG FIGHT_PROG, RDEATH_PROG DEATH_PROG, RGREET_PROG GREET_PROG).
+	case "enter_prog":
+		return types.MPROG_ENTER
+	case "rfight_prog":
+		return types.MPROG_RFIGHT
+	case "rdeath_prog":
+		return types.MPROG_RDEATH
+	case "rgreet_prog":
+		return types.MPROG_RGREET
 	default:
 		util.Bug("mprogNameToType: unknown prog type '%s'", name)
 		return 0

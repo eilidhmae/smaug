@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 
 	"github.com/eilidhmae/smaug/internal/act"
+	"github.com/eilidhmae/smaug/internal/combat"
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/game"
 	"github.com/eilidhmae/smaug/internal/handler"
@@ -65,6 +66,17 @@ func main() {
 	// Wire mudprog system
 	mudprog.CmdRegistry = cmdReg
 	mudprog.WorldRef = w
+
+	// Wire combat → mudprog hooks (combat cannot import mudprog directly:
+	// mudprog already imports combat, so combat publishes func vars and main
+	// wires them to break the cycle).
+	combat.HitprcntHook = mudprog.TrigHitprcnt
+	combat.VoidHook = mudprog.CheckVoid
+	combat.ObjDamageHook = mudprog.OprogDamageTrigger
+	combat.RfightHook = mudprog.RprogRfightTrigger
+	combat.DeathRoomHook = mudprog.RprogDeathTrigger
+	cmdReg.ObjCommandHook = mudprog.OprogCommandTrigger
+	cmdReg.RoomCommandHook = mudprog.RprogCommandTrigger
 
 	// Wire OLC editor function
 	act.StartEditingFunc = game.StartEditing

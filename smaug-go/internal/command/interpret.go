@@ -26,6 +26,19 @@ type Registry struct {
 	commands       map[string]*Command
 	sorted         []*Command // sorted by name for prefix matching
 	SocialFallback func(ch *types.CharData, cmd string, argument string) bool
+	// ObjCommandHook is consulted only when no registered command matches the
+	// input. It gives obj-progs a chance to consume an unknown command. If it
+	// returns true, dispatch stops; otherwise the room hook + social fallback
+	// are tried. Wired from main to mudprog.OprogCommandTrigger to avoid an
+	// import cycle (mudprog imports command).
+	ObjCommandHook func(ch *types.CharData, line string) bool
+	// RoomCommandHook is consulted after ObjCommandHook (still in the
+	// unknown-command path) before the social fallback. Wired from main to
+	// mudprog.RprogCommandTrigger. Full precedence (C-matching, see
+	// src/interp.c): normal command → obj-prog CMD → room-prog CMD →
+	// social fallback → "Huh?". Hooks fire in the unknown-command path so a
+	// greedy CMD prog cannot swallow real commands like "quit" or "north".
+	RoomCommandHook func(ch *types.CharData, line string) bool
 }
 
 // NewRegistry creates a new empty command registry.
@@ -77,7 +90,15 @@ func (r *Registry) Interpret(ch *types.CharData, argument string) {
 	cmd := r.Find(cmdWord, trust)
 
 	if cmd == nil {
-		// Try social fallback before giving up
+		// No registered command matched. Mirror C's interp.c order: try the
+		// obj-prog CMD hook first, then the room-prog CMD hook, then the
+		// social fallback, before finally giving up with "Huh?".
+		if r.ObjCommandHook != nil && r.ObjCommandHook(ch, argument) {
+			return
+		}
+		if r.RoomCommandHook != nil && r.RoomCommandHook(ch, argument) {
+			return
+		}
 		if r.SocialFallback != nil && r.SocialFallback(ch, cmdWord, rest) {
 			return
 		}

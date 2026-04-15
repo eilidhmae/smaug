@@ -8,6 +8,7 @@ import (
 	"github.com/eilidhmae/smaug/internal/combat"
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -182,6 +183,10 @@ func DoRstat(ch *types.CharData, argument string) {
 		return
 	}
 
+	// Room-prog IMMINFO fires when an immortal inspects a room via rstat.
+	// C: rprog_imminfo_trigger is invoked from do_rstat.
+	mudprog.RprogImminfoTrigger(ch)
+
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "&W--- Room Stat: %s ---&D\n\r", room.Name)
@@ -303,6 +308,8 @@ func teleportTo(ch *types.CharData, dest *types.RoomIndexData) {
 		handler.CharFromRoom(ch)
 	}
 	handler.CharToRoom(ch, dest)
+	// Room-prog IMMINFO fires on immortal arrival via goto/transfer.
+	mudprog.RprogImminfoTrigger(ch)
 
 	msg := ch.Name + " appears in a swirling mist."
 	if ch.PCData != nil && ch.PCData.BamfIn != "" {

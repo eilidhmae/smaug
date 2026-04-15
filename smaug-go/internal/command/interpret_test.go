@@ -291,6 +291,128 @@ func TestInterpretWithTrustCap_PositionCheck(t *testing.T) {
 	}
 }
 
+// ---------- Hook precedence tests ----------
+
+// Real commands must dispatch first; obj/room CMD hooks are fallbacks for
+// unmatched input. C interp.c fires oprog/rprog command hooks only when no
+// real command name matches.
+func TestInterpret_NormalCommandWinsOverObjHook(t *testing.T) {
+	r := NewRegistry()
+	cmdRan := false
+	hookRan := false
+	r.Register(&Command{
+		Name: "quit", Position: 0, Level: 0,
+		DoFun: func(ch *types.CharData, argument string) { cmdRan = true },
+	})
+	r.ObjCommandHook = func(ch *types.CharData, line string) bool {
+		hookRan = true
+		return true // greedy hook would otherwise swallow everything
+	}
+
+	ch, client := makeTestChar("P")
+	defer client.Close()
+	defer ch.Desc.Conn.Close()
+
+	r.Interpret(ch, "quit")
+
+	if !cmdRan {
+		t.Error("normal 'quit' command should run before obj hook")
+	}
+	if hookRan {
+		t.Error("obj hook should NOT fire when a normal command matches")
+	}
+}
+
+func TestInterpret_NormalCommandWinsOverRoomHook(t *testing.T) {
+	r := NewRegistry()
+	cmdRan := false
+	hookRan := false
+	r.Register(&Command{
+		Name: "north", Position: 0, Level: 0,
+		DoFun: func(ch *types.CharData, argument string) { cmdRan = true },
+	})
+	r.RoomCommandHook = func(ch *types.CharData, line string) bool {
+		hookRan = true
+		return true
+	}
+
+	ch, client := makeTestChar("P")
+	defer client.Close()
+	defer ch.Desc.Conn.Close()
+
+	r.Interpret(ch, "north")
+
+	if !cmdRan {
+		t.Error("normal 'north' should run before room hook")
+	}
+	if hookRan {
+		t.Error("room hook should NOT fire when a normal command matches")
+	}
+}
+
+func TestInterpret_ObjHookFiresWhenNoCommandMatches(t *testing.T) {
+	r := NewRegistry()
+	hookRan := false
+	r.ObjCommandHook = func(ch *types.CharData, line string) bool {
+		hookRan = true
+		return true
+	}
+	ch, client := makeTestChar("P")
+	defer client.Close()
+	defer ch.Desc.Conn.Close()
+
+	r.Interpret(ch, "xyzzy")
+	if !hookRan {
+		t.Error("obj hook should fire when no normal command matches")
+	}
+	out := readOutput(ch, client)
+	if out != "" {
+		t.Errorf("hook consumed input, no Huh? expected, got %q", out)
+	}
+}
+
+func TestInterpret_RoomHookFiresAfterObjHook(t *testing.T) {
+	r := NewRegistry()
+	objCalled, roomCalled := false, false
+	r.ObjCommandHook = func(ch *types.CharData, line string) bool {
+		objCalled = true
+		return false // no obj consumed it
+	}
+	r.RoomCommandHook = func(ch *types.CharData, line string) bool {
+		roomCalled = true
+		return true
+	}
+	ch, client := makeTestChar("P")
+	defer client.Close()
+	defer ch.Desc.Conn.Close()
+
+	r.Interpret(ch, "xyzzy")
+
+	if !objCalled || !roomCalled {
+		t.Errorf("expected obj=true room=true, got obj=%v room=%v", objCalled, roomCalled)
+	}
+}
+
+func TestInterpret_SocialFiresAfterHooksWhenUnconsumed(t *testing.T) {
+	r := NewRegistry()
+	r.ObjCommandHook = func(ch *types.CharData, line string) bool { return false }
+	r.RoomCommandHook = func(ch *types.CharData, line string) bool { return false }
+	socialFired := false
+	r.SocialFallback = func(ch *types.CharData, cmd string, argument string) bool {
+		socialFired = true
+		return true
+	}
+
+	ch, client := makeTestChar("P")
+	defer client.Close()
+	defer ch.Desc.Conn.Close()
+
+	r.Interpret(ch, "wiggle")
+	if !socialFired {
+		t.Error("social fallback should fire after hooks decline")
+	}
+}
+
 func TestInterpretWithTrustCap_NoCapNeeded(t *testing.T) {
 	r := NewRegistry()
 	dispatched := false

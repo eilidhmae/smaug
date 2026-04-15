@@ -2,6 +2,7 @@ package act
 
 import (
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/mudprog"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -156,6 +157,7 @@ func DoRepair(ch *types.CharData, argument string) {
 		verb = "recharges"
 	}
 	ch.Sendf("%s %s %s for %d gold.\n\r", keeper.ShortDescr, verb, obj.ShortDescr, cost)
+	mudprog.OprogRepairTrigger(ch, obj)
 }
 
 // DoAppraise aliases `repair estimate` for legacy muscle memory.
