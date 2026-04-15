@@ -270,10 +270,6 @@ When adding tests for code that already exists, use mutation testing to verify t
 - **World operations** — test AddChar/RemoveChar, GetRoom, etc.
 - **Commands** — use a fake descriptor with a buffer to capture output, verify command output
 
-### Use Sub-Agents whenever possible
-1. You read the full documents so that you have the full context.
-2. Give the Sub-Agents explicit directions. Do not give them full context.
-
 ### Running tests
 ```bash
 cd smaug-go
