@@ -50,7 +50,7 @@ type BoardData struct {
 	Type           int
 }
 
-// BanData for site bans.
+// BanData for site/class/race bans.
 // Maps to C struct ban_data (mud.h:748).
 type BanData struct {
 	Name      string
@@ -59,6 +59,7 @@ type BanData struct {
 	BanBy     string
 	BanTime   string
 	Flag      int
+	Type      int // BAN_SITE (default for legacy records), BAN_CLASS, or BAN_RACE.
 	UnbanDate int
 	Duration  int
 	Level     int

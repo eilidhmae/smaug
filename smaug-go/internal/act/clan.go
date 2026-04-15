@@ -92,7 +92,7 @@ func DoClantalk(ch *types.CharData, argument string) {
 		if d.Character != nil && d.Character != ch &&
 			d.Character.PCData != nil && d.Character.PCData.Clan == clan {
 			d.Character.Sendf("&G[%s] %s clantalks '%s'&D\n\r",
-				clan.Name, ch.Name, argument)
+				clan.Name, ch.Name, translateFor(ch, d.Character, argument))
 		}
 	}
 }
@@ -137,6 +137,99 @@ func DoClanLeave(ch *types.CharData, argument string) {
 	ch.Sendf("You leave %s.\n\r", clan.Name)
 	ch.PCData.Clan = nil
 	ch.PCData.ClanName = ""
+}
+
+// clanWithdrawAllowed returns true if ch may withdraw from clan's storeroom.
+func clanWithdrawAllowed(ch *types.CharData, clan *types.ClanData) bool {
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_HOLYLIGHT) {
+		return true
+	}
+	if strings.EqualFold(ch.Name, clan.Leader) {
+		return true
+	}
+	if strings.EqualFold(ch.Name, clan.Number1) {
+		return true
+	}
+	if strings.EqualFold(ch.Name, clan.Number2) {
+		return true
+	}
+	return false
+}
+
+// DoClanDeposit moves an item from the player's inventory into their clan's
+// storeroom. Members only; storeroom vnum must resolve to a loaded room.
+// Contents are volatile — persistent storage across reboots is a follow-up.
+func DoClanDeposit(ch *types.CharData, argument string) {
+	if ch.IsNPC() || ch.PCData == nil || ch.PCData.Clan == nil {
+		ch.Send("You aren't in a clan.\n\r")
+		return
+	}
+	clan := ch.PCData.Clan
+	if clan.Storeroom == 0 {
+		ch.Send("Your clan has no storeroom.\n\r")
+		return
+	}
+	store := WorldRef.GetRoom(clan.Storeroom)
+	if store == nil {
+		ch.Send("Your clan's storeroom cannot be reached right now.\n\r")
+		return
+	}
+	arg, _ := util.OneArgument(argument)
+	if arg == "" {
+		ch.Send("Deposit what?\n\r")
+		return
+	}
+	obj := handler.GetObjCarry(ch, arg)
+	if obj == nil {
+		ch.Send("You do not have that item.\n\r")
+		return
+	}
+	handler.ObjFromChar(obj)
+	handler.ObjToRoom(obj, store)
+	ch.Sendf("You deposit %s in the clan storeroom.\n\r", obj.ShortDescr)
+}
+
+// DoClanWithdraw moves an item out of the clan storeroom into the player's
+// inventory. Leader or #1/#2 officers only — this deliberately prevents a
+// single recruit from draining the vault. Holylight also bypasses.
+func DoClanWithdraw(ch *types.CharData, argument string) {
+	if ch.IsNPC() || ch.PCData == nil || ch.PCData.Clan == nil {
+		ch.Send("You aren't in a clan.\n\r")
+		return
+	}
+	clan := ch.PCData.Clan
+	if clan.Storeroom == 0 {
+		ch.Send("Your clan has no storeroom.\n\r")
+		return
+	}
+	if !clanWithdrawAllowed(ch, clan) {
+		ch.Send("Only clan leaders may withdraw from the storeroom.\n\r")
+		return
+	}
+	store := WorldRef.GetRoom(clan.Storeroom)
+	if store == nil {
+		ch.Send("Your clan's storeroom cannot be reached right now.\n\r")
+		return
+	}
+	arg, _ := util.OneArgument(argument)
+	if arg == "" {
+		ch.Send("Withdraw what?\n\r")
+		return
+	}
+	var target *types.ObjData
+	for _, obj := range store.Contents {
+		if util.IsName(arg, obj.Name) {
+			target = obj
+			break
+		}
+	}
+	if target == nil {
+		ch.Sendf("No %s in the clan storeroom.\n\r", arg)
+		return
+	}
+	handler.ObjFromRoom(target)
+	handler.ObjToChar(target, ch)
+	ch.Sendf("You withdraw %s from the clan storeroom.\n\r", target.ShortDescr)
 }
 
 // --- Deity Commands ---
@@ -208,6 +301,50 @@ func DoDevote(ch *types.CharData, argument string) {
 
 // --- Board/Note Commands ---
 
+// isNoteTo reports whether ch is a valid recipient of note.
+// Mirrors C's is_note_to from boards.c: "all" matches everyone; otherwise
+// the recipient list is tokenized on whitespace and ch.Name must appear.
+// Immortals with holylight see every note.
+func isNoteTo(ch *types.CharData, note *types.NoteData) bool {
+	if note == nil {
+		return false
+	}
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_HOLYLIGHT) {
+		return true
+	}
+	if strings.EqualFold(note.Sender, ch.Name) {
+		return true
+	}
+	list := strings.ToLower(note.ToList)
+	if list == "" || list == "all" {
+		return true
+	}
+	chName := strings.ToLower(ch.Name)
+	for _, tok := range strings.Fields(list) {
+		if tok == "all" || tok == chName {
+			return true
+		}
+	}
+	return false
+}
+
+// UnreadNotesFor returns how many notes on any board mention ch as a recipient.
+// Caller-driven; used by enterGame to greet with a mailbox summary.
+func UnreadNotesFor(ch *types.CharData) int {
+	if WorldRef == nil {
+		return 0
+	}
+	n := 0
+	for _, b := range WorldRef.Boards {
+		for _, note := range b.Notes {
+			if isNoteTo(ch, note) {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // DoNote implements the 'note' command: read/list/write/post/remove notes.
 func DoNote(ch *types.CharData, argument string) {
 	arg, rest := util.OneArgument(argument)
@@ -244,12 +381,17 @@ func DoNote(ch *types.CharData, argument string) {
 
 	switch strings.ToLower(arg) {
 	case "list":
-		if len(board.Notes) == 0 {
-			ch.Send("There are no notes.\n\r")
-			return
-		}
+		shown := 0
 		for i, note := range board.Notes {
+			if !isNoteTo(ch, note) {
+				continue
+			}
 			ch.Sendf("[%2d] %s: %s\n\r", i+1, note.Sender, note.Subject)
+			shown++
+		}
+		if shown == 0 {
+			ch.Send("There are no notes for you.\n\r")
+			return
 		}
 
 	case "read":
@@ -262,6 +404,10 @@ func DoNote(ch *types.CharData, argument string) {
 			return
 		}
 		note := board.Notes[num-1]
+		if !isNoteTo(ch, note) {
+			ch.Send("That note is not for you.\n\r")
+			return
+		}
 		ch.Sendf("&W[%d] %s: %s&D\n\r", num, note.Sender, note.Subject)
 		ch.Sendf("Date: %s  To: %s\n\r", note.Date, note.ToList)
 		ch.Send(note.Text)

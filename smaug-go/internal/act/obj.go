@@ -81,6 +81,11 @@ func DoDrop(ch *types.CharData, argument string) {
 		return
 	}
 
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_NODROP) {
+		ch.Send("A magical force stops you.\n\r")
+		return
+	}
+
 	if !handler.CanDropObj(obj) {
 		ch.Send("You can't let go of it.\n\r")
 		return
@@ -182,6 +187,11 @@ func DoWear(ch *types.CharData, argument string) {
 		return
 	}
 
+	if msg := itemWearRestriction(ch, obj); msg != "" {
+		ch.Send(msg)
+		return
+	}
+
 	wearLoc := findWearLoc(obj)
 	if wearLoc == types.WEAR_NONE {
 		ch.Send("You can't wear, wield, or hold that.\n\r")
@@ -256,6 +266,44 @@ func DoSacrifice(ch *types.CharData, argument string) {
 	ch.Gold++
 	handler.ExtractObj(WorldRef, obj)
 	ch.Sendf("The gods give you one gold coin for your sacrifice of %s.\n\r", obj.ShortDescr)
+}
+
+// itemWearRestriction returns a refusal message if ch can't wear obj due to
+// ITEM_ANTI_* flags; empty string means no restriction.
+func itemWearRestriction(ch *types.CharData, obj *types.ObjData) string {
+	// Immortals bypass anti-restrictions (holylight treated as trust).
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_HOLYLIGHT) {
+		return ""
+	}
+	align := ch.Alignment
+	if obj.ExtraFlags.IsSet(types.ITEM_ANTI_EVIL) && align <= -350 {
+		return "You are too evil to use that.\n\r"
+	}
+	if obj.ExtraFlags.IsSet(types.ITEM_ANTI_GOOD) && align >= 350 {
+		return "You are too good to use that.\n\r"
+	}
+	if obj.ExtraFlags.IsSet(types.ITEM_ANTI_NEUTRAL) && align > -350 && align < 350 {
+		return "You are too neutral to use that.\n\r"
+	}
+	switch ch.Class {
+	case types.CLASS_MAGE:
+		if obj.ExtraFlags.IsSet(types.ITEM_ANTI_MAGE) {
+			return "Mages can't use that.\n\r"
+		}
+	case types.CLASS_CLERIC:
+		if obj.ExtraFlags.IsSet(types.ITEM_ANTI_CLERIC) {
+			return "Clerics can't use that.\n\r"
+		}
+	case types.CLASS_THIEF:
+		if obj.ExtraFlags.IsSet(types.ITEM_ANTI_THIEF) {
+			return "Thieves can't use that.\n\r"
+		}
+	case types.CLASS_WARRIOR:
+		if obj.ExtraFlags.IsSet(types.ITEM_ANTI_WARRIOR) {
+			return "Warriors can't use that.\n\r"
+		}
+	}
+	return ""
 }
 
 // findWearLoc determines the wear location for an object based on its wear flags.

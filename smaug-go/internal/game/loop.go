@@ -448,6 +448,12 @@ func (g *GameLoop) nannyGetNewClass(d *types.DescriptorData, line string) {
 		return
 	}
 
+	if ban := act.CheckClassBan(g.world, g.world.Classes[classIdx].WhoName, d.Character.Level); ban != nil {
+		d.WriteToBuffer("That class is currently banned.\n\r")
+		g.showClassMenu(d)
+		return
+	}
+
 	d.Character.Class = classIdx
 
 	g.showRaceMenu(d)
@@ -471,6 +477,11 @@ func (g *GameLoop) nannyGetNewRace(d *types.DescriptorData, line string) {
 			// Check class restriction
 			if r.ClassRestriction != 0 && (r.ClassRestriction&(1<<d.Character.Class)) != 0 {
 				d.WriteToBuffer("That race is not available for your class.\n\r")
+				g.showRaceMenu(d)
+				return
+			}
+			if ban := act.CheckRaceBan(g.world, r.Name, d.Character.Level); ban != nil {
+				d.WriteToBuffer("That race is currently banned.\n\r")
 				g.showRaceMenu(d)
 				return
 			}
@@ -560,6 +571,9 @@ func (g *GameLoop) createNewCharacter(name string) *types.CharData {
 	}
 	ch.Act.Set(types.PLR_AUTOEXIT)
 	ch.Act.Set(types.PLR_ANSI)
+	// Everyone knows Common by default; race bonuses add the racial language.
+	ch.Speaks = int(types.LANG_COMMON)
+	ch.Speaking = int(types.LANG_COMMON)
 	return ch
 }
 
@@ -575,6 +589,16 @@ func (g *GameLoop) applyRaceBonuses(ch *types.CharData, race *types.RaceData) {
 	ch.AffectedBy = ch.AffectedBy.Or(race.Affected)
 	ch.Resistant = race.Resist
 	ch.Susceptible = race.Suscept
+	if race.Language != 0 {
+		ch.Speaks |= race.Language
+	}
+}
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // enterGame places a character into the game world.
@@ -621,6 +645,10 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 	log.Printf("%s has entered the game from %s", ch.Name, d.Host)
 
 	d.WriteToBuffer("\n\rWelcome to SMAUG!\n\r\n\r")
+
+	if n := act.UnreadNotesFor(ch); n > 0 {
+		d.WriteToBufferf("You have %d note%s addressed to you.\n\r", n, pluralS(n))
+	}
 
 	// Auto-look
 	if ch.InRoom != nil {

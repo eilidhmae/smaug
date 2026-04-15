@@ -8,6 +8,9 @@ import (
 )
 
 // objItemCastSpell looks up and invokes the spell function for a given skill slot.
+// Callers are expected to have already checked roomSuppressesMagic before
+// consuming the item — otherwise a potion in a no-magic room would be
+// destroyed without effect.
 func objItemCastSpell(sn int, level int, ch *types.CharData, victim *types.CharData) {
 	if WorldRef == nil || sn <= 0 || sn >= len(WorldRef.Skills) {
 		return
@@ -21,6 +24,17 @@ func objItemCastSpell(sn int, level int, ch *types.CharData, victim *types.CharD
 		return
 	}
 	spellFn(WorldRef, sn, level, ch, victim)
+}
+
+// noMagicSuppresses reports whether the caller should abort before consuming
+// an item or charge because ch's room (or its area) suppresses magic. Matches
+// C `src/magic.c:obj_cast_spell` gate.
+func noMagicSuppresses(ch *types.CharData) bool {
+	if ch.InRoom != nil && roomSuppressesMagic(ch.InRoom) {
+		ch.Send("Nothing seems to happen.\n\r")
+		return true
+	}
+	return false
 }
 
 // findHeldItemType finds an equipped item of the given type at WEAR_HOLD.
@@ -49,6 +63,10 @@ func DoQuaff(ch *types.CharData, argument string) {
 
 	if obj.ItemType != types.ITEM_POTION {
 		ch.Send("You can only quaff potions.\n\r")
+		return
+	}
+
+	if noMagicSuppresses(ch) {
 		return
 	}
 
@@ -84,6 +102,10 @@ func DoRecite(ch *types.CharData, argument string) {
 
 	if obj.ItemType != types.ITEM_SCROLL {
 		ch.Send("You can only recite scrolls.\n\r")
+		return
+	}
+
+	if noMagicSuppresses(ch) {
 		return
 	}
 
@@ -128,6 +150,10 @@ func DoBrandish(ch *types.CharData, argument string) {
 		return
 	}
 
+	if noMagicSuppresses(ch) {
+		return
+	}
+
 	staff.Value[2]--
 
 	ch.Sendf("You brandish %s.\n\r", staff.ShortDescr)
@@ -162,6 +188,10 @@ func DoZap(ch *types.CharData, argument string) {
 
 	if wand.Value[2] <= 0 {
 		ch.Send("The wand has no charges remaining.\n\r")
+		return
+	}
+
+	if noMagicSuppresses(ch) {
 		return
 	}
 

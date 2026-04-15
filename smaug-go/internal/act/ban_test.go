@@ -263,3 +263,74 @@ func TestCheckBans_SuffixNoMatch(t *testing.T) {
 		t.Errorf("expected nil for non-suffix match, got %+v", result)
 	}
 }
+
+// --- Class/race bans (G7) ---
+
+func TestDoBan_ClassAddedWithLevel(t *testing.T) {
+	w := setupWizWorld()
+	ch, client := makeImmTestChar("Admin")
+	defer client.Close()
+
+	DoBan(ch, "class mage 10")
+	_ = readOutput(ch, client)
+
+	if len(w.Bans) != 1 {
+		t.Fatalf("expected 1 ban, got %d", len(w.Bans))
+	}
+	b := w.Bans[0]
+	if b.Type != types.BAN_CLASS {
+		t.Errorf("expected BAN_CLASS, got %d", b.Type)
+	}
+	if b.Name != "mage" {
+		t.Errorf("expected name 'mage', got %q", b.Name)
+	}
+	if b.Level != 10 {
+		t.Errorf("expected level 10, got %d", b.Level)
+	}
+}
+
+func TestDoBan_RaceAdded(t *testing.T) {
+	w := setupWizWorld()
+	ch, client := makeImmTestChar("Admin")
+	defer client.Close()
+
+	DoBan(ch, "race troll")
+	_ = readOutput(ch, client)
+	if len(w.Bans) != 1 || w.Bans[0].Type != types.BAN_RACE {
+		t.Fatalf("expected one race ban, got %+v", w.Bans)
+	}
+}
+
+func TestCheckClassBan_BelowLevel(t *testing.T) {
+	w := world.New("/tmp/test")
+	w.Bans = append(w.Bans, &types.BanData{
+		Name: "mage", Type: types.BAN_CLASS, Level: 10,
+	})
+	if CheckClassBan(w, "Mage", 5) == nil {
+		t.Errorf("level 5 mage should be banned when level threshold is 10")
+	}
+	if CheckClassBan(w, "Mage", 15) != nil {
+		t.Errorf("level 15 mage should NOT be banned above threshold")
+	}
+}
+
+func TestCheckRaceBan_Unconditional(t *testing.T) {
+	w := world.New("/tmp/test")
+	w.Bans = append(w.Bans, &types.BanData{
+		Name: "troll", Type: types.BAN_RACE, Level: 0,
+	})
+	if CheckRaceBan(w, "Troll", 50) == nil {
+		t.Errorf("troll should be banned at all levels when threshold is 0")
+	}
+}
+
+func TestCheckBans_OnlyMatchesSiteType(t *testing.T) {
+	w := world.New("/tmp/test")
+	// A class ban named "evil.com" should NOT match a site-ban lookup.
+	w.Bans = append(w.Bans, &types.BanData{
+		Name: "evil.com", Type: types.BAN_CLASS,
+	})
+	if CheckBans(w, "evil.com") != nil {
+		t.Errorf("class ban should not match site lookup")
+	}
+}

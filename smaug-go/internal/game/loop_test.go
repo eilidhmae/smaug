@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/eilidhmae/smaug/internal/act"
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/persist"
@@ -1372,5 +1373,106 @@ func TestBruteForceProtection(t *testing.T) {
 	}
 	if d.Connected != -1 {
 		t.Errorf("3 failed attempts should disconnect, got %d", d.Connected)
+	}
+}
+
+// --- Adversary-follow-up coverage tests ---
+
+func TestNanny_GetNewClass_Banned(t *testing.T) {
+	g := newTestLoop()
+	g.world.Classes = make([]*types.ClassType, 20)
+	g.world.Classes[0] = &types.ClassType{WhoName: "Mage"}
+	g.world.Races = make([]*types.RaceData, 20)
+	g.world.Races[0] = &types.RaceData{Name: "Human"}
+	g.world.Bans = append(g.world.Bans, &types.BanData{
+		Name: "mage", Type: types.BAN_CLASS, Level: 10,
+	})
+
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	d := types.NewDescriptor(s)
+	ch := g.createNewCharacter("Bantest")
+	ch.Desc = d
+	d.Character = ch
+
+	g.nannyGetNewClass(d, "Mage")
+
+	if d.Connected == types.CON_GET_NEW_RACE {
+		t.Error("banned class should not advance to race selection")
+	}
+	if ch.Class == 0 {
+		// Class was set to 0 — verify by checking it wasn't kept.
+		// The test char defaults to Class=0 already, so we check the state
+		// didn't advance instead.
+	}
+}
+
+func TestNanny_GetNewRace_Banned(t *testing.T) {
+	g := newTestLoop()
+	g.world.Classes = make([]*types.ClassType, 20)
+	g.world.Classes[0] = &types.ClassType{WhoName: "Mage"}
+	g.world.Races = make([]*types.RaceData, 20)
+	g.world.Races[0] = &types.RaceData{Name: "Troll"}
+	g.world.Bans = append(g.world.Bans, &types.BanData{
+		Name: "troll", Type: types.BAN_RACE, Level: 0, // 0 = block everyone
+	})
+
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	d := types.NewDescriptor(s)
+	ch := g.createNewCharacter("Bantest")
+	ch.Desc = d
+	d.Character = ch
+	d.Connected = types.CON_GET_NEW_RACE
+
+	g.nannyGetNewRace(d, "Troll")
+
+	if d.Connected == types.CON_READ_MOTD {
+		t.Error("banned race should not advance to MOTD")
+	}
+}
+
+func TestEnterGame_MailGreetingShown(t *testing.T) {
+	g := newTestLoop()
+	g.world.Rooms[types.ROOM_VNUM_TEMPLE] = &types.RoomIndexData{
+		Vnum: types.ROOM_VNUM_TEMPLE, Name: "Temple",
+	}
+	board := &types.BoardData{
+		Notes: []*types.NoteData{
+			{Sender: "Someone", Subject: "Hello", ToList: "Mailer"},
+		},
+	}
+	g.world.Boards = append(g.world.Boards, board)
+
+	origRef := act.WorldRef
+	act.WorldRef = g.world
+	defer func() { act.WorldRef = origRef }()
+
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+	d := types.NewDescriptor(s)
+	ch := &types.CharData{
+		Name: "Mailer", Position: types.POS_STANDING,
+		PCData: &types.PCData{},
+	}
+	ch.Desc = d
+	d.Character = ch
+
+	got := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 8192)
+		n, _ := c.Read(buf)
+		got <- string(buf[:n])
+	}()
+
+	g.enterGame(d)
+	_ = d.FlushOutput()
+
+	out := <-got
+	if !strings.Contains(out, "1 note") {
+		t.Errorf("expected mailbox greeting; got %q", out)
 	}
 }

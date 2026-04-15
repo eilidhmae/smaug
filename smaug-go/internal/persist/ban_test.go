@@ -115,3 +115,33 @@ func TestBanLoadFileNotFound(t *testing.T) {
 		t.Errorf("expected 0 bans from missing file, got %d", len(w.Bans))
 	}
 }
+
+func TestBanRoundTrip_ClassAndRace(t *testing.T) {
+	w := world.New("/tmp/test")
+	w.Bans = []*types.BanData{
+		{Name: "mage", BanBy: "Imm", BanTime: "2026-04-14", Type: types.BAN_CLASS, Level: 10},
+		{Name: "troll", BanBy: "Imm", BanTime: "2026-04-14", Type: types.BAN_RACE, Level: 0},
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ban.lst")
+	if err := SaveBanList(w, path); err != nil {
+		t.Fatalf("SaveBanList: %v", err)
+	}
+
+	w2 := world.New("/tmp/test")
+	if err := LoadBanList(w2, path); err != nil {
+		t.Fatalf("LoadBanList: %v", err)
+	}
+	if len(w2.Bans) != 2 {
+		t.Fatalf("expected 2 bans, got %d", len(w2.Bans))
+	}
+	classBan := w2.Bans[0]
+	if classBan.Type != types.BAN_CLASS || classBan.Level != 10 {
+		t.Errorf("class ban mismatch: %+v", classBan)
+	}
+	raceBan := w2.Bans[1]
+	if raceBan.Type != types.BAN_RACE {
+		t.Errorf("race ban type mismatch: got %d", raceBan.Type)
+	}
+}

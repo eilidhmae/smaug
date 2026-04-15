@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -599,5 +600,219 @@ func TestDoNote_NoBoard(t *testing.T) {
 	out := readOutput(ch, client)
 	if !strings.Contains(out, "no board") {
 		t.Errorf("expected 'no board', got: %q", out)
+	}
+}
+
+// --- G8: mail targeting ---
+
+func TestIsNoteTo_AllRecipient(t *testing.T) {
+	ch := &types.CharData{Name: "Alice"}
+	note := &types.NoteData{ToList: "all"}
+	if !isNoteTo(ch, note) {
+		t.Errorf("note 'all' should be visible to everyone")
+	}
+}
+
+func TestIsNoteTo_RecipientMatch(t *testing.T) {
+	alice := &types.CharData{Name: "Alice"}
+	bob := &types.CharData{Name: "Bob"}
+	note := &types.NoteData{ToList: "Alice Carol"}
+	if !isNoteTo(alice, note) {
+		t.Errorf("Alice should receive the note")
+	}
+	if isNoteTo(bob, note) {
+		t.Errorf("Bob should not receive the note")
+	}
+}
+
+func TestIsNoteTo_SenderAlwaysSees(t *testing.T) {
+	ch := &types.CharData{Name: "Alice"}
+	note := &types.NoteData{Sender: "Alice", ToList: "Bob"}
+	if !isNoteTo(ch, note) {
+		t.Errorf("sender should see their own note")
+	}
+}
+
+func TestIsNoteTo_HolylightSeesAll(t *testing.T) {
+	ch := &types.CharData{Name: "Imm", PCData: &types.PCData{}}
+	ch.Act.Set(types.PLR_HOLYLIGHT)
+	note := &types.NoteData{Sender: "Bob", ToList: "Carol"}
+	if !isNoteTo(ch, note) {
+		t.Errorf("holylight should see every note")
+	}
+}
+
+func TestDoNote_ListFiltersByRecipient(t *testing.T) {
+	w := world.New("/tmp/test")
+	WorldRef = w
+	board := &types.BoardData{
+		Notes: []*types.NoteData{
+			{Sender: "Bob", Subject: "Hi Alice", ToList: "Alice"},
+			{Sender: "Carol", Subject: "Hi Everyone", ToList: "all"},
+			{Sender: "Dave", Subject: "Hi Bob", ToList: "Bob"},
+		},
+	}
+	w.Boards = append(w.Boards, board)
+	room := &types.RoomIndexData{Vnum: 1000}
+
+	ch, client := makeTestChar("Alice")
+	defer client.Close()
+	handler.CharToRoom(ch, room)
+
+	DoNote(ch, "list")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Hi Alice") {
+		t.Errorf("should see note to Alice; got %q", out)
+	}
+	if !strings.Contains(out, "Hi Everyone") {
+		t.Errorf("should see note to all; got %q", out)
+	}
+	if strings.Contains(out, "Hi Bob") {
+		t.Errorf("should NOT see note addressed only to Bob; got %q", out)
+	}
+}
+
+func TestUnreadNotesFor_Counts(t *testing.T) {
+	w := world.New("/tmp/test")
+	WorldRef = w
+	board := &types.BoardData{
+		Notes: []*types.NoteData{
+			{Sender: "Bob", ToList: "Alice"},
+			{Sender: "Carol", ToList: "all"},
+			{Sender: "Dave", ToList: "Bob Frank"},
+		},
+	}
+	w.Boards = append(w.Boards, board)
+
+	alice := &types.CharData{Name: "Alice"}
+	if got := UnreadNotesFor(alice); got != 2 {
+		t.Errorf("alice should see 2 notes; got %d", got)
+	}
+	bob := &types.CharData{Name: "Bob"}
+	// Bob sent note 1, reads note 2 (all), and is named in note 3's list.
+	if got := UnreadNotesFor(bob); got != 3 {
+		t.Errorf("bob should see 3 notes (one sent, two addressed); got %d", got)
+	}
+}
+
+// --- G9: clan storerooms ---
+
+func TestDoClanDeposit_RequiresMembership(t *testing.T) {
+	w := world.New("/tmp/test")
+	WorldRef = w
+	ch, client := makeTestChar("Loner")
+	defer client.Close()
+	DoClanDeposit(ch, "sword")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "aren't in a clan") {
+		t.Errorf("expected clan requirement; got %q", out)
+	}
+}
+
+func TestDoClanDepositWithdraw_RoundTrip(t *testing.T) {
+	w := world.New("/tmp/test")
+	WorldRef = w
+	store := &types.RoomIndexData{Vnum: 9600, Name: "Clan Vault"}
+	w.Rooms[store.Vnum] = store
+
+	clan := &types.ClanData{Name: "Nightwatch", Storeroom: 9600, Leader: "Ranger"}
+	w.Clans = append(w.Clans, clan)
+
+	hall := &types.RoomIndexData{Vnum: 9601}
+	ch, client := makeTestChar("Ranger")
+	defer client.Close()
+	ch.PCData.Clan = clan
+	ch.PCData.ClanName = clan.Name
+	handler.CharToRoom(ch, hall)
+
+	obj := &types.ObjData{Name: "bow", ShortDescr: "a longbow", WearLoc: types.WEAR_NONE}
+	handler.ObjToChar(obj, ch)
+
+	DoClanDeposit(ch, "bow")
+	_ = readOutput(ch, client)
+	if obj.InRoom != store {
+		t.Fatalf("bow should be in storeroom; is at %+v / carried=%v", obj.InRoom, obj.CarriedBy)
+	}
+
+	DoClanWithdraw(ch, "bow")
+	_ = readOutput(ch, client)
+	if obj.CarriedBy != ch {
+		t.Errorf("bow should be back in inventory; carriedby=%v", obj.CarriedBy)
+	}
+}
+
+func TestDoClanWithdraw_RecruitBlocked(t *testing.T) {
+	w := world.New("/tmp/test")
+	WorldRef = w
+	store := &types.RoomIndexData{Vnum: 9604, Name: "Vault"}
+	w.Rooms[store.Vnum] = store
+	clan := &types.ClanData{Name: "Order", Storeroom: 9604, Leader: "Captain"}
+
+	recruit, client := makeTestChar("Footman")
+	defer client.Close()
+	recruit.PCData.Clan = clan
+	handler.CharToRoom(recruit, &types.RoomIndexData{Vnum: 9605})
+	// Put a bow in the storeroom so the non-permission failure is load-bearing.
+	bow := &types.ObjData{Name: "bow", ShortDescr: "a bow"}
+	handler.ObjToRoom(bow, store)
+
+	DoClanWithdraw(recruit, "bow")
+	out := readOutput(recruit, client)
+	if !strings.Contains(out, "Only clan leaders") {
+		t.Errorf("recruit should be refused; got %q", out)
+	}
+	if bow.InRoom != store {
+		t.Errorf("bow should stay in storeroom")
+	}
+}
+
+func TestDoClanWithdraw_EmptyStoreroom(t *testing.T) {
+	w := world.New("/tmp/test")
+	WorldRef = w
+	store := &types.RoomIndexData{Vnum: 9602, Name: "Vault"}
+	w.Rooms[store.Vnum] = store
+	clan := &types.ClanData{Name: "Dawn", Storeroom: 9602, Leader: "Cleric"}
+
+	ch, client := makeTestChar("Cleric")
+	defer client.Close()
+	ch.PCData.Clan = clan
+	handler.CharToRoom(ch, &types.RoomIndexData{Vnum: 9603})
+
+	DoClanWithdraw(ch, "sword")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "No sword") {
+		t.Errorf("expected not-found message; got %q", out)
+	}
+}
+
+// --- Adversary-follow-up coverage tests ---
+
+func TestClanWithdrawAllowed_OfficersAndHolylight(t *testing.T) {
+	clan := &types.ClanData{
+		Name: "Keep", Leader: "Anne", Number1: "Beth", Number2: "Cora",
+	}
+
+	cases := []struct {
+		name    string
+		charFn  func(*types.CharData)
+		allowed bool
+	}{
+		{"leader", func(c *types.CharData) { c.Name = "Anne" }, true},
+		{"number1", func(c *types.CharData) { c.Name = "Beth" }, true},
+		{"number2", func(c *types.CharData) { c.Name = "Cora" }, true},
+		{"recruit", func(c *types.CharData) { c.Name = "Dawn" }, false},
+		{"holylight immortal", func(c *types.CharData) {
+			c.Name = "Imm"
+			c.Act.Set(types.PLR_HOLYLIGHT)
+		}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := &types.CharData{PCData: &types.PCData{Clan: clan}}
+			tc.charFn(ch)
+			if got := clanWithdrawAllowed(ch, clan); got != tc.allowed {
+				t.Errorf("allowed = %v, want %v", got, tc.allowed)
+			}
+		})
 	}
 }

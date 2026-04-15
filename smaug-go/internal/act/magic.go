@@ -7,9 +7,30 @@ import (
 	"github.com/eilidhmae/smaug/internal/util"
 )
 
+// roomSuppressesMagic reports whether spellcasting is blocked in this room,
+// whether by the room flag or by the owning area's AFLAG_NOMAGIC.
+// C `src/magic.c:1629-1630` ORs both conditions in do_cast.
+func roomSuppressesMagic(room *types.RoomIndexData) bool {
+	if room == nil {
+		return false
+	}
+	if room.RoomFlags.IsSet(types.ROOM_NO_MAGIC) {
+		return true
+	}
+	if room.Area != nil && uint32(room.Area.Flags)&types.AFLAG_NOMAGIC != 0 {
+		return true
+	}
+	return false
+}
+
 // DoCast implements the 'cast' command.
 func DoCast(ch *types.CharData, argument string) {
 	if ch.IsNPC() {
+		return
+	}
+
+	if ch.InRoom != nil && roomSuppressesMagic(ch.InRoom) {
+		ch.Send("You failed.\n\r")
 		return
 	}
 

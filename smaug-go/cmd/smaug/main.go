@@ -239,6 +239,8 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "gossip", DoFun: act.DoGossip, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "emote", DoFun: act.DoEmote, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "pmote", DoFun: act.DoPmote, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "speak", DoFun: act.DoSpeak, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "learn", DoFun: act.DoLearn, Position: types.POS_RESTING, Level: 0})
 
 	// Object commands
 	reg.Register(&command.Command{Name: "get", DoFun: act.DoGet, Position: types.POS_RESTING, Level: 0})
@@ -258,6 +260,8 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "clantalk", DoFun: act.DoClantalk, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "join", DoFun: act.DoClanJoin, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "leave", DoFun: act.DoClanLeave, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "clandeposit", DoFun: act.DoClanDeposit, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "clanwithdraw", DoFun: act.DoClanWithdraw, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "deities", DoFun: act.DoDeities, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "devote", DoFun: act.DoDevote, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "note", DoFun: act.DoNote, Position: types.POS_RESTING, Level: 0})
@@ -271,6 +275,8 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "sell", DoFun: act.DoSell, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "list", DoFun: act.DoList, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "value", DoFun: act.DoValue, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "repair", DoFun: act.DoRepair, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "appraise", DoFun: act.DoAppraise, Position: types.POS_STANDING, Level: 0})
 
 	// Consume commands
 	reg.Register(&command.Command{Name: "eat", DoFun: act.DoEat, Position: types.POS_RESTING, Level: 0})

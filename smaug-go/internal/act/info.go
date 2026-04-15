@@ -136,6 +136,7 @@ func showExits(ch *types.CharData, room *types.RoomIndexData) {
 	dirNames := []string{"north", "east", "south", "west", "up", "down",
 		"northeast", "northwest", "southeast", "southwest"}
 
+	holylight := !ch.IsNPC() && ch.PCData != nil && ch.Act.IsSet(types.PLR_HOLYLIGHT)
 	var exits []string
 	for _, ex := range room.Exits {
 		if ex.ToRoom == nil {
@@ -143,6 +144,9 @@ func showExits(ch *types.CharData, room *types.RoomIndexData) {
 		}
 		if ex.ExitInfo&int(types.EX_CLOSED) != 0 {
 			continue // don't show closed exits in brief
+		}
+		if !holylight && ex.ExitInfo&int(types.EX_SECRET|types.EX_HIDDEN) != 0 {
+			continue
 		}
 		if ex.Direction >= 0 && ex.Direction < len(dirNames) {
 			exits = append(exits, dirNames[ex.Direction])
@@ -352,11 +356,15 @@ func DoSay(ch *types.CharData, argument string) {
 		ch.Send("Say what?\n\r")
 		return
 	}
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) {
+		ch.Send("You can't do that here.\n\r")
+		return
+	}
 	ch.Sendf("&CYou say '%s'&D\n\r", argument)
 	if ch.InRoom != nil {
 		for _, rch := range ch.InRoom.People {
 			if rch != ch && rch.Desc != nil {
-				rch.Sendf("&C%s says '%s'&D\n\r", ch.Name, argument)
+				rch.Sendf("&C%s says '%s'&D\n\r", ch.Name, translateFor(ch, rch, argument))
 			}
 		}
 	}
@@ -400,6 +408,31 @@ func MoveChar(ch *types.CharData, dir int) {
 		return
 	}
 
+	if ch.IsNPC() && exit.ExitInfo&int(types.EX_NOMOB) != 0 {
+		return
+	}
+
+	dest := exit.ToRoom
+	if ch.IsNPC() && dest.RoomFlags.IsSet(types.ROOM_NO_MOB) {
+		ch.Send("You can't go there.\n\r")
+		return
+	}
+	if dir == types.DIR_DOWN && dest.RoomFlags.IsSet(types.ROOM_NOFLOOR) &&
+		!ch.AffectedBy.IsSet(types.AFF_FLYING) {
+		ch.Send("You can't fly.\n\r")
+		return
+	}
+	if dest.RoomFlags.IsSet(types.ROOM_SOLITARY) && len(dest.People) > 0 {
+		ch.Send("That room is too private for more than one person.\n\r")
+		return
+	}
+	// ROOM_PRIVATE: C permits two occupants, third is refused.
+	// See `src/handler.c:3264` (`room_is_private`).
+	if dest.RoomFlags.IsSet(types.ROOM_PRIVATE) && len(dest.People) >= 2 {
+		ch.Send("That room is private right now.\n\r")
+		return
+	}
+
 	dirNames := []string{"north", "east", "south", "west", "up", "down",
 		"northeast", "northwest", "southeast", "southwest"}
 	revDir := []int{2, 3, 0, 1, 5, 4, 9, 8, 7, 6}
@@ -418,7 +451,6 @@ func MoveChar(ch *types.CharData, dir int) {
 	removeFromRoom(ch, oldRoom)
 
 	// Add to new room
-	dest := exit.ToRoom
 	addToRoom(ch, dest)
 
 	// Arrive message
@@ -433,6 +465,37 @@ func MoveChar(ch *types.CharData, dir int) {
 
 	// Auto-look
 	DoLook(ch, "")
+
+	// ROOM_DEATH: entering a death trap kills the character.
+	if dest.RoomFlags.IsSet(types.ROOM_DEATH) && !ch.IsNPC() {
+		applyRoomDeath(ch)
+	}
+}
+
+// applyRoomDeath handles a player walking into a ROOM_DEATH trap.
+// Matches minimum death behavior: announce death, reset to the temple
+// with 1 HP/Mana/Move, position resting. Full corpse/XP-loss treatment
+// would be a Phase-6 polish item.
+func applyRoomDeath(ch *types.CharData) {
+	if ch.InRoom != nil {
+		for _, rch := range ch.InRoom.People {
+			if rch != ch && rch.Desc != nil {
+				rch.Sendf("%s screams and dies!\n\r", ch.Name)
+			}
+		}
+	}
+	ch.Send("You are dead! The gods have mercy and resurrect you.\n\r")
+	ch.Hit = 1
+	ch.Mana = 1
+	ch.Move = 1
+	ch.Position = types.POS_RESTING
+	if WorldRef != nil {
+		if temple := WorldRef.GetRoom(types.ROOM_VNUM_TEMPLE); temple != nil && ch.InRoom != nil {
+			removeFromRoom(ch, ch.InRoom)
+			addToRoom(ch, temple)
+			DoLook(ch, "")
+		}
+	}
 }
 
 func removeFromRoom(ch *types.CharData, room *types.RoomIndexData) {
