@@ -3,16 +3,27 @@ package main
 import (
 	"testing"
 
+	"github.com/eilidhmae/smaug/internal/boot"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
 
+// These tests used to exercise package-local bootDB/registerCommands
+// helpers. Boot wiring now lives in internal/boot, and boot_test.go in that
+// package covers the full surface. The tests here remain as integration
+// smoke checks that Boot-against-testdata produces the expected results
+// when invoked from the cmd package.
+
+func newIncoming() chan *types.DescriptorData {
+	return make(chan *types.DescriptorData, 4)
+}
+
 func TestBootDB(t *testing.T) {
 	w := world.New("testdata")
 
-	err := bootDB(w)
+	_, _, err := boot.Boot(w, "testdata", newIncoming(), boot.ProductionOpts())
 	if err != nil {
-		t.Fatalf("bootDB failed: %v", err)
+		t.Fatalf("boot.Boot failed: %v", err)
 	}
 
 	// Should have loaded the test area with the temple room
@@ -33,9 +44,9 @@ func TestBootDB(t *testing.T) {
 func TestBootDB_MissingDataDir(t *testing.T) {
 	w := world.New("/nonexistent/path")
 
-	err := bootDB(w)
+	_, _, err := boot.Boot(w, "/nonexistent/path", newIncoming(), boot.ProductionOpts())
 	if err == nil {
-		t.Error("bootDB should fail with missing data dir")
+		t.Error("boot.Boot should fail with missing data dir")
 	}
 }
 
@@ -44,15 +55,15 @@ func TestBootDB_FallbackRoom(t *testing.T) {
 	w := world.New("testdata")
 
 	// Temporarily clear rooms after boot to test fallback
-	err := bootDB(w)
+	_, _, err := boot.Boot(w, "testdata", newIncoming(), boot.ProductionOpts())
 	if err != nil {
-		t.Fatalf("bootDB failed: %v", err)
+		t.Fatalf("boot.Boot failed: %v", err)
 	}
 
 	// Delete the temple room and re-run the fallback logic
 	delete(w.Rooms, types.ROOM_VNUM_TEMPLE)
 
-	// Re-run just the fallback part
+	// Re-run just the fallback part (mirrors the in-Boot fallback block)
 	if w.GetRoom(types.ROOM_VNUM_TEMPLE) == nil {
 		fallback := &types.RoomIndexData{
 			Vnum:        types.ROOM_VNUM_TEMPLE,
@@ -73,7 +84,11 @@ func TestBootDB_FallbackRoom(t *testing.T) {
 }
 
 func TestRegisterCommands(t *testing.T) {
-	reg := registerCommands()
+	w := world.New("testdata")
+	reg, _, err := boot.Boot(w, "testdata", newIncoming(), boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("boot.Boot failed: %v", err)
+	}
 
 	// Verify key commands are registered
 	commands := []struct {
@@ -100,7 +115,11 @@ func TestRegisterCommands(t *testing.T) {
 }
 
 func TestRegisterCommands_Count(t *testing.T) {
-	reg := registerCommands()
+	w := world.New("testdata")
+	reg, _, err := boot.Boot(w, "testdata", newIncoming(), boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("boot.Boot failed: %v", err)
+	}
 
 	// 12 info + 5 comm + 7 object + 1 magic + 2 combat + 4 door + 10 movement = 41 commands
 	expected := 41

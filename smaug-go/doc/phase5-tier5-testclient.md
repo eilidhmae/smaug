@@ -1,5 +1,54 @@
 # Phase 5 — Tier 5: Test Client
 
+## Completion (2026-04-15)
+
+All 7 task groups landed 2026-04-15. 15 Go packages pass `go test -count=1 ./...`. The reusable `internal/testclient` harness + the `internal/boot` consolidation are now the canonical entry points for both production server boot and scenario-driven test coverage — `cmd/smaug/main.go` shrunk from ~500 lines to ~70 and the private harness in `cmd/smaug/integration_test.go` shrunk from 373 lines to 151.
+
+- **G1 — Extract boot to a reusable package.** `internal/boot/` now owns `Boot(w, dataDir, incoming, opts)`, which wires all **19** cross-package callbacks identified in the plan (`act.WorldRef`, `act.SaveFunc`, `act.CmdRegistry`, `act.StartEditingFunc`, `act.ShutdownFunc`, `act.DisconnectFunc`, `mudprog.CmdRegistry`, `mudprog.WorldRef`, `combat.WorldRef`, `combat.HitprcntHook`, `combat.VoidHook`, `combat.ObjDamageHook`, `combat.RfightHook`, `combat.DeathRoomHook`, `cmdReg.SocialFallback`, `cmdReg.ObjCommandHook`, `cmdReg.RoomCommandHook`, `persist.SkillNameLookup`, `persist.SkillGetter`). `ProductionOpts()` preserves legacy behavior; `TestOpts()` lowers `game.BcryptCost` to `bcrypt.MinCost` and installs a Shutdowns-channel `ShutdownFunc`. Five tests including the mechanical `TestMainGoHasNoCallbackWires` that reads `cmd/smaug/main.go` as source and regex-rejects any callback assignment outside `boot.Boot`. Production also migrates to `server.StartOnListener(ln net.Listener)`; the racy `Start(port int)` path is retired.
+- **G2 — Core `testclient` package.** `internal/testclient/` ships `Harness` (`Start`/`Dial`/`Query`/`Shutdowns`) and `Client` (`Send`/`ReadUntil`/`ReadMatch`/`ReadToPrompt`/`ReadFor`/`WithPrompt`/`Close`). Read pipeline strips telnet IAC sequences (including partial IAC carry across reads), ANSI escapes, and bare CRs. Package-level `harnessMu sync.Mutex` serializes tests to protect the package-global hook vars (`act.WorldRef`, `mudprog.WorldRef`, `combat.*Hook`, etc.) from the `t.Parallel()` hazard flagged in the plan's Open Questions. ~19 unit tests plus 4 harness tests.
+- **G3 — Login helpers.** `NewCharacter(t, CharSpec{Name, Password, Sex, Race, Class, Trust})`, `Login(t, name, pwd)`, and `QuickLogin(t, name)` land the client at the in-game prompt. All three canonicalize names (first-letter upper / rest lower) so scenarios can pass lowercase and still round-trip through persistence. 5 login tests.
+- **G4 — Minimal fixture data.** `internal/testclient/testdata/` is a ~7KB tree: 1 area file (`tier5test.are`) with 6 rooms (Temple 21001, NORECALL 21002, greet-prog room 21004, banker-keyword room 21005, pebble room 21006), 3 mob templates (basic / greet-prog / banker-by-keyword), 1 pebble object, Warrior class, Human race, ~10 skills, ~5 socials. Boot time ~3ms. Per-test `t.TempDir()` copy of the fixture isolates concurrent packages on disk.
+- **G5 — Migrate existing integration tests.** 9 `TestIntegration_*` scenarios preserved (ServerBoot, CharacterCreation, Commands, Communication, InvalidName, BadPassword, Quit, Help, MultipleConnections); harness file dropped from 373 lines of private helpers to 151 lines of calls into `testclient` APIs. `cmd/smaug/main_test.go` rewritten to route through `boot.Boot`.
+- **G6 — New scenario tests (one per interactive surface).** Five real-telnet scenarios, each in its own package:
+  - `internal/act/olc_scenario_test.go::TestScenario_RedIt_SubcommandRoundTrip`
+  - `internal/act/mortal_scenario_test.go::TestScenario_AliasExpansion`
+  - `internal/combat/scenario_test.go::TestScenario_MobCreateAndKill`
+  - `internal/magic/scenario_test.go::TestScenario_CastSanctuary`
+  - `internal/mudprog/scenario_test.go::TestScenario_GreetProgFires`
+
+  The `greet_prog` scenario caught a real dormant wiring bug in `act/info.go::MoveChar` — the greet trigger had been silently unfired since Phase 3. Fix is C-faithful (mirrors `src/act_move.c::move_char`). A second latent bug was fixed in `game.processInput`: a closed `InputQueue` channel previously fell through as a silent no-op; it now marks the descriptor dead so `cleanupDescriptors` can save + remove on the next pulse.
+- **G7 — Docs.** This doc (plan kept above, completion appended here), `smaug-go/doc/phases.md` Tier 5 entry, and the `CLAUDE.md` phase-records row all updated in this tier.
+
+### Intentional deviations / gaps
+
+- **ACT_BANKER fixture gap.** The `.are` mob Act-flag parser reads a single 32-bit int, but `ACT_BANKER = 1<<42` is outside that range. The fixture banker mob instead uses the keyword `"banker"` so `DoBank` can find it; the real flag wiring is a separate area-file-format extension. TODO noted in `internal/testclient/testdata_test.go`.
+- **`teleportTo` does NOT fire greet.** Matches C `src/build.c::do_goto` (no `mprog_greet_trigger` call there). Only `MoveChar` fires greet, matching C `src/act_move.c::move_char`. The scenario test asserts greet on room movement, not on goto.
+- **Interactive OLC substates (`CON_OEDITING` / `CON_MEDITING`) still deferred.** The plan's G6 table explicitly pushed interactive substates to a follow-up; the non-interactive `redit` subcommand path is covered by `TestScenario_RedIt_SubcommandRoundTrip`.
+- **`TestSpellFarsight_Success`** was historically RNG-seed flaky; observed stable under `-count=3` after Tier 5 work. Not caused by this tier; monitor.
+- **Pre-existing ordering gaps in `MoveChar`** surfaced during greet work: `RprogEnterTrigger` fires before `DoLook` in Go but after in C, and `DoLook` is called with `""` where C uses `"auto"`. Not fixed — pre-existing, out of Tier 5 scope.
+- **Shared test-data dir between `cmd/smaug` and `internal/boot`** — both packages run `RemoveAll` on `cmd/smaug/testdata/player` during `go test ./...`, which runs packages in parallel. `testclient` is now isolated via `t.TempDir`; `cmd/smaug` and `internal/boot` still share the legacy path. No currently-observed failures, but a latent race worth flagging.
+- **Dead nil guard in `game.drainQueries`.** `if g.queryQueue == nil { return }` is unreachable since `NewGameLoop` always allocates — cosmetic cleanup candidate.
+- **Same-pulse cleanup end-to-end untested.** `TestProcessInput_ClosedQueue_MarksDisconnect` verifies `Connected=-1` is set on the closed-queue path, but does not drive through `pulse()` to prove `cleanupDescriptors` saves+removes on the same tick. The unit-level coverage is sufficient for the fix; end-to-end behavior was observed empirically during flake-repro.
+
+### Adversary rounds that mattered
+
+- **G1.** Initial `TestMainGoHasNoCallbackWires` missed 5 of the 19 callbacks; regex was too narrow. Also caught a TOCTOU: `net.Listen(:0)` → `Close` → `Start(port)` has a window where another process can grab the port. Fix was `StartOnListener(ln net.Listener)` as recommended in the plan's Open Questions — the racy port-number API is now retired.
+- **G2.** `Harness.Query` hung on shutdown (post-Cancel `Invoke` deadlocked against a drained queue); `WithVerbose` was a no-op on first pass; `ReadMatch` double-evaluated its regex against the live buffer causing duplicate matches. All three fixed before land.
+- **G3.** Cross-package fixture contention (`cmd/smaug`, `internal/boot`, `internal/testclient` all wanted to own `testdata/player`); `QuickLogin` failed on all-lowercase names because the nanny stores canonical-case; `testdata_test.go` needed the same `harnessMu` discipline when it booted a Harness to check fixture counts.
+- **G4.** `ProgTypes` fixture bit-index was off by one — mob loaded with wrong triggers; greet mob fired on `random` instead of `greet` until corrected.
+- **G6.** Scope creep attempt: a first pass of the `greet_prog` scenario tried to route the test through `teleportTo` (faster than `MoveChar`). Rejected — C `do_goto` never fires greet. The scenario now walks the player in via a real direction move, which is what revealed the dormant wiring bug.
+
+### Follow-ups queued for Phase 6
+
+- Interactive `CON_OEDITING` / `CON_MEDITING` substates (deferred again; the harness's `WithPrompt` is ready for them).
+- ACT_BANKER area-file format extension (64-bit flag field or overflow byte).
+- `MoveChar` ordering parity with C (`RprogEnterTrigger` before `DoLook`, `DoLook` arg `"auto"`).
+- Shared `cmd/smaug/testdata/player` race — migrate `cmd/smaug` + `internal/boot` tests to `t.TempDir()` like `testclient` did.
+- End-to-end same-pulse cleanup test driving through `pulse()` rather than just the input path.
+- `game.drainQueries` dead nil-guard cleanup.
+- Nanny-protocol prompt table (flagged in plan Open Questions) — tests still depend on exact-string nanny prompts.
+- MCCP / MSDP testclient hooks (plan Open Questions — `Client` has the seam).
+
 ## Goal
 
 A reusable in-process test client that drives a real telnet session against an ephemeral game server, used from any `_test.go` in the module. It unblocks the interactive work deferred from Tier 4 (OLC `CON_OEDITING`/`CON_MEDITING` substates, editable mudprog editors) and the Phase 6 candidates (hotboot, overland, housing, stances) where unit tests only prove a function fires — not that a player sees the right thing.

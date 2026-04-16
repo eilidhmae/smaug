@@ -1,0 +1,139 @@
+#SKILL
+Name         fireball~
+Type         Spell
+Info         1
+Flags        0
+Target       1
+Minpos       109
+Slot         26
+Mana         15
+Rounds       12
+Code         spell_fireball
+Dammsg       fireball~
+Wearoff      !Fireball!~
+Minlevel     13
+End
+#SKILL
+Name         sanctuary~
+Type         Spell
+Info         336
+Flags        0
+Target       2
+Minpos       112
+Slot         36
+Mana         75
+Rounds       12
+Code         spell_smaug
+Dammsg       ~
+Wearoff      The luminous aura about your body fades away.~
+Hitchar      A luminous aura spreads slowly over $N's body.~
+Hitvict      A luminous aura spreads slowly over your body.~
+Hitroom      A luminous aura spreads slowly over $N's body.~
+Affect       '(l*4)+30' 26 'sanctuary' 7
+Minlevel     13
+End
+#SKILL
+Name         sleep~
+Type         Spell
+Info         0
+Flags        131072
+Minpos       112
+Slot         38
+Mana         15
+Rounds       12
+Code         spell_sleep
+Dammsg       ~
+Wearoff      You feel less tired.~
+Minlevel     12
+End
+#SKILL
+Name         berserk~
+Type         Skill
+Info         0
+Flags        0
+Target       1
+Minpos       111
+Rounds       4
+Code         do_berserk
+Dammsg       ~
+Wearoff      You regain your composure...~
+Teachers     1~
+Minlevel     51
+End
+#SKILL
+Name         bite~
+Type         Skill
+Info         0
+Flags        0
+Target       1
+Minpos       105
+Rounds       8
+Code         do_bite
+Dammsg       bite~
+Wearoff      !Bite!~
+Minlevel     11
+End
+#SKILL
+Name         cleave~
+Type         Skill
+Info         0
+Flags        0
+Minpos       106
+Rounds       18
+Guild        99
+Code         do_cleave
+Dammsg       cleave~
+Minlevel     50
+End
+#SKILL
+Name         detrap~
+Type         Skill
+Info         0
+Flags        0
+Minpos       108
+Rounds       24
+Code         do_detrap
+Dammsg       ~
+Wearoff      !Detrap!~
+Minlevel     16
+End
+#SKILL
+Name         hitall~
+Type         Skill
+Info         0
+Flags        65536
+Minpos       112
+Rounds       12
+Code         do_hitall
+Dammsg       hit~
+Teachers     25199~
+Minlevel     50
+End
+#SKILL
+Name         meditate~
+Type         Skill
+Info         0
+Flags        530432
+Target       3
+Minpos       106
+Rounds       35
+Code         do_meditate
+Dammsg       ~
+Hitvict      You meditate peacefully, collecting mana from the cosmos.~
+Missvict     You spend several minutes in deep concentration, but fail to collect any mana.~
+Minlevel     12
+End
+#SKILL
+Name         poison weapon~
+Type         Skill
+Info         0
+Flags        0
+Target       4
+Minpos       112
+Rounds       12
+Code         do_poison_weapon
+Dammsg       poisonous concoction~
+Wearoff      !Poison Weapon!~
+Minlevel     27
+End
+#END

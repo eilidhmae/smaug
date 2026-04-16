@@ -478,8 +478,12 @@ func MoveChar(ch *types.CharData, dir int) {
 	// Auto-look
 	DoLook(ch, "")
 
-	// Object-prog GREET fires after arrival. Mob-prog GREET is handled
-	// elsewhere (TrigGreet); this is the obj-prog G3 addition.
+	// Mob-prog GREET / ALL_GREET fires on arrival for any non-fighting,
+	// standing NPC in the destination room.
+	mudprog.TrigGreet(ch)
+
+	// Object-prog GREET fires after arrival for any floor-resident object
+	// with a GREET prog.
 	mudprog.OprogGreetTrigger(ch)
 
 	// ROOM_DEATH: entering a death trap kills the character.

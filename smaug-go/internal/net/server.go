@@ -2,7 +2,6 @@ package net
 
 import (
 	"bufio"
-	"fmt"
 	"log"
 	gonet "net"
 
@@ -25,15 +24,11 @@ func NewServer() *Server {
 	}
 }
 
-// Start begins listening on the given TCP port and accepting connections.
-func (s *Server) Start(port int) error {
-	var err error
-	s.listener, err = gonet.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return fmt.Errorf("failed to listen on port %d: %w", port, err)
-	}
-	log.Printf("[net] Listening on port %d", port)
-
+// StartOnListener begins accepting connections on the supplied listener.
+// Use this when the caller already bound the port (tests, graceful rebinds).
+// Ownership of ln transfers to the server — Stop will close it.
+func (s *Server) StartOnListener(ln gonet.Listener) error {
+	s.listener = ln
 	go s.acceptLoop()
 	return nil
 }

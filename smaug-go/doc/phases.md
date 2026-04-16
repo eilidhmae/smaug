@@ -222,6 +222,6 @@ This document defines all phases of the SMAUG C-to-Go port.
 - **Star maps** (226 lines) — celestial display
 
 ### Polish
-- Minimal telnet test client for repeatable interactive testing
+- **Tier 5: Test client + boot extraction — Complete (2026-04-15).** `internal/testclient` harness (Harness/Client, IAC+ANSI strip, prompt detect, login helpers) plus `internal/boot` consolidation of all 19 cross-package callback wires. `cmd/smaug/main.go` reduced from ~500 to ~70 lines; `server.StartOnListener` replaces racy `Start(port int)`. 9 integration tests migrated + 5 new scenario tests (one per interactive surface: `act/olc`, `act` mortal, `combat`, `magic`, `mudprog`). Caught two real bugs (dormant `MoveChar` greet-prog wiring; silent close on `InputQueue`). 15 packages pass `go test -count=1 ./...`. See `phase5-tier5-testclient.md` for the full record and follow-ups queued for Phase 6.
 - Performance profiling and optimization
 - Stress testing (100+ concurrent connections)

@@ -19,6 +19,11 @@ import (
 	"github.com/eilidhmae/smaug/internal/world"
 )
 
+// BcryptCost is the cost parameter for hashing newly-set passwords.
+// Tests may lower this via boot.TestOpts to speed login flows;
+// production leaves it at bcrypt.DefaultCost.
+var BcryptCost = bcrypt.DefaultCost
+
 // MaxConnections is the maximum number of simultaneous connections allowed.
 const MaxConnections = 256
 
@@ -61,18 +66,31 @@ type GameLoop struct {
 	pulseMobile   int
 	pulseTick     int
 	pulseSave     int
+
+	// Internal context for programmatic shutdown (Cancel()).
+	internalCtx    context.Context
+	internalCancel context.CancelFunc
+
+	// queryQueue receives closures from testclient.Harness.Query.
+	// The pulse drains all pending queries at the start of each cycle,
+	// so queries observe a consistent snapshot before input processing.
+	queryQueue chan func()
 }
 
 // NewGameLoop creates a new game loop.
 func NewGameLoop(w *world.World, cmdReg *command.Registry, incoming chan *types.DescriptorData) *GameLoop {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &GameLoop{
-		world:         w,
-		cmdReg:        cmdReg,
-		incoming:      incoming,
-		pulseArea:     types.PULSE_AREA,
-		pulseViolence: types.PULSE_VIOLENCE,
-		pulseMobile:   types.PULSE_MOBILE,
-		pulseTick:     types.PULSE_TICK,
+		world:          w,
+		cmdReg:         cmdReg,
+		incoming:       incoming,
+		pulseArea:      types.PULSE_AREA,
+		pulseViolence:  types.PULSE_VIOLENCE,
+		pulseMobile:    types.PULSE_MOBILE,
+		pulseTick:      types.PULSE_TICK,
+		internalCtx:    ctx,
+		internalCancel: cancel,
+		queryQueue:     make(chan func(), 16),
 	}
 }
 
@@ -88,14 +106,41 @@ func (g *GameLoop) Run(ctx context.Context) {
 		case <-ctx.Done():
 			log.Println("Game loop stopping.")
 			return
+		case <-g.internalCtx.Done():
+			log.Println("Game loop stopping (internal cancel).")
+			return
 		case <-ticker.C:
 			g.pulse()
 		}
 	}
 }
 
+// Cancel stops the loop by cancelling the internal context. Safe to
+// call from any goroutine, idempotent.
+func (g *GameLoop) Cancel() {
+	if g.internalCancel != nil {
+		g.internalCancel()
+	}
+}
+
+// Invoke enqueues a closure for execution at the start of the next pulse.
+// Used by the testclient Harness.Query plumbing. Blocks if the queue is
+// full (buffer 16) — in practice only one test is running at a time.
+func (g *GameLoop) Invoke(fn func()) {
+	g.queryQueue <- fn
+}
+
+// QueryQueue exposes the send side of the query channel for test helpers
+// that need to select across multiple channels (e.g., to add a timeout).
+func (g *GameLoop) QueryQueue() chan<- func() {
+	return g.queryQueue
+}
+
 // pulse handles one tick of the game loop.
 func (g *GameLoop) pulse() {
+	// 0. Drain any pending test-harness queries
+	g.drainQueries()
+
 	// 1. Accept new connections
 	g.acceptNewConnections()
 
@@ -168,11 +213,34 @@ func (g *GameLoop) acceptNewConnections() {
 	}
 }
 
+// drainQueries executes every pending query closure from the test
+// harness. Called at the start of each pulse so queries observe a
+// consistent snapshot before input processing.
+func (g *GameLoop) drainQueries() {
+	for {
+		select {
+		case fn := <-g.queryQueue:
+			fn()
+		default:
+			return
+		}
+	}
+}
+
 // processInput reads one command from each descriptor and dispatches it.
 func (g *GameLoop) processInput() {
 	for _, d := range g.world.Descriptors {
 		select {
-		case line := <-d.InputQueue:
+		case line, ok := <-d.InputQueue:
+			if !ok {
+				// readLoop closed the queue — client disconnected.
+				// Mark for cleanup so cleanupDescriptors saves and removes
+				// this descriptor on this pulse.
+				if d.Connected != -1 {
+					d.Connected = -1
+				}
+				continue
+			}
 			line = strings.TrimRight(line, "\r\n")
 
 			// Pager takes priority: if paging, handle pager input
@@ -307,7 +375,7 @@ func (g *GameLoop) nannyGetOldPassword(d *types.DescriptorData, line string) {
 		passwordOK = subtle.ConstantTimeCompare([]byte(line), []byte(storedPwd)) == 1
 		if passwordOK {
 			// Migrate legacy plaintext password to bcrypt
-			if hash, err := bcrypt.GenerateFromPassword([]byte(line), bcrypt.DefaultCost); err == nil {
+			if hash, err := bcrypt.GenerateFromPassword([]byte(line), BcryptCost); err == nil {
 				d.Character.PCData.Pwd = string(hash)
 			}
 		}
@@ -386,7 +454,7 @@ func (g *GameLoop) nannyGetNewPassword(d *types.DescriptorData, line string) {
 	}
 
 	// Create the character now with the password (bcrypt hashed)
-	hash, err := bcrypt.GenerateFromPassword([]byte(line), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(line), BcryptCost)
 	if err != nil {
 		d.WriteToBuffer("Error hashing password. Try again.\n\rPassword: ")
 		return

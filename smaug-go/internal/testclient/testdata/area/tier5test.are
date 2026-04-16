@@ -1,0 +1,157 @@
+#AREA   Tier 5 Test Area~
+
+#AUTHOR Tier5~
+
+#RANGES
+1 65 0 65
+$
+
+#ECONOMY 0 0
+
+#FLAGS
+0
+
+#MOBILES
+#9100
+rat filler~
+a scrawny rat~
+A scrawny rat skitters about.
+~
+~
+2 0 0 S
+2 20 9 2d6+10 1d4+0
+10 50
+8 8 0
+#9101
+shopkeeper greeter~
+the greeter~
+The greeter watches you warily.
+~
+~
+2 0 0 S
+10 18 5 4d6+20 2d4+1
+50 100
+8 8 1
+> greet_prog 100~
+mpecho The shopkeeper eyes you warily.
+~
+|
+#9102
+banker goldhands~
+Goldhands the banker~
+Goldhands the banker stands behind a counter, ready to assist.
+~
+~
+2 0 0 S
+20 14 3 6d8+40 3d6+5
+500 300
+8 8 1
+#0
+
+#OBJECTS
+#9200
+pebble small stone~
+a small pebble~
+A small, smooth pebble rests here.~
+~
+13 0 1
+0 0 0 0 0 0
+1 0 0
+#0
+
+#ROOMS
+#21001
+The Temple of Mota~
+You are inside the Temple, a sanctuary of quiet stone.
+~
+0 0 1
+D0
+You see a passage leading north.
+~
+~
+0 -1 21002
+D1
+A corridor opens to the east.
+~
+~
+0 -1 21003
+D2
+A path leads south out of the temple.
+~
+~
+0 -1 21004
+D3
+A passage extends west.
+~
+~
+0 -1 21005
+D4
+Stairs ascend up out of the temple.
+~
+~
+0 -1 21006
+S
+#21002
+The North Sanctum~
+A quiet chamber that resists travel magics.
+~
+0 8192 1
+D2
+The temple lies south.
+~
+~
+0 -1 21001
+S
+#21003
+The East Hall~
+A plain hall leading east of the temple.
+~
+0 0 1
+D3
+The temple lies west.
+~
+~
+0 -1 21001
+S
+#21004
+The South Garden~
+A modest garden where a quiet figure stands watch.
+~
+0 0 1
+D0
+The temple lies north.
+~
+~
+0 -1 21001
+S
+#21005
+The West Vault~
+A counting house west of the temple.
+~
+0 0 1
+D1
+The temple lies east.
+~
+~
+0 -1 21001
+S
+#21006
+The Upper Gallery~
+A stone gallery above the temple, dust settled on the floor.
+~
+0 0 1
+D5
+Stairs descend to the temple.
+~
+~
+0 -1 21001
+S
+#0
+
+#RESETS
+M 0 9101 1 21004 load greeter to south garden
+M 0 9102 1 21005 load banker to west vault
+O 0 9200 1 21006 load pebble to upper gallery
+S
+
+#$

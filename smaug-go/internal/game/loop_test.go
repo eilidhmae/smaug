@@ -473,6 +473,68 @@ func TestProcessInput_NoInput(t *testing.T) {
 	g.processInput()
 }
 
+// TestProcessInput_ClosedQueue_MarksDisconnect covers the race fixed for
+// Phase 5 Tier 5 G3: when the network readLoop closes InputQueue (client
+// disconnected), processInput must mark the descriptor dead so the next
+// cleanupDescriptors run saves the player and removes the descriptor.
+// Before the fix, the zero-value from the closed channel was dispatched
+// as an empty command on every pulse, leading to infinite spurious
+// prompt writes and a reliance on TCP write failure to trigger cleanup —
+// which raced under CPU load.
+func TestProcessInput_ClosedQueue_MarksDisconnect(t *testing.T) {
+	w := world.New("/tmp/test")
+	reg := command.NewRegistry()
+	incoming := make(chan *types.DescriptorData, 10)
+	g := NewGameLoop(w, reg, incoming)
+
+	// Count how many times any command would be interpreted. Closed-queue
+	// reads must NOT dispatch commands.
+	dispatched := 0
+	reg.Register(&command.Command{
+		Name: "noop",
+		DoFun: func(ch *types.CharData, argument string) {
+			dispatched++
+		},
+		Position: types.POS_DEAD,
+		Level:    0,
+	})
+
+	room := &types.RoomIndexData{Vnum: 30000, Name: "Test Room"}
+	w.Rooms[30000] = room
+
+	ch := &types.CharData{
+		Name:     "Dropped",
+		Level:    5,
+		Position: types.POS_STANDING,
+		PCData:   &types.PCData{Prompt: "> "},
+	}
+	d := &types.DescriptorData{
+		Character:  ch,
+		Connected:  types.CON_PLAYING,
+		InputQueue: make(chan string, 10),
+	}
+	ch.Desc = d
+	ch.InRoom = room
+	w.Descriptors = append(w.Descriptors, d)
+
+	// Simulate the readLoop closing the queue because the client
+	// disconnected.
+	close(d.InputQueue)
+
+	// Run processInput several times to prove the state is stable: after
+	// the first detection, subsequent pulses must not re-dispatch.
+	for i := 0; i < 3; i++ {
+		g.processInput()
+	}
+
+	if d.Connected != -1 {
+		t.Errorf("d.Connected = %d, want -1 (descriptor with closed InputQueue must be marked for cleanup)", d.Connected)
+	}
+	if dispatched != 0 {
+		t.Errorf("closed-queue reads dispatched %d commands; want 0", dispatched)
+	}
+}
+
 // --- nanny tests ---
 
 func TestNanny_GetName_EmptyInput(t *testing.T) {
