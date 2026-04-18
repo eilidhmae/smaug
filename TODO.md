@@ -143,17 +143,18 @@ Roughly ordered by player-visibility/impact:
 
 ## Done
 
-- [x] Run `.claude/agents/manager.md` Startup Protocol (2026-04-17)
-- [x] Run full post-Phase-5 audit (4 parallel adversaries: phase completeness, Go idiom, security+usability, C↔Go) (2026-04-17 — see `smaug-go/doc/audit-2026-04-17.md`)
-- [x] `doc/phases.md:152–168` Phase 3 deliverables rewritten to match what actually shipped (2026-04-17)
-- [x] `OprogCommandTrigger` known-deferral already in `phase5-tier3-completed.md:85` — audit correction made to `audit-2026-04-17.md` (2026-04-17)
+### 2026-04-17
 
-### Landed, pending commit (batch 1 — 2026-04-17)
-
-- [x] `TestSpellFarsight_Success` deterministic — PC victim bypasses NPC save gate (`internal/magic/spell_group_a_test.go`)
-- [x] `mpForce` security fix — uses `InterpretWithTrustCap(victim, cmd, mob.GetTrust())` (`internal/mudprog/commands.go`)
-- [x] `DoSaveArea` atomic write via tmp + rename (`internal/act/olc.go`) — adversary PASS
-- [x] `MaxAliases = 50` cap in `DoAlias` create path (`internal/act/cmds2.go`) — adversary PASS
-- [x] Boot fail-loud on missing classes/races/skills (`internal/boot/boot.go`) — adversary PASS
-- [x] Brute-force disconnect message wording updated (`internal/game/loop.go`) — adversary PASS
-- [ ] Positive-direction tests for mpForce + SpellFarsight NPC-hit path (in-flight follow-up worker)
+- [x] Run `.claude/agents/manager.md` Startup Protocol
+- [x] Run full post-Phase-5 audit (4 parallel adversaries: phase completeness, Go idiom, security+usability, C↔Go) — see `smaug-go/doc/audit-2026-04-17.md`
+- [x] `doc/phases.md` Phase 3 deliverables rewritten to match what actually shipped
+- [x] `OprogCommandTrigger` known-deferral already documented at `phase5-tier3-completed.md:85` — audit correction applied
+- [x] **Batch 1 — security + determinism fixes** (commit `9b789a7`):
+  - [x] `TestSpellFarsight_Success` deterministic (PC victim bypasses NPC save gate)
+  - [x] `mpForce` uses `InterpretWithTrustCap(victim, cmd, mob.GetTrust())`
+  - [x] `DoSaveArea` atomic write via tmp + rename
+  - [x] `MaxAliases = 50` cap in `DoAlias` create path
+  - [x] Boot fail-loud on missing classes/races/skills
+  - [x] Brute-force disconnect message wording
+  - [x] Positive-direction tests (mpForce + SpellFarsight NPC path) with mutation verification; `savesSpellStaffFn` seam in `magic.go`
+- [x] Audit commits landed: `720278d` (docs) + `9b789a7` (code)
