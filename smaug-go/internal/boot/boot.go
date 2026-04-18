@@ -95,6 +95,12 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	act.CmdRegistry = cmdReg
 	cmdReg.SocialFallback = act.CheckSocial
 
+	// Keep act.BcryptCost in sync with game.BcryptCost so DoPassword hashes
+	// at the same cost the login/nanny flow uses. TestOpts lowers the game
+	// var to bcrypt.MinCost before Boot runs; this assignment propagates
+	// that into act. Production leaves both at bcrypt.DefaultCost.
+	act.BcryptCost = game.BcryptCost
+
 	// mudprog needs the command registry (for CMD progs) and world ref.
 	mudprog.CmdRegistry = cmdReg
 	mudprog.WorldRef = w
@@ -355,6 +361,18 @@ func registerCommands() *command.Registry {
 
 	// Config commands
 	reg.Register(&command.Command{Name: "pager", DoFun: act.DoPager, Position: types.POS_DEAD, Level: 0})
+	// `pagelen` is a second name for `DoPager`. Relies on registry map-keyed
+	// storage (internal/command/interpret.go Register), so both entries
+	// resolve to the same handler. Tests in act/playercfg_test.go assert the
+	// alias round-trips through Interpret.
+	reg.Register(&command.Command{Name: "pagelen", DoFun: act.DoPager, Position: types.POS_DEAD, Level: 0})
+
+	// Player-config commands — Phase 5 Tier 7 (plan-player-config.md).
+	// Trust=0, mortals-only logic inside each handler.
+	reg.Register(&command.Command{Name: "save", DoFun: act.DoSave, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "afk", DoFun: act.DoAfk, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "title", DoFun: act.DoTitle, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "password", DoFun: act.DoPassword, Position: types.POS_DEAD, Level: 0})
 
 	// Clan/deity/board commands
 	reg.Register(&command.Command{Name: "clans", DoFun: act.DoClans, Position: types.POS_DEAD, Level: 0})

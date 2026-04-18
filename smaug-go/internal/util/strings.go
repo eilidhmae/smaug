@@ -47,6 +47,69 @@ func SmashTilde(str string) string {
 	return strings.ReplaceAll(str, "~", "-")
 }
 
+// SmashColorToken neutralizes SMAUG color-code introducers in player-entered
+// strings. The SMAUG color protocol recognizes two escape characters at the
+// start of a color run: `&` for foreground colors and `^` for background
+// colors. Mirrors C smash_color_token() in db.c (line 4462):
+//
+//	for (; *str != '\0'; str++) {
+//	  if (*str == '^') *str = '-';
+//	  if (*str == '&') *str = '+';
+//	}
+//
+// Replacement characters differ per source to preserve visual context (a
+// caret becomes a dash; an ampersand becomes a plus).
+func SmashColorToken(str string) string {
+	var b strings.Builder
+	b.Grow(len(str))
+	for i := 0; i < len(str); i++ {
+		c := str[i]
+		switch c {
+		case '^':
+			b.WriteByte('-')
+		case '&':
+			b.WriteByte('+')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// CaseArgument extracts the first word from argument and returns it WITHOUT
+// lowercasing, along with the remaining string. Like OneArgument it respects
+// single- and double-quoted phrases as a single token. Used for commands that
+// must preserve case (passwords, bio/description prompts). Mirrors the C
+// case_argument() in interp.c (line 1170): "Pick off one argument from a
+// string and return the rest. Understands quotes. Doesn't smash case."
+func CaseArgument(argument string) (first, rest string) {
+	argument = strings.TrimLeftFunc(argument, unicode.IsSpace)
+	if argument == "" {
+		return "", ""
+	}
+
+	// Check for quoted argument.
+	delim := byte(' ')
+	if argument[0] == '\'' || argument[0] == '"' {
+		delim = argument[0]
+		argument = argument[1:]
+	}
+
+	var buf strings.Builder
+	i := 0
+	for i < len(argument) {
+		if argument[i] == delim {
+			i++
+			break
+		}
+		buf.WriteByte(argument[i])
+		i++
+	}
+
+	rest = strings.TrimLeftFunc(argument[i:], unicode.IsSpace)
+	return buf.String(), rest
+}
+
 // Capitalize returns the string with its first letter uppercased and the
 // rest lowercased, matching the SMAUG capitalize() from db.c.
 func Capitalize(str string) string {

@@ -262,3 +262,64 @@ func TestURANGE(t *testing.T) {
 		})
 	}
 }
+
+func TestCaseArgument(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantFirst string
+		wantRest  string
+	}{
+		{"preserves case in first arg", "HelloWorld rest", "HelloWorld", "rest"},
+		{"preserves case in rest", "foo BarBaz Qux", "foo", "BarBaz Qux"},
+		{"single-quoted phrase preserves case", "'MixedCase Text' more", "MixedCase Text", "more"},
+		{"double-quoted phrase preserves case", `"HeLLo WoRLd" rest`, "HeLLo WoRLd", "rest"},
+		{"leading whitespace stripped", "   HelloWorld rest", "HelloWorld", "rest"},
+		{"empty input", "", "", ""},
+		{"only whitespace", "   ", "", ""},
+		{"single word no rest", "SingleWord", "SingleWord", ""},
+		{"quoted no rest", "'Quoted Only'", "Quoted Only", ""},
+		{"password-like input", "OldPwd NewPwd AgainPwd", "OldPwd", "NewPwd AgainPwd"},
+		{"multiple spaces between tokens collapse on rest", "foo    bar", "foo", "bar"},
+		{"symbols retained", "p@$$w0rd! more", "p@$$w0rd!", "more"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			first, rest := CaseArgument(tt.input)
+			if first != tt.wantFirst {
+				t.Errorf("first = %q, want %q", first, tt.wantFirst)
+			}
+			if rest != tt.wantRest {
+				t.Errorf("rest = %q, want %q", rest, tt.wantRest)
+			}
+		})
+	}
+}
+
+func TestSmashColorToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"no color tokens", "hello world", "hello world"},
+		{"ampersand replaced with plus", "hello &world", "hello +world"},
+		{"caret replaced with dash", "hello ^world", "hello -world"},
+		{"multiple ampersands", "&R&G&B", "+R+G+B"},
+		{"multiple carets", "^R^G^B", "-R-G-B"},
+		{"mixed tokens", "&Rred ^Bblue", "+Rred -Bblue"},
+		{"empty string", "", ""},
+		{"only ampersand", "&", "+"},
+		{"only caret", "^", "-"},
+		{"adjacent tokens", "&^", "+-"},
+		{"tildes left alone", "hello~world", "hello~world"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SmashColorToken(tt.input)
+			if got != tt.want {
+				t.Errorf("SmashColorToken(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

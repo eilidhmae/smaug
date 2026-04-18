@@ -270,6 +270,36 @@ func TestTestOpts_LowersBcryptCost(t *testing.T) {
 	}
 }
 
+// TestBoot_SyncsActBcryptCost asserts that Boot propagates game.BcryptCost
+// into act.BcryptCost so DoPassword hashes at the same cost the login flow
+// does. Without this sync, tests that use TestOpts() to lower bcrypt cost
+// would still pay the full DefaultCost inside DoPassword.
+func TestBoot_SyncsActBcryptCost(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	prevGame := game.BcryptCost
+	prevAct := act.BcryptCost
+	defer func() {
+		game.BcryptCost = prevGame
+		act.BcryptCost = prevAct
+	}()
+
+	game.BcryptCost = bcrypt.MinCost
+	act.BcryptCost = bcrypt.DefaultCost // force a mismatch so the sync is observable
+
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+
+	_, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	if act.BcryptCost != bcrypt.MinCost {
+		t.Errorf("Boot should sync act.BcryptCost from game.BcryptCost: act=%d game=%d",
+			act.BcryptCost, game.BcryptCost)
+	}
+}
+
 // copyFile copies a single regular file from src to dst, creating
 // intermediate directories as needed. Used to assemble scoped-fixture
 // data dirs for the fail-loud tests below.

@@ -36,10 +36,17 @@ Follow-ups queued from plan-combat-depth.md:
 
 **→ See `smaug-go/doc/plan-player-config.md` for the player commands (4 groups) and `smaug-go/doc/plan-channels.md` for the channels (5 groups). Both adversary-verified.**
 
-- [ ] Register `password`, `title`, `afk`, `save` (plan groups G1–G4)
-- [ ] Optional `pagelen` alias (plan G5)
+- [x] Register `password`, `title`, `afk`, `save` (plan groups G1–G4). LANDED 2026-04-17.
+- [x] Optional `pagelen` alias (plan G5). LANDED 2026-04-17.
 - [ ] Communication channels: `immtalk`, `gtell`, `auction`-helper + stub (`plan-channels.md` G1–G4). Full auction system and `music`/`newbiechat`/`racetalk`/`wartalk`/`counciltalk`/`guildtalk` deferred to Phase 6.
 - [ ] `bio`/`description` deferred — blocked on `editor.go` `/s` bug where descriptor stays in `CON_EDITING` permanently (`plan-player-config.md` R6).
+
+Follow-ups queued from plan-player-config.md:
+- [ ] R1: `persist/player.go:218` reads `Bio` but nothing writes it — add `Bio` field to the saver when G6 (`bio`/`description`) unblocks.
+- [ ] R5: `update_aris` not called before `save_char_obj` in `DoSave` (low-impact for manual save — follow-up).
+- [ ] R6: `internal/game/editor.go:156-160` — `/s` does not call `StopEditing`; descriptor stays in `CON_EDITING` forever. Fix required before `DoBio` / `DoDescription` / Phase-6 OLC substates.
+- [ ] R7: AFK `[AFK]` indicator on `do_who` listings.
+- [ ] R8: audit claim about `ban.go` honoring AFK is incorrect — tracked for audit-doc correction.
 
 ### Persistence gaps
 
@@ -168,3 +175,4 @@ Roughly ordered by player-visibility/impact:
   - [x] Brute-force disconnect message wording
   - [x] Positive-direction tests (mpForce + SpellFarsight NPC path) with mutation verification; `savesSpellStaffFn` seam in `magic.go`
 - [x] Audit commits landed: `720278d` (docs) + `9b789a7` (code)
+- [x] **Player-config commands P1 — landed.** Four commands + one alias (`save` G1, `afk` G2, `title` G3, `password` G4, `pagelen` G5) plus two util prereqs (`util.CaseArgument`, `util.SmashColorToken`). Divergence from C: `do_password` requires `<old> <new> <again>` (C takes only `<new> <again>` with the old-pwd check commented out); min length bumped to 6. `act.BcryptCost` synced from `game.BcryptCost` in `boot.Boot`. New files: `internal/act/playercfg.go`, `internal/act/playercfg_test.go`. 29 new tests (28 in `act` + 1 boot sync test); all mutation-verified. `go test -count=3 ./...` green. See plan completion record at the bottom of `smaug-go/doc/plan-player-config.md`.

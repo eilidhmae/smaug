@@ -125,3 +125,51 @@ G1+G2+G3+G5 ≈ one afternoon. G4 ≈ half a day (plus user confirmation on R2/R
 - Util prereqs: `/home/eilidh/src/smaug/smaug-go/internal/util/strings.go` (add `CaseArgument`, `SmashColorToken`), `…/util/strings_test.go`
 - Wiring: `/home/eilidh/src/smaug/smaug-go/internal/boot/boot.go` (register four commands + optional pagelen alias)
 - Existing seams: `/home/eilidh/src/smaug/smaug-go/internal/act/info.go:335` (`SaveFunc`), `…/internal/act/comm.go:57,89` (AFK prefix), `…/internal/act/info2.go:130` (`DoPager`), `…/internal/game/loop.go:771` (`SavePlayer`), `…/internal/types/enums.go:979` (`PLR_AFK`), `…/internal/types/constants.go:657` (`PCFLAG_NOTITLE`), `…/internal/types/pcdata.go` (fields)
+
+---
+
+## Completion (2026-04-17)
+
+All five in-scope task groups landed (G1 `save`, G2 `afk`, G3 `title`, G4 `password`, G5 `pagelen` alias) plus both util prereqs (`CaseArgument`, `SmashColorToken`). `go test -count=3 ./...` green across all 15 packages. G6 (`bio` / `description`) stays deferred on R6 as planned.
+
+### Decisions confirmed from the user at kickoff
+
+- **R2 — password argument shape.** Go port requires `password <old> <new> <again>`. This is a deliberate divergence from C — C `do_password` at `act_info.c:5078` takes only `<new> <again>` because the old-password check is commented out in-place. Rationale: aligns with the already-shipped bcrypt migration and meets a modern security baseline. Divergence is noted inline in `internal/act/playercfg.go` `DoPassword` docstring.
+- **R3 — minimum password length = 6.** Up from C's 5. Message: `"New password must be at least six characters long."`.
+
+### What landed
+
+- **Util prereqs** — `internal/util/strings.go`:
+  - `CaseArgument(argument) (first, rest string)` — case-preserving `OneArgument`, matches C `interp.c:1170` including quote handling (`'` / `"`), leading-whitespace trim, and trailing-whitespace trim on rest. 12 test cases in `internal/util/strings_test.go`.
+  - `SmashColorToken(str) string` — ports C `db.c:4462` **accurately**: `^` → `-` AND `&` → `+` (the original plan described this as "character-by-character `&` scrub" which was a slight under-specification — actual C handles both introducers with distinct replacement chars). 11 test cases.
+- **G1 — `DoSave`** (`internal/act/playercfg.go`). NPC early return, level<2 gate, `ch.Wait=2`, calls `SaveFunc(ch)`, sends `"Saved...\n\r"`. 4 tests (NPC noop, level-1 rejected, level-2 saves, nil-SaveFunc safety). `update_aris` deferred per R5.
+- **G2 — `DoAfk`** (same file). NPC early return, `PLR_AFK` toggle via `ch.Act.Set`/`Remove`, self-message, `util.Act(..., TO_CANSEE)` room broadcast. 5 tests including the `DoTell` AFK-prefix regression.
+- **G3 — `DoTitle`** (same file). NPC + PCData-nil guards, `PCFLAG_NOTITLE` gate, empty-arg check, 50-byte truncate (byte-wise matches C's `argument[50] = '\0'`), `SmashTilde` → `SmashColorToken` → `setTitle`. `setTitle` (port of `player.c:3112`) prepends a space iff the title starts with an alnum char. 9 tests.
+- **G4 — `DoPassword`** (same file). NPC + PCData-nil guards; three-arg `CaseArgument` parse; partial/missing args print `"Syntax: password <old> <new> <again>."`; bcrypt verify against stored hash; mismatch check; `len(newPwd) >= 6` check; `bcrypt.GenerateFromPassword` at `BcryptCost`; log line (`"<name> changing password"` or `"<name> changing password from site <host>"`); `SaveFunc(ch)`; `"Ok.\n\r"`. 9 tests (success, wrong-old, mismatch, too-short, no-args, partial-args, NPC, log emitted, case preserved).
+- **G5 — `pagelen` alias** (`internal/boot/boot.go`). Second `reg.Register` with `Name: "pagelen"` pointing at `act.DoPager`. Verified by `TestInterpret_PagelenAlias` in `internal/act/playercfg_test.go` — dispatches `pagelen 40` through `Interpret` and asserts `ch.PCData.PagerLen == 40`.
+
+### Cross-package seam
+
+- **`act.BcryptCost`** — new package-local var (`var BcryptCost = bcrypt.DefaultCost`) declared in `internal/act/playercfg.go`. `internal/boot/boot.go` `Boot` syncs `act.BcryptCost = game.BcryptCost` after the game loop is constructed so that `boot.TestOpts()` (which lowers `game.BcryptCost` to `bcrypt.MinCost`) also applies to `DoPassword`. Covered by a new `TestBoot_SyncsActBcryptCost` in `internal/boot/boot_test.go` with mutation verification.
+
+### Tests and verification
+
+- 29 new test cases in `internal/act/playercfg_test.go` (28) + `internal/boot/boot_test.go` (1 BcryptCost sync).
+- 2 new test cases in `internal/util/strings_test.go` (`TestCaseArgument`, `TestSmashColorToken` — 23 subtests combined).
+- Every gate mutation-verified: flip the `<`/`>`/`!=` → tests red → revert → tests green. Mutations exercised: `DoSave` level gate, `DoAfk` set path, `DoTitle` NOTITLE inversion, `DoPassword` old-pwd-check bypass, `SmashColorToken` replacement swap, `CaseArgument` lowercasing, `BcryptCost` sync omission.
+- `go test -count=3 ./...` green across all 15 packages.
+- Existing `TestDoTell_AFKPrefixRegression` in `act/flags_test.go:340` still green — new AFK toggle behavior drives the same downstream prefix.
+
+### Intentional deferrals
+
+- **`bio` / `description` (G6)** — blocked on R6: `internal/game/editor.go:156-160` handles `/s` by sending `"Done."` and returning **without** calling `StopEditing`, so the descriptor stays in `CON_EDITING` forever. Fix must land in `editor.go` before any editor-backed command. Captured in `TODO.md` follow-ups.
+- **R1 bio saver missing** — pairs with G6; no writer for `Bio` in `persist/player.go:~511`. Follow-up noted.
+- **R5 `update_aris` on save** — not ported (manual save is low-impact). Follow-up noted.
+- **R7 `[AFK]` who-list indicator** — not ported. Follow-up noted.
+- **R8 audit-doc correction (`ban.go` AFK)** — noted in `TODO.md`.
+
+### Files touched
+
+- New: `internal/act/playercfg.go`, `internal/act/playercfg_test.go`.
+- Modified: `internal/util/strings.go`, `internal/util/strings_test.go`, `internal/boot/boot.go`, `internal/boot/boot_test.go`.
+- Doc updates: this file (completion section appended), `smaug-go/doc/phases.md` (Tier 8 entry added), `CLAUDE.md` / `TODO.md` / `CHANGELOG.md` at the repo root.
