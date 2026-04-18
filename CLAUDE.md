@@ -65,6 +65,8 @@ go build -o smaug-go ./cmd/smaug/
 
 Module: `github.com/eilidhmae/smaug`. Build all: `go build ./...`. Test all: `go test ./...`.
 
+On fresh clone: `make install-hooks` (from `smaug-go/`) activates the pre-commit gate (gofmt + vet + unit tests + conflict markers). Bypass with `--no-verify`; skip individual gates with `SMAUG_SKIP_VET=1` / `SMAUG_SKIP_TESTS=1`.
+
 ## Conventions (not covered in `plan.md`)
 
 - C enums → untyped `int` constants (not typed Go enums) so they interop cleanly with struct fields

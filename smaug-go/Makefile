@@ -1,4 +1,4 @@
-.PHONY: build test test-v test-race clean run vet lint fmt check
+.PHONY: build test test-v test-race clean run vet lint fmt check install-hooks
 
 BINARY  := smaug-go
 PORT    := 4000
@@ -46,6 +46,10 @@ fmt-check:
 
 # All checks: vet + test + format check
 check: vet fmt-check test
+
+# Install the git pre-commit hook for this clone
+install-hooks:
+	./hooks/install.sh
 
 # Remove build artifacts
 clean:

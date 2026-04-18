@@ -1,0 +1,315 @@
+#!/usr/bin/env bash
+#
+# pre-commit -- Gate + informational report for smaug-go commits.
+#
+# Hard gates (exit non-zero):
+#   - merge conflict markers (via git diff --check --cached)
+#   - gofmt on staged .go blobs
+#   - go vet ./...              (skip: SMAUG_SKIP_VET=1)
+#   - unit tests (exclude cmd/smaug integration pkg) (skip: SMAUG_SKIP_TESTS=1)
+#
+# Warnings (exit 0, printed for agent/human to consider):
+#   - integration tests (cmd/smaug/) unless SMAUG_RUN_INTEGRATION=1
+#   - new .go source file without _test.go sibling
+#   - large additions (>150 lines per file)
+#   - TODO/FIXME/HACK/XXX in new code
+#   - commented-out code heuristic
+#
+# Bypass the whole hook with `git commit --no-verify` (discouraged).
+#
+# Working-tree safety: unstaged changes are stashed with --keep-index and
+# restored on EXIT trap so vet/test run against exactly what will be committed.
+
+set -uo pipefail
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+MODULE_DIR="$REPO_ROOT/smaug-go"
+
+if [ ! -d "$MODULE_DIR" ]; then
+    echo "pre-commit: smaug-go/ not found under repo root $REPO_ROOT; skipping."
+    exit 0
+fi
+
+FAIL_COUNT=0
+WARN_COUNT=0
+
+fail() {
+    echo "ERROR: $*"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+}
+
+warn() {
+    echo "[warn] $*"
+    WARN_COUNT=$((WARN_COUNT + 1))
+}
+
+# ---------------------------------------------------------------------------
+# Collect staged files
+# ---------------------------------------------------------------------------
+
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACMR)
+STAGED_GO=$(echo "$STAGED_ALL" | grep -E '\.go$' || true)
+STAGED_NEW_GO=$(git diff --cached --name-only --diff-filter=A | grep -E '\.go$' || true)
+
+echo "========================================="
+echo " smaug-go pre-commit"
+echo "========================================="
+echo "Repo:    $REPO_ROOT"
+echo "Module:  $MODULE_DIR"
+echo "Time:    $(date '+%Y-%m-%d %H:%M:%S')"
+echo ""
+
+if [ -z "$STAGED_ALL" ]; then
+    echo "No staged changes. Nothing to check."
+    exit 0
+fi
+
+echo "--- STAGED FILES ---"
+git diff --cached --stat
+echo ""
+
+if [ -z "$STAGED_GO" ]; then
+    echo "No .go files staged -- skipping Go checks."
+    echo "OK: pre-commit checks passed"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Stash unstaged changes so vet/test see exactly the staged content
+# ---------------------------------------------------------------------------
+
+STASH_POPPED=0
+if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    if git stash push --keep-index --include-untracked -q -m "pre-commit-hook-$$" 2>/dev/null; then
+        trap 'if [ "$STASH_POPPED" -eq 0 ]; then git stash pop -q 2>/dev/null || true; fi' EXIT INT TERM
+        STASHED=1
+    else
+        warn "could not stash unstaged changes; vet/test may see working-tree state, not index"
+        STASHED=0
+    fi
+else
+    STASHED=0
+fi
+
+# ---------------------------------------------------------------------------
+# Merge-conflict markers (HARD GATE)
+# ---------------------------------------------------------------------------
+
+echo "--- MERGE CONFLICT MARKERS ---"
+if CONFLICT_OUT=$(git diff --check --cached 2>&1); then
+    echo "  (none)"
+else
+    fail "merge conflict markers or whitespace errors in staged diff:"
+    echo "$CONFLICT_OUT" | sed 's/^/  /'
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# gofmt on staged blobs (HARD GATE)
+# ---------------------------------------------------------------------------
+
+echo "--- GOFMT ---"
+TMPDIR_FMT=$(mktemp -d)
+trap_prev=$(trap -p EXIT | sed "s/trap -- '//; s/' EXIT//" || true)
+trap "rm -rf '$TMPDIR_FMT'; $trap_prev" EXIT
+
+UNFMT=()
+while IFS= read -r path; do
+    [ -z "$path" ] && continue
+    # Preserve the basename so gofmt reports a useful filename.
+    tmpfile="$TMPDIR_FMT/$(basename "$path")"
+    if ! git show ":$path" > "$tmpfile" 2>/dev/null; then
+        continue
+    fi
+    if [ -n "$(gofmt -l "$tmpfile" 2>/dev/null)" ]; then
+        UNFMT+=("$path")
+    fi
+done <<< "$STAGED_GO"
+
+if [ "${#UNFMT[@]}" -eq 0 ]; then
+    echo "  (all staged .go files are gofmt-clean)"
+else
+    fail "${#UNFMT[@]} file(s) need gofmt:"
+    for f in "${UNFMT[@]}"; do
+        echo "  $f"
+    done
+    echo "  Fix: (cd $MODULE_DIR && gofmt -w ${UNFMT[*]})"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# Detect rebase -- skip test gates during replay to avoid N*10s tax
+# ---------------------------------------------------------------------------
+
+GIT_DIR=$(git rev-parse --git-dir)
+IN_REBASE=0
+if [ -d "$GIT_DIR/rebase-merge" ] || [ -d "$GIT_DIR/rebase-apply" ]; then
+    IN_REBASE=1
+    echo "--- REBASE DETECTED ---"
+    echo "  Skipping vet + test gates during rebase replay."
+    echo ""
+fi
+
+# ---------------------------------------------------------------------------
+# go vet (HARD GATE unless SMAUG_SKIP_VET=1 or rebase)
+# ---------------------------------------------------------------------------
+
+echo "--- GO VET ---"
+if [ "${SMAUG_SKIP_VET:-0}" = "1" ]; then
+    echo "  (skipped: SMAUG_SKIP_VET=1)"
+elif [ "$IN_REBASE" = "1" ]; then
+    echo "  (skipped: rebase in progress)"
+else
+    if VET_OUT=$(cd "$MODULE_DIR" && go vet ./... 2>&1); then
+        echo "  PASS"
+    else
+        fail "go vet reported issues:"
+        echo "$VET_OUT" | sed 's/^/  /'
+        echo "  Bypass for this commit: SMAUG_SKIP_VET=1 git commit ..."
+    fi
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# Unit tests (HARD GATE) -- exclude cmd/smaug integration package
+# ---------------------------------------------------------------------------
+
+echo "--- UNIT TESTS ---"
+if [ "${SMAUG_SKIP_TESTS:-0}" = "1" ]; then
+    echo "  (skipped: SMAUG_SKIP_TESTS=1)"
+elif [ "$IN_REBASE" = "1" ]; then
+    echo "  (skipped: rebase in progress)"
+else
+    UNIT_PKGS=$(cd "$MODULE_DIR" && go list ./... 2>/dev/null | grep -v '/cmd/smaug$' || true)
+    if [ -z "$UNIT_PKGS" ]; then
+        echo "  (no unit packages found)"
+    else
+        if UNIT_OUT=$(cd "$MODULE_DIR" && go test -count=1 -timeout 30s $UNIT_PKGS 2>&1); then
+            echo "  PASS"
+        else
+            fail "unit tests failed:"
+            echo "$UNIT_OUT" | tail -30 | sed 's/^/  /'
+            echo "  Bypass for this commit: SMAUG_SKIP_TESTS=1 git commit ..."
+        fi
+    fi
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# Integration tests (WARN by default, HARD GATE if SMAUG_RUN_INTEGRATION=1)
+# ---------------------------------------------------------------------------
+
+echo "--- INTEGRATION TESTS (cmd/smaug) ---"
+if [ "$IN_REBASE" = "1" ]; then
+    echo "  (skipped: rebase in progress)"
+elif [ "${SMAUG_SKIP_TESTS:-0}" = "1" ]; then
+    echo "  (skipped: SMAUG_SKIP_TESTS=1)"
+elif [ "${SMAUG_RUN_INTEGRATION:-0}" = "1" ]; then
+    if INT_OUT=$(cd "$MODULE_DIR" && go test -count=1 -timeout 60s ./cmd/smaug/ 2>&1); then
+        echo "  PASS"
+    else
+        fail "integration tests failed:"
+        echo "$INT_OUT" | tail -30 | sed 's/^/  /'
+    fi
+else
+    echo "  (skipped -- enable with SMAUG_RUN_INTEGRATION=1; CI runs them)"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# Restore unstaged changes before running informational checks on the diff
+# ---------------------------------------------------------------------------
+
+if [ "$STASHED" = "1" ]; then
+    git stash pop -q 2>/dev/null || true
+    STASH_POPPED=1
+fi
+
+# ---------------------------------------------------------------------------
+# WARNINGS
+# ---------------------------------------------------------------------------
+
+echo "--- NEW .go FILES WITHOUT _test.go SIBLING ---"
+FOUND_MISSING=0
+while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    case "$file" in
+        *_test.go) continue ;;
+    esac
+    # Skip package main (main.go, cmd/* entrypoints).
+    if git show ":$file" 2>/dev/null | head -20 | grep -qE '^package main\b'; then
+        continue
+    fi
+    # Skip generated files.
+    if git show ":$file" 2>/dev/null | head -2 | grep -qiE '^// *Code generated'; then
+        continue
+    fi
+    dir=$(dirname "$file")
+    base=$(basename "$file" .go)
+    test_file="$dir/${base}_test.go"
+    if [ ! -f "$REPO_ROOT/$test_file" ] && ! git diff --cached --name-only | grep -qx "$test_file"; then
+        warn "new file $file has no sibling $test_file"
+        FOUND_MISSING=1
+    fi
+done <<< "$STAGED_NEW_GO"
+if [ "$FOUND_MISSING" -eq 0 ]; then
+    echo "  (none)"
+fi
+echo ""
+
+echo "--- LARGE ADDITIONS (>150 lines in one file) ---"
+FOUND_LARGE=0
+while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    added=$(git diff --cached --numstat -- "$file" 2>/dev/null | awk '{print $1}')
+    if [ -n "$added" ] && [ "$added" != "-" ] && [ "$added" -gt 150 ]; then
+        warn "$file (+$added lines)"
+        FOUND_LARGE=1
+    fi
+done <<< "$STAGED_ALL"
+if [ "$FOUND_LARGE" -eq 0 ]; then
+    echo "  (none)"
+fi
+echo ""
+
+echo "--- NEW TODOs / FIXMEs / HACKs ---"
+TODO_LINES=$(git diff --cached 2>/dev/null | grep -nE '^\+' | grep -iE 'TODO|FIXME|HACK|XXX' | head -20 || true)
+if [ -n "$TODO_LINES" ]; then
+    echo "$TODO_LINES" | while IFS= read -r line; do
+        echo "  [warn] $line"
+    done
+    WARN_COUNT=$((WARN_COUNT + 1))
+else
+    echo "  (none)"
+fi
+echo ""
+
+echo "--- COMMENTED-OUT CODE (heuristic) ---"
+COMMENTED=$(git diff --cached 2>/dev/null | grep '^+' | grep -E '^\+[[:space:]]*//[[:space:]]*(if |for |func |return |import |var |case |switch |go |defer )' | head -10 || true)
+if [ -n "$COMMENTED" ]; then
+    echo "$COMMENTED" | while IFS= read -r line; do
+        echo "  [warn] $line"
+    done
+    WARN_COUNT=$((WARN_COUNT + 1))
+else
+    echo "  (none detected)"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+echo "========================================="
+if [ "$FAIL_COUNT" -gt 0 ]; then
+    echo " BLOCKED: $FAIL_COUNT check(s) failed, $WARN_COUNT warning(s)"
+    echo "========================================="
+    exit 1
+fi
+echo " OK: pre-commit checks passed ($WARN_COUNT warning(s))"
+echo "========================================="
+exit 0
