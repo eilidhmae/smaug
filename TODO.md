@@ -2,15 +2,21 @@
 
 ## Recommended next steps (ordered)
 
-Four plans are adversary-verified and ready to execute (2026-04-17). Each has its own doc under `smaug-go/doc/` with gap inventory, task groups (G1, G2…), acceptance criteria, and open questions.
+The four 2026-04-17 audit plans (`plan-combat-depth.md`, `plan-dammessage-gaps.md`, `plan-player-config.md`, `plan-channels.md`) all landed 2026-04-17 — see Done section below.
 
-1. **`plan-combat-depth.md`** (P0) — multi-attack cascade (second…seventh_attack), weapon proficiency bonus, stance application. Acceptance: a level-30 PC warrior with `second_attack`/`third_attack` learned gets the expected extra attacks per round.
-2. **`plan-dammessage-gaps.md`** (P1) — `was_in_room` swap, `PCFLAG_GAG` self-suppress, poisoned-weapon prefix. Pairs naturally with the combat-depth plan (same package).
-3. **`plan-player-config.md`** (P1) — `save`, `afk`, `title`, `password` (+ optional `pagelen` alias). Closes four TODO items in one session.
-4. **`plan-channels.md`** (P1) — `immtalk`, `gtell`, `auction`-helper + stub. Unblocks multi-player coordination. Full auction system deferred to Phase 6.
-5. **Interactive OLC substates** (P2): `CON_OEDITING` / `CON_MEDITING`. Blocked on an `editor.go` fix (`/s` doesn't call `StopEditing` — see `plan-player-config.md` R6). Harness has the `WithPrompt` seam ready (Tier 5).
-6. **Hotboot/copyover** (P2, infrastructure): Go-native design required — C's `exec()` + fd-inheritance doesn't translate. Design pass first (save-all-state + graceful restart + auto-reconnect handshake), then implementation.
-7. **Big optional systems** (P3): overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps. Each is large and self-contained; pick by demand signal, not order.
+**Five new plans adversary-verified (2026-04-17 wave 2), ready to execute.** Each has its own doc under `smaug-go/doc/` with gap inventory, task groups, acceptance criteria, and resolved adversary concerns.
+
+1. **`plan-do-channels.md`** (P1) — Fix `Deaf`-bitvector persistence BUG (silent data loss on every logout) + ship `DoChannels` toggle command with full 30-entry channel table. G1 (persistence) should ship alone first; G2-G5 (command) follows.
+2. **`plan-timer-subsystem.md`** (P1) — Ship generic `handler.AddTimer`/`GetTimer`/`RemoveTimer`, wire decrement in `violenceUpdate` (NOT `charUpdate` — adversary caught 23x cadence bug), activate `IsAttackSuppressed` (currently dead-in-production), set `TIMER_RECENTFIGHT` on PC-vs-PC combat, gate `DoQuit`.
+3. **`plan-editor-save.md`** (P2) — Fix `/s` stuck-state bug (blocks `bio`/`description` and Phase-6 OLC substates). Option-C design: call-site assignment of `ch.EditorSave`, no signature churn.
+4. **`plan-do-gag.md`** (P2) — Ship `DoGag` standalone toggle mirroring `DoAfk` (conditional pattern, directional messages). ~10 LOC.
+5. **`plan-rollD20-seam.md`** (P2) — Convert `rollD20` to function-variable seam; fix ~5% flake in `TestOneHitFull_ExplicitWieldUsed`.
+
+**Still deferred:**
+
+6. **Interactive OLC substates** (P2): `CON_OEDITING` / `CON_MEDITING`. **Unblocked** once `plan-editor-save.md` lands. Harness has the `WithPrompt` seam ready (Tier 5).
+7. **Hotboot/copyover** (P2, infrastructure): Go-native design required — C's `exec()` + fd-inheritance doesn't translate. Design pass first (save-all-state + graceful restart + auto-reconnect handshake), then implementation.
+8. **Big optional systems** (P3): overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps. Each is large and self-contained; pick by demand signal, not order.
 
 ---
 

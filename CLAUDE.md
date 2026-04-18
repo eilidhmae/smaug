@@ -44,7 +44,15 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 8 (player-config commands — save / afk / title / password + pagelen) | `plan-player-config.md` (plan + completion) | — |
 | 5 Tier 9 (communication channels — immtalk / gtell / auction stub) | `plan-channels.md` (plan + completion) | — |
 
-**Next work:** all four P1 plans from the 2026-04-17 audit have landed. Remaining work tracked in `TODO.md` under *Active* (Phase-6-sized optional systems, polish items, follow-up queues from each plan).
+**Next work:** five new polish plans adversary-verified and staged 2026-04-17 (wave 2). Ordered in `TODO.md` "Recommended next steps":
+
+1. `plan-do-channels.md` (P1) — Deaf persistence bug fix + `DoChannels` toggle command.
+2. `plan-timer-subsystem.md` (P1) — `handler.AddTimer` + `TIMER_RECENTFIGHT` wiring + activate `IsAttackSuppressed`.
+3. `plan-editor-save.md` (P2) — `/s` stuck-state fix; unblocks `bio`/`description` and Phase-6 OLC substates.
+4. `plan-do-gag.md` (P2) — standalone `DoGag` toggle.
+5. `plan-rollD20-seam.md` (P2) — function-variable seam eliminates ~5% combat-test flake.
+
+All four P1 plans from the 2026-04-17 audit have landed (see Done section of `TODO.md`). Phase-6-sized optional systems, polish items, and follow-up queues remain tracked in `TODO.md` Active.
 
 **Reviews:**
 
