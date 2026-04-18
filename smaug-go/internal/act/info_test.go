@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -337,6 +338,40 @@ func TestDoQuit_Fighting(t *testing.T) {
 	// Should NOT be disconnected
 	if ch.Desc.Connected == -1 {
 		t.Error("should not disconnect while fighting")
+	}
+}
+
+// DoQuit blocks the quit while TIMER_RECENTFIGHT is still running, and
+// allows it once the timer is removed. Mirrors the C adrenaline gate.
+func TestDoQuit_BlockedByRecentFight(t *testing.T) {
+	setupTestWorld()
+	prev := SaveFunc
+	SaveFunc = nil
+	defer func() { SaveFunc = prev }()
+
+	ch, client := makeTestChar("Gandalf")
+	defer client.Close()
+
+	ch.Position = types.POS_STANDING
+	handler.AddTimer(ch, types.TIMER_RECENTFIGHT, 5, "", 0)
+
+	DoQuit(ch, "")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(out, "adrenaline is pumping") {
+		t.Errorf("expected adrenaline-blocked message, got: %q", out)
+	}
+	if ch.Desc.Connected != types.CON_PLAYING {
+		t.Errorf("ch.Desc.Connected = %d, want CON_PLAYING (quit should be blocked)", ch.Desc.Connected)
+	}
+
+	handler.RemoveTimer(ch, types.TIMER_RECENTFIGHT)
+
+	DoQuit(ch, "")
+	_ = readOutput(ch, client)
+
+	if ch.Desc.Connected != -1 {
+		t.Errorf("ch.Desc.Connected = %d, want -1 (quit should proceed once timer cleared)", ch.Desc.Connected)
 	}
 }
 

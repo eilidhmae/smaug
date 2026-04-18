@@ -341,6 +341,11 @@ func DoQuit(ch *types.CharData, argument string) {
 		return
 	}
 
+	if !ch.IsNPC() && handler.GetTimer(ch, types.TIMER_RECENTFIGHT) > 0 {
+		ch.Send("Your adrenaline is pumping too hard to quit now!\n\r")
+		return
+	}
+
 	// Save the player before quitting
 	if SaveFunc != nil {
 		SaveFunc(ch)

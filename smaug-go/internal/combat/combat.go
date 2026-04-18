@@ -86,6 +86,17 @@ func StopFighting(ch *types.CharData, fBoth bool) {
 
 // ViolenceUpdate processes one combat round for all fighting characters.
 func ViolenceUpdate(w *world.World) {
+	// Per-char timer decrement. Runs every PULSE_VIOLENCE for every
+	// character (not just fighters) — matches C fight.c:382-430. Timers
+	// with Value == -1 are permanent and never decrement; expired
+	// timers are removed by handler.DecrementTimers.
+	for _, ch := range w.Characters {
+		if ch == nil {
+			continue
+		}
+		handler.DecrementTimers(ch)
+	}
+
 	for _, ch := range w.Characters {
 		if ch.Fighting == nil || ch.InRoom == nil {
 			continue
@@ -152,19 +163,18 @@ var oneHitOffhand = func(w *world.World, ch, victim *types.CharData, dt int) int
 // IsAttackSuppressed reports whether ch has TIMER_ASUPRESSED active,
 // indicating they're in a temporary no-attack grace window. Mirrors C
 // fight.c:74-92 is_attack_supressed.
-//
-// TODO: when the timer subsystem is fleshed out (handler.AddTimer) this
-// should match C exactly. For now it's a best-effort read of ch.Timers.
 func IsAttackSuppressed(ch *types.CharData) bool {
 	if ch == nil {
 		return false
 	}
-	for _, t := range ch.Timers {
-		if t != nil && t.Type == types.TIMER_ASUPRESSED {
-			return true
-		}
+	t := handler.GetTimerPtr(ch, types.TIMER_ASUPRESSED)
+	if t == nil {
+		return false
 	}
-	return false
+	if t.Value == -1 {
+		return true
+	}
+	return t.Count >= 1
 }
 
 // MultiHit dispatches a full round of attacks from ch against victim.
@@ -183,13 +193,16 @@ func IsAttackSuppressed(ch *types.CharData) bool {
 //
 // Returns rNONE, rVICT_DIED, rCHAR_DIED, or rBOTH_DIED.
 func MultiHit(w *world.World, ch, victim *types.CharData, dt int) int {
-	// PLR_NICE on a PC attacker suppresses multi-hit entirely against
-	// another PC (C fight.c:982). TIMER_RECENTFIGHT is not set here
-	// because the timer subsystem is not yet ported — see TODO.md.
+	// Mutual PC-vs-PC combat sets TIMER_RECENTFIGHT on both participants
+	// for 11 violence pulses (~33s), unless the attacker is wearing the
+	// PLR_NICE flag which suppresses multi-hit entirely. Matches C
+	// fight.c:982-986.
 	if !ch.IsNPC() && !victim.IsNPC() {
 		if ch.Act.IsSet(types.PLR_NICE) {
 			return rNONE
 		}
+		handler.AddTimer(ch, types.TIMER_RECENTFIGHT, 11, "", 0)
+		handler.AddTimer(victim, types.TIMER_RECENTFIGHT, 11, "", 0)
 	}
 
 	// Attack-suppressed — skip the round entirely (C fight.c:988).

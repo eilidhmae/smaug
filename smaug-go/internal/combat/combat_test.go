@@ -871,14 +871,14 @@ func TestComputeXP(t *testing.T) {
 		vicExp    int
 		wantRange [2]int // [min, max] inclusive
 	}{
-		{"victim 5+ levels above", 5, 10, 1000, [2]int{1500, 1500}},  // 150%
-		{"victim 1 level above", 10, 11, 1000, [2]int{1100, 1100}},   // 110%
-		{"same level", 10, 10, 1000, [2]int{1000, 1000}},             // 100%
-		{"victim 3 below", 10, 7, 1000, [2]int{1000, 1000}},          // 100%
-		{"victim 4 below", 10, 6, 1000, [2]int{750, 750}},            // 75%
-		{"victim 8 below", 10, 2, 1000, [2]int{750, 750}},            // 75%
-		{"victim 9+ below", 10, 1, 1000, [2]int{250, 250}},           // 25%
-		{"fallback xp from level", 5, 3, 0, [2]int{1, 90}},           // 3*3*10=90 at 75%=67
+		{"victim 5+ levels above", 5, 10, 1000, [2]int{1500, 1500}}, // 150%
+		{"victim 1 level above", 10, 11, 1000, [2]int{1100, 1100}},  // 110%
+		{"same level", 10, 10, 1000, [2]int{1000, 1000}},            // 100%
+		{"victim 3 below", 10, 7, 1000, [2]int{1000, 1000}},         // 100%
+		{"victim 4 below", 10, 6, 1000, [2]int{750, 750}},           // 75%
+		{"victim 8 below", 10, 2, 1000, [2]int{750, 750}},           // 75%
+		{"victim 9+ below", 10, 1, 1000, [2]int{250, 250}},          // 25%
+		{"fallback xp from level", 5, 3, 0, [2]int{1, 90}},          // 3*3*10=90 at 75%=67
 		{"minimum 1 xp", 50, 1, 1, [2]int{1, 1}},                    // 25% of 1 = 0, clamped to 1
 	}
 	for _, tc := range tests {
@@ -1841,7 +1841,7 @@ func TestMultiHit_AttackSuppressedSkips(t *testing.T) {
 	stubGsnsForCascade(t)
 	calls := stubCascade(t, func() int { return 0 })
 	_, _, ch, victim := setupCascade(t, 30)
-	ch.Timers = append(ch.Timers, &types.TimerData{Type: types.TIMER_ASUPRESSED, Value: 5})
+	handler.AddTimer(ch, types.TIMER_ASUPRESSED, 5, "", 0)
 
 	if ret := MultiHit(nil, ch, victim, types.TYPE_UNDEFINED); ret != rNONE {
 		t.Errorf("attack-suppressed returned %d, want rNONE", ret)
@@ -2054,5 +2054,152 @@ func TestMultiHit_NPCNumAttacks(t *testing.T) {
 	MultiHit(w, ch, victim, types.TYPE_UNDEFINED)
 	if victim.Hit >= 50000 {
 		t.Error("NPC with NumAttacks=3 should deal damage via MultiHit")
+	}
+}
+
+// --- Timer subsystem integration (G2-G4) ---
+
+// ViolenceUpdate decrements per-char timers on every character each
+// pulse, not just fighters. Two non-fighting chars each with a timer
+// Count=3 must both drop to Count=2 after one call.
+func TestViolenceUpdate_DecrementsEveryChar(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10200, Name: "Timer Field"}
+	w.Rooms[10200] = room
+
+	a := newFighter("Alpha", 10)
+	handler.CharToRoom(a, room)
+	w.AddChar(a)
+	b := newFighter("Beta", 10)
+	handler.CharToRoom(b, room)
+	w.AddChar(b)
+
+	handler.AddTimer(a, types.TIMER_RECENTFIGHT, 3, "", 0)
+	handler.AddTimer(b, types.TIMER_RECENTFIGHT, 3, "", 0)
+
+	ViolenceUpdate(w)
+
+	if got := handler.GetTimer(a, types.TIMER_RECENTFIGHT); got != 2 {
+		t.Errorf("Alpha TIMER_RECENTFIGHT = %d, want 2", got)
+	}
+	if got := handler.GetTimer(b, types.TIMER_RECENTFIGHT); got != 2 {
+		t.Errorf("Beta TIMER_RECENTFIGHT = %d, want 2", got)
+	}
+}
+
+// PC-vs-PC MultiHit sets TIMER_RECENTFIGHT=11 on BOTH attacker and
+// victim (C fight.c:982-986).
+func TestMultiHit_PCvsPCSetsRecentFightOnBoth(t *testing.T) {
+	stubGsnsForCascade(t)
+	stubCascade(t, func() int { return 0 })
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10201, Name: "PvP Arena 2"}
+	w.Rooms[10201] = room
+
+	ch := newPCFighter(30)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	victim := newPCFighter(30)
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	MultiHit(w, ch, victim, types.TYPE_UNDEFINED)
+
+	if got := handler.GetTimer(ch, types.TIMER_RECENTFIGHT); got != 11 {
+		t.Errorf("attacker TIMER_RECENTFIGHT = %d, want 11", got)
+	}
+	if got := handler.GetTimer(victim, types.TIMER_RECENTFIGHT); got != 11 {
+		t.Errorf("victim TIMER_RECENTFIGHT = %d, want 11", got)
+	}
+}
+
+// PC attacking an NPC does NOT set TIMER_RECENTFIGHT on either side —
+// the rule only applies to mutual PC-vs-PC combat.
+func TestMultiHit_PCvsNPCDoesNotSetRecentFight(t *testing.T) {
+	stubGsnsForCascade(t)
+	stubCascade(t, func() int { return 0 })
+	_, _, ch, victim := setupCascade(t, 30)
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if got := handler.GetTimer(ch, types.TIMER_RECENTFIGHT); got != 0 {
+		t.Errorf("PC attacker TIMER_RECENTFIGHT = %d, want 0", got)
+	}
+	if got := handler.GetTimer(victim, types.TIMER_RECENTFIGHT); got != 0 {
+		t.Errorf("NPC victim TIMER_RECENTFIGHT = %d, want 0", got)
+	}
+}
+
+// PLR_NICE short-circuits before the timer is set; no timer on either
+// side, and MultiHit returns rNONE.
+func TestMultiHit_PLR_NICE_NoTimer(t *testing.T) {
+	stubGsnsForCascade(t)
+	stubCascade(t, func() int { return 0 })
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10202, Name: "Nice Arena"}
+	w.Rooms[10202] = room
+
+	ch := newPCFighter(30)
+	ch.Act.Set(types.PLR_NICE)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	victim := newPCFighter(30)
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	if ret := MultiHit(w, ch, victim, types.TYPE_UNDEFINED); ret != rNONE {
+		t.Errorf("PLR_NICE PC-vs-PC returned %d, want rNONE", ret)
+	}
+	if got := handler.GetTimer(ch, types.TIMER_RECENTFIGHT); got != 0 {
+		t.Errorf("PLR_NICE attacker TIMER_RECENTFIGHT = %d, want 0", got)
+	}
+	if got := handler.GetTimer(victim, types.TIMER_RECENTFIGHT); got != 0 {
+		t.Errorf("PLR_NICE victim TIMER_RECENTFIGHT = %d, want 0", got)
+	}
+}
+
+// IsAttackSuppressed: a permanent (Value == -1) TIMER_ASUPRESSED is
+// active regardless of Count.
+func TestIsAttackSuppressed_PermanentValueMinus1(t *testing.T) {
+	ch := newFighter("Monk", 10)
+	ch.Timers = append(ch.Timers, &types.TimerData{
+		Type: types.TIMER_ASUPRESSED, Count: 0, Value: -1,
+	})
+	if !IsAttackSuppressed(ch) {
+		t.Error("permanent TIMER_ASUPRESSED (Value=-1) should suppress")
+	}
+}
+
+// IsAttackSuppressed: a timer with Count=0 and Value=0 does not
+// suppress (it should have been removed, but defensively check).
+func TestIsAttackSuppressed_ZeroCount(t *testing.T) {
+	ch := newFighter("Monk", 10)
+	ch.Timers = append(ch.Timers, &types.TimerData{
+		Type: types.TIMER_ASUPRESSED, Count: 0, Value: 0,
+	})
+	if IsAttackSuppressed(ch) {
+		t.Error("Count=0 Value=0 TIMER_ASUPRESSED should not suppress")
+	}
+}
+
+// IsAttackSuppressed: a positive-count non-permanent timer suppresses.
+func TestIsAttackSuppressed_PositiveCount(t *testing.T) {
+	ch := newFighter("Monk", 10)
+	ch.Timers = append(ch.Timers, &types.TimerData{
+		Type: types.TIMER_ASUPRESSED, Count: 3, Value: 0,
+	})
+	if !IsAttackSuppressed(ch) {
+		t.Error("Count=3 TIMER_ASUPRESSED should suppress")
+	}
+}
+
+// Count=1 boundary — guards the `>= 1` (not `> 1`) semantic; adversary-demonstrated coverage gap.
+func TestIsAttackSuppressed_CountOneBoundary(t *testing.T) {
+	ch := newFighter("Monk", 10)
+	handler.AddTimer(ch, types.TIMER_ASUPRESSED, 1, "", 0)
+	if !IsAttackSuppressed(ch) {
+		t.Error("Count=1 TIMER_ASUPRESSED should suppress (>= 1 boundary)")
 	}
 }
