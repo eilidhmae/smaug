@@ -17,40 +17,51 @@ import (
 // `channels -<name>` to the CHANNEL_* bit manipulated in ch.Deaf. Order
 // matches C's str_cmp chain in act_info.c:5414-5473. Note `muse` toggles
 // CHANNEL_HIGHGOD, not CHANNEL_MUSIC — C oddity preserved.
+//
+// publicAll marks channels belonging to the "public" set toggled by
+// `channels +all` / `channels -all` (C act_info.c:5482-5542). The
+// `+all`/`-all` handler iterates this table filtered by publicAll rather
+// than maintaining a separate list, so adding a new public channel to
+// the table automatically enrolls it in the `+all` set.
+//
+// AVTALK is NOT included in the public set here because C gates it on
+// `ch->level >= LEVEL_IMMORTAL` (not LEVEL_HERO); the `+all` handler
+// applies that trust gate separately.
 var channelToggleTable = []struct {
-	name string
-	bit  int
+	name      string
+	bit       int
+	publicAll bool
 }{
-	{"auction", types.CHANNEL_AUCTION},
-	{"traffic", types.CHANNEL_TRAFFIC},
-	{"chat", types.CHANNEL_CHAT},
-	{"clan", types.CHANNEL_CLAN},
-	{"council", types.CHANNEL_COUNCIL},
-	{"guild", types.CHANNEL_GUILD},
-	{"quest", types.CHANNEL_QUEST},
-	{"tells", types.CHANNEL_TELLS},
-	{"immtalk", types.CHANNEL_IMMTALK},
-	{"log", types.CHANNEL_LOG},
-	{"build", types.CHANNEL_BUILD},
-	{"high", types.CHANNEL_HIGH},
-	{"pray", types.CHANNEL_PRAY},
-	{"avatar", types.CHANNEL_AVTALK},
-	{"monitor", types.CHANNEL_MONITOR},
-	{"death", types.CHANNEL_DEATH},
-	{"auth", types.CHANNEL_AUTH},
-	{"newbie", types.CHANNEL_NEWBIE},
-	{"music", types.CHANNEL_MUSIC},
-	{"muse", types.CHANNEL_HIGHGOD},
-	{"ask", types.CHANNEL_ASK},
-	{"yell", types.CHANNEL_YELL},
-	{"comm", types.CHANNEL_COMM},
-	{"warn", types.CHANNEL_WARN},
-	{"bug", types.CHANNEL_BUG},
-	{"order", types.CHANNEL_ORDER},
-	{"wartalk", types.CHANNEL_WARTALK},
-	{"whisper", types.CHANNEL_WHISPER},
-	{"racetalk", types.CHANNEL_RACETALK},
-	{"retired", types.CHANNEL_RETIRED},
+	{"auction", types.CHANNEL_AUCTION, true},
+	{"traffic", types.CHANNEL_TRAFFIC, true},
+	{"chat", types.CHANNEL_CHAT, true},
+	{"clan", types.CHANNEL_CLAN, false},
+	{"council", types.CHANNEL_COUNCIL, false},
+	{"guild", types.CHANNEL_GUILD, false},
+	{"quest", types.CHANNEL_QUEST, true},
+	{"tells", types.CHANNEL_TELLS, false},
+	{"immtalk", types.CHANNEL_IMMTALK, false},
+	{"log", types.CHANNEL_LOG, false},
+	{"build", types.CHANNEL_BUILD, false},
+	{"high", types.CHANNEL_HIGH, false},
+	{"pray", types.CHANNEL_PRAY, true},
+	{"avatar", types.CHANNEL_AVTALK, false}, // immortal-gated; see loop below
+	{"monitor", types.CHANNEL_MONITOR, false},
+	{"death", types.CHANNEL_DEATH, false},
+	{"auth", types.CHANNEL_AUTH, false},
+	{"newbie", types.CHANNEL_NEWBIE, false},
+	{"music", types.CHANNEL_MUSIC, true},
+	{"muse", types.CHANNEL_HIGHGOD, false},
+	{"ask", types.CHANNEL_ASK, true},
+	{"yell", types.CHANNEL_YELL, true},
+	{"comm", types.CHANNEL_COMM, false},
+	{"warn", types.CHANNEL_WARN, false},
+	{"bug", types.CHANNEL_BUG, false},
+	{"order", types.CHANNEL_ORDER, false},
+	{"wartalk", types.CHANNEL_WARTALK, true},
+	{"whisper", types.CHANNEL_WHISPER, false},
+	{"racetalk", types.CHANNEL_RACETALK, true},
+	{"retired", types.CHANNEL_RETIRED, false},
 }
 
 // DoImmtalk — the immortal-only chat channel. Alias `:`. C: `do_immtalk`
@@ -237,27 +248,25 @@ func DoChannels(ch *types.CharData, argument string) {
 	name := arg[1:]
 	fClear := sign == '+' // clear deaf bit => channel enabled
 
-	// "all" toggles the public set (C: act_info.c:5482-5542).
+	// "all" toggles the public set (C: act_info.c:5482-5542). The set is
+	// derived from channelToggleTable.publicAll so adding a new public
+	// channel to the table automatically enrolls it — no parallel list
+	// to keep in sync.
 	if strings.EqualFold(name, "all") {
-		publicAll := []int{
-			types.CHANNEL_RACETALK,
-			types.CHANNEL_AUCTION,
-			types.CHANNEL_CHAT,
-			types.CHANNEL_QUEST,
-			types.CHANNEL_WARTALK,
-			types.CHANNEL_PRAY,
-			types.CHANNEL_TRAFFIC,
-			types.CHANNEL_MUSIC,
-			types.CHANNEL_ASK,
-			types.CHANNEL_YELL,
-		}
-		for _, b := range publicAll {
+		for _, entry := range channelToggleTable {
+			if !entry.publicAll {
+				continue
+			}
 			if fClear {
-				ch.Deaf.Remove(b)
+				ch.Deaf.Remove(entry.bit)
 			} else {
-				ch.Deaf.Set(b)
+				ch.Deaf.Set(entry.bit)
 			}
 		}
+		// AVTALK is public-set gated on immortal-level-or-higher (C
+		// act_info.c:5497 `ch->level >= LEVEL_IMMORTAL`). Kept separate
+		// from publicAll because the gate is a player property, not a
+		// channel property.
 		if ch.Level >= types.LEVEL_IMMORTAL {
 			if fClear {
 				ch.Deaf.Remove(types.CHANNEL_AVTALK)

@@ -513,6 +513,12 @@ func SavePlayer(w io.Writer, ch *types.CharData) error {
 	if p.Title != "" {
 		fmt.Fprintf(w, "Title      %s~\n", util.SmashTilde(p.Title))
 	}
+	if p.Bio != "" {
+		// Strip tildes so the field's terminator-tilde convention is
+		// not corrupted by user input. C save.c writes bio via fwrite
+		// which does the same sanitization; our Scanner matches.
+		fmt.Fprintf(w, "Bio        %s~\n", util.SmashTilde(p.Bio))
+	}
 	if p.Prompt != "" {
 		fmt.Fprintf(w, "Prompt     %s~\n", p.Prompt)
 	}

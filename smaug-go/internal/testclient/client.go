@@ -1,16 +1,20 @@
 package testclient
 
 import (
+	"bytes"
 	"fmt"
 	gonet "net"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 )
 
 // defaultPromptRe matches a trailing "> " at the end of the buffer.
 var defaultPromptRe = regexp.MustCompile(`> $`)
+
+// readScratchSize is the fillOnce read-buffer size. Large enough to absorb
+// typical MUD server bursts in one Read without forcing extra syscalls.
+const readScratchSize = 4096
 
 // Client is a telnet-aware test client. Send writes go out raw; reads run
 // through the IAC + ANSI strip pipeline (when those options are enabled)
@@ -20,6 +24,7 @@ type Client struct {
 	conn      gonet.Conn
 	buf       []byte // cleaned output accumulated but not yet matched
 	rawTail   []byte // bytes of a partial IAC sequence carried over
+	scratch   []byte // reusable read buffer (allocated once per client)
 	promptRe  *regexp.Regexp
 	t         *testing.T
 	stripANSI bool
@@ -65,10 +70,13 @@ func (c *Client) ReadUntil(substr string, timeout time.Duration) string {
 // wrapper and directly by tests that want to assert failure modes.
 func (c *Client) readUntilErr(substr string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
-	lowerSub := strings.ToLower(substr)
+	// Search on []byte throughout — avoids string(c.buf) allocation each loop
+	// iteration. bytes.ToLower returns a fresh slice but that cost is
+	// unavoidable (and identical to the old strings.ToLower path).
+	lowerSub := bytes.ToLower([]byte(substr))
 
 	for {
-		if idx := strings.Index(strings.ToLower(string(c.buf)), lowerSub); idx >= 0 {
+		if idx := bytes.Index(bytes.ToLower(c.buf), lowerSub); idx >= 0 {
 			end := idx + len(substr)
 			result := string(c.buf[:end])
 			c.buf = c.buf[end:]
@@ -81,7 +89,7 @@ func (c *Client) readUntilErr(substr string, timeout time.Duration) (string, err
 		if err := c.fillOnce(deadline); err != nil {
 			// Final check after error — maybe the closing read filled
 			// us past the match.
-			if idx := strings.Index(strings.ToLower(string(c.buf)), lowerSub); idx >= 0 {
+			if idx := bytes.Index(bytes.ToLower(c.buf), lowerSub); idx >= 0 {
 				end := idx + len(substr)
 				result := string(c.buf[:end])
 				c.buf = c.buf[end:]
@@ -215,17 +223,22 @@ func (c *Client) Close() {
 	}
 }
 
-// fillOnce does one Read into a scratch buffer and appends the cleaned
-// bytes to c.buf. Returns an error on timeout or other I/O failures.
-// Small reads are fine — ReadUntil loops until its condition is met.
+// fillOnce does one Read into the per-Client scratch buffer and appends
+// the cleaned bytes to c.buf. Returns an error on timeout or other I/O
+// failures. Small reads are fine — ReadUntil loops until its condition
+// is met. The scratch buffer is allocated lazily on first use so zero-
+// constructed Client{} instances (unit tests that never call fillOnce)
+// stay allocation-free.
 func (c *Client) fillOnce(deadline time.Time) error {
-	tmp := make([]byte, 4096)
+	if c.scratch == nil {
+		c.scratch = make([]byte, readScratchSize)
+	}
 	if err := c.conn.SetReadDeadline(deadline); err != nil {
 		return err
 	}
-	n, err := c.conn.Read(tmp)
+	n, err := c.conn.Read(c.scratch)
 	if n > 0 {
-		raw := append(c.rawTail, tmp[:n]...)
+		raw := append(c.rawTail, c.scratch[:n]...)
 		c.rawTail = nil
 		if c.stripIAC {
 			clean, consumed := stripIAC(raw)
@@ -262,7 +275,7 @@ func truncate(s string, n int) string {
 	return s[len(s)-n:]
 }
 
-func (c *Client) fatalf(format string, args ...interface{}) {
+func (c *Client) fatalf(format string, args ...any) {
 	if c.t == nil {
 		panic(fmt.Sprintf(format, args...))
 	}

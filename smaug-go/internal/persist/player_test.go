@@ -314,6 +314,71 @@ func TestSaveLoadPlayer_DeafRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSaveLoadPlayer_BioRoundTrip verifies that PCData.Bio survives a
+// full save/load cycle. Pre-fix, LoadPlayer read Bio (player.go:218)
+// but SavePlayer never wrote it, so `bio` input was silently discarded
+// on logout — TODO R1 from plan-player-config.md.
+func TestSaveLoadPlayer_BioRoundTrip(t *testing.T) {
+	expected := "A daring adventurer from the mountains of Skye."
+	ch := &types.CharData{
+		Name:     "Biotest",
+		Level:    5,
+		Hit:      50,
+		MaxHit:   50,
+		Mana:     10,
+		MaxMana:  10,
+		Move:     40,
+		MaxMove:  40,
+		Position: types.POS_STANDING,
+		PermStr:  13, PermInt: 13, PermWis: 13, PermDex: 13,
+		PermCon: 13, PermCha: 13, PermLck: 13,
+		PCData: &types.PCData{Pwd: "pw", PagerLen: 24, Bio: expected},
+	}
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("Bio")) {
+		t.Errorf("saved file missing Bio line:\n%s", buf.String())
+	}
+
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Biotest")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if loaded.PCData.Bio != expected {
+		t.Errorf("PCData.Bio round-trip mismatch: got %q, want %q",
+			loaded.PCData.Bio, expected)
+	}
+}
+
+// Empty Bio must NOT emit a "Bio" line (forward-compat with old saves).
+func TestSaveLoadPlayer_EmptyBioNotEmitted(t *testing.T) {
+	ch := &types.CharData{
+		Name:     "Nobiotest",
+		Level:    5,
+		Hit:      50,
+		MaxHit:   50,
+		Mana:     10,
+		MaxMana:  10,
+		Move:     40,
+		MaxMove:  40,
+		Position: types.POS_STANDING,
+		PermStr:  13, PermInt: 13, PermWis: 13, PermDex: 13,
+		PermCon: 13, PermCha: 13, PermLck: 13,
+		PCData: &types.PCData{Pwd: "pw", PagerLen: 24},
+	}
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("\nBio ")) {
+		t.Errorf("empty Bio should not be emitted:\n%s", buf.String())
+	}
+}
+
 // TestSaveLoadPlayer_EmptyDeafNotEmitted verifies that an empty Deaf
 // bitvector is not serialized to the save file.
 func TestSaveLoadPlayer_EmptyDeafNotEmitted(t *testing.T) {

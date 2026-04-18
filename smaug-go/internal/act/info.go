@@ -317,7 +317,13 @@ func DoWho(ch *types.CharData, argument string) {
 		if rch.PCData != nil {
 			title = rch.PCData.Title
 		}
-		ch.Sendf("[%2d] %s %s\n\r", rch.Level, rch.Name, title)
+		// AFK marker (C act_info.c:3686 and :4306 — "[AFK] " prefix before
+		// the character's name when PLR_AFK is set on a non-NPC).
+		afk := ""
+		if rch.Act.IsSet(types.PLR_AFK) {
+			afk = "[AFK] "
+		}
+		ch.Sendf("[%2d] %s%s %s\n\r", rch.Level, afk, rch.Name, title)
 	}
 	ch.Sendf("\n\r%d player%s online.\n\r", count, plural(count))
 }

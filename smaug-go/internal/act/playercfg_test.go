@@ -597,6 +597,228 @@ func TestDoGag_NilPCDataIsNoop(t *testing.T) {
 	}
 }
 
+// -------------- DoBio --------------
+
+// TestDoBio_SetsSubstateAndEditorSave verifies DoBio installs the
+// SUB_PERSONAL_BIO substate and an EditorSave closure, then invokes
+// StartEditingFunc with the current PCData.Bio as seed text.
+func TestDoBio_SetsSubstateAndEditorSave(t *testing.T) {
+	ch, client := makeTestChar("Wanderer")
+	defer client.Close()
+	ch.Level = 10
+	ch.PCData.Bio = "Old bio text"
+
+	var seedText string
+	var editorSaveAtCall func(*types.CharData)
+	prev := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {
+		seedText = text
+		editorSaveAtCall = c.EditorSave
+	}
+	defer func() { StartEditingFunc = prev }()
+
+	DoBio(ch, "")
+
+	if ch.Substate != types.SUB_PERSONAL_BIO {
+		t.Errorf("Substate = %d, want SUB_PERSONAL_BIO (%d)", ch.Substate, types.SUB_PERSONAL_BIO)
+	}
+	if editorSaveAtCall == nil {
+		t.Fatal("EditorSave must be non-nil when StartEditingFunc is called")
+	}
+	if seedText != "Old bio text" {
+		t.Errorf("seed text = %q, want %q", seedText, "Old bio text")
+	}
+}
+
+// TestDoBio_NPCIsNoop — NPCs cannot set a bio (C player.c:3415-3419).
+func TestDoBio_NPCIsNoop(t *testing.T) {
+	ch, client := makeTestChar("MobBio")
+	defer client.Close()
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.Level = 10
+
+	called := false
+	prev := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) { called = true }
+	defer func() { StartEditingFunc = prev }()
+
+	DoBio(ch, "")
+	if called {
+		t.Error("NPC DoBio must not invoke StartEditingFunc")
+	}
+}
+
+// TestDoBio_NODescFlagBlocks — PCFLAG_NOBIO blocks the command (C
+// player.c:3428-3433).
+func TestDoBio_PCFLAG_NOBIO_Blocked(t *testing.T) {
+	ch, client := makeTestChar("Blocked")
+	defer client.Close()
+	ch.Level = 10
+	ch.PCData.Flags |= int(types.PCFLAG_NOBIO)
+
+	called := false
+	prev := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) { called = true }
+	defer func() { StartEditingFunc = prev }()
+
+	DoBio(ch, "")
+	if called {
+		t.Error("PCFLAG_NOBIO DoBio must not invoke StartEditingFunc")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "gods") && !strings.Contains(out, "allow") {
+		t.Errorf("expected gods-deny message; got %q", out)
+	}
+}
+
+// TestDoBio_EditorSaveClosureUpdatesBio — verify the closure written by
+// DoBio actually mutates PCData.Bio when invoked by the editor /s path.
+func TestDoBio_EditorSaveClosureUpdatesBio(t *testing.T) {
+	ch, client := makeTestChar("Scribe")
+	defer client.Close()
+	ch.Level = 10
+	ch.PCData.Bio = "stale"
+
+	expected := "A daring wanderer from distant lands.\n\r"
+	prevCopy := CopyBufferFunc
+	prevStop := StopEditingFunc
+	prevStart := StartEditingFunc
+	defer func() {
+		CopyBufferFunc = prevCopy
+		StopEditingFunc = prevStop
+		StartEditingFunc = prevStart
+	}()
+	CopyBufferFunc = func(c *types.CharData) string { return expected }
+	StopEditingFunc = func(c *types.CharData) {
+		c.EditorSave = nil
+		if c.Desc != nil {
+			c.Desc.Connected = types.CON_PLAYING
+		}
+	}
+	StartEditingFunc = func(c *types.CharData, text string) {
+		if c.Desc != nil {
+			c.Desc.Connected = types.CON_EDITING
+		}
+	}
+
+	DoBio(ch, "")
+	if ch.EditorSave == nil {
+		t.Fatal("EditorSave must be set after DoBio")
+	}
+
+	// Simulate `/s` path.
+	ch.EditorSave(ch)
+
+	if ch.PCData.Bio != expected {
+		t.Errorf("PCData.Bio = %q, want %q", ch.PCData.Bio, expected)
+	}
+}
+
+// -------------- DoDescription --------------
+
+func TestDoDescription_SetsSubstateAndEditorSave(t *testing.T) {
+	ch, client := makeTestChar("Traveler")
+	defer client.Close()
+	ch.Description = "An old description"
+
+	var seedText string
+	var editorSaveAtCall func(*types.CharData)
+	prev := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {
+		seedText = text
+		editorSaveAtCall = c.EditorSave
+	}
+	defer func() { StartEditingFunc = prev }()
+
+	DoDescription(ch, "")
+
+	if ch.Substate != types.SUB_PERSONAL_DESC {
+		t.Errorf("Substate = %d, want SUB_PERSONAL_DESC (%d)", ch.Substate, types.SUB_PERSONAL_DESC)
+	}
+	if editorSaveAtCall == nil {
+		t.Fatal("EditorSave must be non-nil when StartEditingFunc is called")
+	}
+	if seedText != "An old description" {
+		t.Errorf("seed text = %q, want %q", seedText, "An old description")
+	}
+}
+
+func TestDoDescription_NPCIsNoop(t *testing.T) {
+	ch, client := makeTestChar("MobDesc")
+	defer client.Close()
+	ch.Act.Set(types.ACT_IS_NPC)
+
+	called := false
+	prev := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) { called = true }
+	defer func() { StartEditingFunc = prev }()
+
+	DoDescription(ch, "")
+	if called {
+		t.Error("NPC DoDescription must not invoke StartEditingFunc")
+	}
+}
+
+// TestDoDescription_PCFLAG_NODESC_Blocked — C player.c:3374-3378.
+func TestDoDescription_PCFLAG_NODESC_Blocked(t *testing.T) {
+	ch, client := makeTestChar("BlockedDesc")
+	defer client.Close()
+	ch.PCData.Flags |= int(types.PCFLAG_NODESC)
+
+	called := false
+	prev := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) { called = true }
+	defer func() { StartEditingFunc = prev }()
+
+	DoDescription(ch, "")
+	if called {
+		t.Error("PCFLAG_NODESC DoDescription must not invoke StartEditingFunc")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "cannot") {
+		t.Errorf("expected 'cannot' message; got %q", out)
+	}
+}
+
+func TestDoDescription_EditorSaveClosureUpdatesDescription(t *testing.T) {
+	ch, client := makeTestChar("Narrator")
+	defer client.Close()
+	ch.Description = "placeholder"
+
+	expected := "Tall, with a scar across the left cheek.\n\r"
+	prevCopy := CopyBufferFunc
+	prevStop := StopEditingFunc
+	prevStart := StartEditingFunc
+	defer func() {
+		CopyBufferFunc = prevCopy
+		StopEditingFunc = prevStop
+		StartEditingFunc = prevStart
+	}()
+	CopyBufferFunc = func(c *types.CharData) string { return expected }
+	StopEditingFunc = func(c *types.CharData) {
+		c.EditorSave = nil
+		if c.Desc != nil {
+			c.Desc.Connected = types.CON_PLAYING
+		}
+	}
+	StartEditingFunc = func(c *types.CharData, text string) {
+		if c.Desc != nil {
+			c.Desc.Connected = types.CON_EDITING
+		}
+	}
+
+	DoDescription(ch, "")
+	if ch.EditorSave == nil {
+		t.Fatal("EditorSave must be set after DoDescription")
+	}
+
+	ch.EditorSave(ch)
+
+	if ch.Description != expected {
+		t.Errorf("Description = %q, want %q", ch.Description, expected)
+	}
+}
+
 // -------------- G5: pagelen alias (dispatcher-level) --------------
 
 // TestInterpret_PagelenAlias checks that registering `pagelen` alongside

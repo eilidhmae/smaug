@@ -136,6 +136,25 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	act.CopyBufferFunc = game.CopyBuffer
 	act.StopEditingFunc = game.StopEditing
 
+	// Prompt %X token (XP-to-next-level) — C handler.c:107-112 get_exp_base.
+	// NPCs use the C literal 1000; PCs look up the class table's ExpBase.
+	game.PromptExpBase = func(ch *types.CharData) int {
+		if ch == nil {
+			return 0
+		}
+		if ch.IsNPC() {
+			return 1000
+		}
+		if ch.Class < 0 || ch.Class >= len(w.Classes) {
+			return 0
+		}
+		cls := w.Classes[ch.Class]
+		if cls == nil {
+			return 0
+		}
+		return cls.ExpBase
+	}
+
 	// Shutdown + disconnect hooks. If the caller supplied overrides use
 	// those, otherwise fall back to the mode-appropriate default.
 	if opts.ShutdownFunc != nil {
@@ -392,6 +411,9 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "gag", DoFun: act.DoGag, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "title", DoFun: act.DoTitle, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "password", DoFun: act.DoPassword, Position: types.POS_DEAD, Level: 0})
+	// Editor-backed player-config commands. Unblocked by plan-editor-save.md.
+	reg.Register(&command.Command{Name: "bio", DoFun: act.DoBio, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "description", DoFun: act.DoDescription, Position: types.POS_DEAD, Level: 0})
 
 	// Clan/deity/board commands
 	reg.Register(&command.Command{Name: "clans", DoFun: act.DoClans, Position: types.POS_DEAD, Level: 0})

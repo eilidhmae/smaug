@@ -46,7 +46,7 @@ Follow-ups queued from plan-timer-subsystem.md:
 - [ ] Per-round move-cost tracking (C fight.c:1149-1171)
 - [ ] `db/system/stances.dat` loader — currently `StanceIndex` is hard-coded in `combat/stance_index.go`
 - [ ] PC practice-stance flow — `PCData.Stances[]` counter never increments today, so GM-bonus path is unreachable for existing players
-- [ ] Review `DoCircle` (`act/skills3.go:88-99`) and `DoHitall` (`act/skills3.go:294`) for explicit retcode handling now that `OneHit` returns `int`
+- [x] Review `DoCircle` (`act/skills3.go:88-99`) and `DoHitall` (`act/skills3.go:294`) for explicit retcode handling now that `OneHit` returns `int`. **LANDED 2026-04-18 (Tranche A item 4).** Added `combat.AttackerDied(int) bool` / `combat.VictimDied(int) bool` exported helpers; `DoHitall` now breaks on `combat.AttackerDied(ret) || ch.Position <= POS_DEAD`; `DoCircle` now guards the second swing on `!VictimDied(ret) && !AttackerDied(ret) && victim.Position > POS_DEAD && ch.Position > POS_DEAD`. Attacker-death path is dormant (no fireshield/ice_shield/acid_shield yet) — defense-in-depth for when reactive damage ships. Helper predicates mutation-verified via combat_test.go.
 
 ### Player-visible command gaps (P1)
 
@@ -55,7 +55,7 @@ Follow-ups queued from plan-timer-subsystem.md:
 - [x] Register `password`, `title`, `afk`, `save` (plan groups G1–G4). LANDED 2026-04-17.
 - [x] Optional `pagelen` alias (plan G5). LANDED 2026-04-17.
 - [x] Communication channels: `immtalk`, `gtell`, `auction`-helper + stub (`plan-channels.md` G1–G4). LANDED 2026-04-17. Full auction subsystem (G5 in the plan) + `music`/`newbiechat`/`racetalk`/`wartalk`/`counciltalk`/`guildtalk` deferred to Phase 6 — see Phase 6 candidates below.
-- [ ] `bio`/`description` deferred — **unblocked 2026-04-18** by `plan-editor-save.md`. Next: wire `DoBio` / `DoDescription` using the `ch.EditorSave` callback pattern established in `DoRedit desc` / `ed`.
+- [x] `bio`/`description` — **LANDED 2026-04-18 (Tranche A item 1).** `DoBio` sets `SUB_PERSONAL_BIO` and wires an `EditorSave` closure that writes to `PCData.Bio` on `/s`; `DoDescription` does the same for `ch.Description`. NPC + nil-PCData + PCFLAG_NOBIO/NODESC guards. Registered in `internal/boot/boot.go` at `POS_DEAD`/level 0. `Bio` field now emitted by `SavePlayer` (closing R1 follow-up). E2E test in `internal/testclient/bio_test.go` drives `bio` → editor → `/s` → `save` → `quit` → relogin → verify preserved.
 
 Follow-ups queued from plan-channels.md:
 - [ ] Full `do_auction` state machine (list / bid / stop / noauction list / item escrow / gold handling / auction tick in `update.c`). Plan called out as G5; deferred to Phase 6. C refs: `act_obj.c:3775+`, `update.c:2886-3286`. `BroadcastAuction` helper already in place.
@@ -66,13 +66,13 @@ Follow-ups queued from plan-channels.md:
 
 Follow-ups queued from plan-do-channels.md:
 - [ ] Per-entry immortal-section trust gates in `DoChannels` no-arg display — currently `channels.go` uses a blanket `IsImmortal()` for the whole Immortal section. C gates `muse` on `sysdata.muse_level`, `log` on `sysdata.log_level`, `high` on `sysdata.think_level`, and `bug` on a hardcoded level 57. Needs a `sysdata` port first.
-- [ ] `channels.go:247` `publicAll` slice duplicates part of `channelToggleTable` — derive one from the other when the next channel gets added to the public set, to avoid drift.
+- [x] `channels.go:247` `publicAll` slice duplicates part of `channelToggleTable` — derive one from the other when the next channel gets added to the public set, to avoid drift. **LANDED 2026-04-18 (Tranche A item 6).** Added `publicAll bool` field to `channelToggleTable` entries; `+all`/`-all` handler iterates the table filtered on `publicAll == true`. AVTALK's level-gate remains separately applied (immortal-only). Tests verify derivation (adding a fake publicAll entry auto-enrolls) and the negative direction (private channels stay untouched).
 
 Follow-ups queued from plan-player-config.md:
-- [ ] R1: `persist/player.go:218` reads `Bio` but nothing writes it — add `Bio` field to the saver when G6 (`bio`/`description`) unblocks.
+- [x] R1: `persist/player.go:218` reads `Bio` but nothing writes it — **LANDED 2026-04-18 (Tranche A item 1).** `SavePlayer` now emits `Bio      <text>~` when non-empty, gated through `util.SmashTilde`. Round-trip test + empty-bio-not-emitted test in `internal/persist/player_test.go`.
 - [ ] R5: `update_aris` not called before `save_char_obj` in `DoSave` (low-impact for manual save — follow-up).
 - [x] R6: `internal/game/editor.go:156-160` — `/s` does not call `StopEditing`; descriptor stays in `CON_EDITING` forever. **LANDED 2026-04-18 via `plan-editor-save.md`** (Option-C callback pattern).
-- [ ] R7: AFK `[AFK]` indicator on `do_who` listings.
+- [x] R7: AFK `[AFK]` indicator on `do_who` listings. **LANDED 2026-04-18 (Tranche A item 2).** `DoWho` now prepends `"[AFK] "` to PCs with `PLR_AFK` set (C `act_info.c:3686/4306`). Mutation-verified both directions.
 - [ ] R8: audit claim about `ban.go` honoring AFK is incorrect — tracked for audit-doc correction.
 
 ### Persistence gaps
@@ -84,9 +84,9 @@ Follow-ups queued from plan-player-config.md:
 ### Go idiom polish
 
 - [ ] Replace `math/rand` with `util.NumberRange` in `act/quest.go`, `act/cmds2.go`
-- [ ] Change `...interface{}` to `...any` in `testclient/client.go:265`
-- [ ] `testclient/client.go:71,84`: switch to `bytes.ToLower`/`bytes.Index` on `[]byte`
-- [ ] `testclient/client.go:222`: promote 4KB scratch to a `Client` field
+- [x] Change `...interface{}` to `...any` in `testclient/client.go:265`. **LANDED 2026-04-18 (Tranche A item 5).**
+- [x] `testclient/client.go:71,84`: switch to `bytes.ToLower`/`bytes.Index` on `[]byte`. **LANDED 2026-04-18 (Tranche A item 5).**
+- [x] `testclient/client.go:222`: promote 4KB scratch to a `Client` field. **LANDED 2026-04-18 (Tranche A item 5).** Lazy-init on first `fillOnce`; mutation-verified (per-call alloc → test fails).
 
 ### Mudprog depth gaps (not load-bearing but worth tracking)
 
@@ -129,7 +129,7 @@ Follow-ups queued from plan-dammessage-gaps.md:
 ### Documentation correction
 
 - [ ] Reconcile test-count methodology across tier docs (Tier 3 reports 2,205; Tier 4 reports 1,914; actual `func Test*` is 1,962). Pick one methodology, annotate.
-- [ ] `game/prompt.go:63` — wire XP-to-next-level into `%x` token (currently prints "0")
+- [x] `game/prompt.go:63` — wire XP-to-next-level into `%x` / `%X` tokens. **LANDED 2026-04-18 (Tranche A item 3).** `%x` already printed current Exp; `%X` was the stubbed-zero — now returns `exp_level(ch, level+1) - ch.Exp` via a new `game.PromptExpBase` seam (wired in boot from `w.Classes[ch.Class].ExpBase`; NPCs use 1000 per C `handler.c:107-112`). Clamped non-negative. Seam + clamp + boot-wire tests in `internal/game/prompt_test.go` and `internal/boot/boot_test.go`.
 
 ---
 

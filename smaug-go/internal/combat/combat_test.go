@@ -2222,3 +2222,41 @@ func TestRollD20_IsSeam(t *testing.T) {
 		t.Errorf("stubbed rollD20 = %d, want 42", got)
 	}
 }
+
+// AttackerDied / VictimDied retcode helpers — thin predicates over the
+// unexported retcode constants. Exported so act/skills3.go (DoHitall,
+// DoCircle) can propagate retcodes correctly without cross-package
+// access to the retcode values themselves.
+func TestAttackerDied(t *testing.T) {
+	cases := []struct {
+		ret  int
+		want bool
+	}{
+		{rNONE, false},
+		{rVICT_DIED, false}, // victim died, attacker fine
+		{rCHAR_DIED, true},
+		{rBOTH_DIED, true},
+	}
+	for _, tc := range cases {
+		if got := AttackerDied(tc.ret); got != tc.want {
+			t.Errorf("AttackerDied(%d) = %v, want %v", tc.ret, got, tc.want)
+		}
+	}
+}
+
+func TestVictimDied(t *testing.T) {
+	cases := []struct {
+		ret  int
+		want bool
+	}{
+		{rNONE, false},
+		{rVICT_DIED, true},
+		{rCHAR_DIED, false}, // attacker died, victim fine
+		{rBOTH_DIED, true},
+	}
+	for _, tc := range cases {
+		if got := VictimDied(tc.ret); got != tc.want {
+			t.Errorf("VictimDied(%d) = %v, want %v", tc.ret, got, tc.want)
+		}
+	}
+}

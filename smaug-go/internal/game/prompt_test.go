@@ -95,7 +95,15 @@ func TestFormatPrompt_UnknownToken(t *testing.T) {
 	}
 }
 
-func TestFormatPrompt_XPNextLevel(t *testing.T) {
+// %x = current Exp (always, no seam). %X = XP needed to hit the next
+// level; derived via PromptExpBase (a boot-set seam). When the seam is
+// nil (standalone tests), %X falls back to 0 — matching the legacy
+// behavior the TODO called out.
+func TestFormatPrompt_XPNextLevel_NoSeam(t *testing.T) {
+	prev := PromptExpBase
+	t.Cleanup(func() { PromptExpBase = prev })
+	PromptExpBase = nil
+
 	ch := &types.CharData{
 		Exp: 5000,
 		PCData: &types.PCData{
@@ -105,6 +113,52 @@ func TestFormatPrompt_XPNextLevel(t *testing.T) {
 	out := FormatPrompt(ch)
 	if out != "XP:5000 TNL:0" {
 		t.Errorf("FormatPrompt XP/TNL = %q, want %q", out, "XP:5000 TNL:0")
+	}
+}
+
+// With the seam wired, %X returns exp_level(ch, level+1) - ch.Exp,
+// matching C smaug.c:4193-4194 and handler.c:117-124
+// (`lvl = UMAX(0, level - 1); return lvl*lvl*lvl * exp_base(ch)`).
+func TestFormatPrompt_XPNextLevel_UsesSeam(t *testing.T) {
+	prev := PromptExpBase
+	t.Cleanup(func() { PromptExpBase = prev })
+	// PC, level=3, ExpBase=1000 → exp_level(ch, 4) = 3^3 * 1000 = 27000.
+	PromptExpBase = func(ch *types.CharData) int { return 1000 }
+
+	ch := &types.CharData{
+		Level: 3,
+		Exp:   5000,
+		PCData: &types.PCData{
+			Prompt: "TNL:%X",
+		},
+	}
+	out := FormatPrompt(ch)
+	// 27000 - 5000 = 22000.
+	if out != "TNL:22000" {
+		t.Errorf("FormatPrompt TNL seam = %q, want %q", out, "TNL:22000")
+	}
+}
+
+// %X must never go negative (C's UMAX-style lvl clamp at handler.c:122
+// ensures lvl >= 0; we additionally clamp the result so an over-XP
+// transitional state still renders sensibly).
+func TestFormatPrompt_XPNextLevel_NeverNegative(t *testing.T) {
+	prev := PromptExpBase
+	t.Cleanup(func() { PromptExpBase = prev })
+	PromptExpBase = func(ch *types.CharData) int { return 100 }
+
+	// Level=2, ExpBase=100 → exp_level(ch, 3) = 2^3 * 100 = 800.
+	// Exp=9000 exceeds that — want 0, not -8200.
+	ch := &types.CharData{
+		Level: 2,
+		Exp:   9000,
+		PCData: &types.PCData{
+			Prompt: "TNL:%X",
+		},
+	}
+	out := FormatPrompt(ch)
+	if out != "TNL:0" {
+		t.Errorf("FormatPrompt TNL over-exp = %q, want %q", out, "TNL:0")
 	}
 }
 
@@ -186,6 +240,10 @@ func TestFormatPrompt_TrailingPercent(t *testing.T) {
 }
 
 func TestFormatPrompt_EachTokenIndividually(t *testing.T) {
+	prev := PromptExpBase
+	t.Cleanup(func() { PromptExpBase = prev })
+	PromptExpBase = nil
+
 	ch := &types.CharData{
 		Hit:       10,
 		MaxHit:    20,

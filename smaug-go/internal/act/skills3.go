@@ -93,8 +93,13 @@ func DoCircle(ch *types.CharData, argument string) {
 		// single-hit skill. We preserve the historical Go MVP behavior of
 		// firing two OneHits for the "multi" feel here in DoCircle itself;
 		// MultiHit's cascade is explicitly suppressed for circle.
-		_ = combat.OneHit(WorldRef, ch, victim, gsn)
-		if victim.Position > types.POS_DEAD {
+		//
+		// Retcode propagation: the second OneHit must bail if the first
+		// killed the victim OR killed the attacker (reactive damage
+		// like fireshield is future work, but the hook is in place).
+		ret := combat.OneHit(WorldRef, ch, victim, gsn)
+		if !combat.VictimDied(ret) && !combat.AttackerDied(ret) &&
+			victim.Position > types.POS_DEAD && ch.Position > types.POS_DEAD {
 			_ = combat.OneHit(WorldRef, ch, victim, gsn)
 		}
 	} else {
@@ -295,12 +300,18 @@ func DoHitall(ch *types.CharData, argument string) {
 			break
 		}
 		nvict++
+		// Track the retcode so reactive damage (fireshield / ice_shield /
+		// acid_shield, future work) on the attacker stops the cascade — C
+		// skills.c:5334 breaks on rCHAR_DIED || rBOTH_DIED || char_died(ch).
+		// We expose combat's retcode constants via the CharDiedRetcode /
+		// BothDiedRetcode sentinel helpers in combat/retcode.go.
+		var ret int
 		if canUseSkill(ch, util.NumberPercent(), gsn) {
-			_ = combat.OneHit(WorldRef, ch, vch, types.TYPE_UNDEFINED)
+			ret = combat.OneHit(WorldRef, ch, vch, types.TYPE_UNDEFINED)
 		} else {
-			combat.Damage(WorldRef, ch, vch, 0, types.TYPE_UNDEFINED)
+			ret = combat.Damage(WorldRef, ch, vch, 0, types.TYPE_UNDEFINED)
 		}
-		if ch.Position <= types.POS_DEAD {
+		if combat.AttackerDied(ret) || ch.Position <= types.POS_DEAD {
 			break
 		}
 	}

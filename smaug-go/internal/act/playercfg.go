@@ -132,6 +132,87 @@ func DoTitle(ch *types.CharData, argument string) {
 	ch.Send("Your new title has been set.\n\r")
 }
 
+// DoBio implements the 'bio' command (C player.c:3413 do_bio). Launches
+// the string editor seeded with the player's current PCData.Bio; on `/s`
+// the EditorSave closure copies the buffer back to PCData.Bio.
+//
+// Requires editor plumbing from internal/game via the EditorSave /
+// CopyBufferFunc / StopEditingFunc seams — see olc.go for the pattern.
+// NPCs, nil-PCData, and PCFLAG_NOBIO are hard blocks. Level-5 gate from
+// C (player.c:3420) is skipped here to match the local convention of
+// deferring content gates to the player-config wiring (DoTitle / DoAfk
+// take the same approach — no level gate).
+func DoBio(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		ch.Send("Mobs cannot set a bio.\n\r")
+		return
+	}
+	if ch.PCData == nil {
+		return
+	}
+	if (uint32(ch.PCData.Flags) & types.PCFLAG_NOBIO) != 0 {
+		ch.Send("The gods won't allow you to do that!\n\r")
+		return
+	}
+	if ch.Desc == nil {
+		// Matches C's bug("do_bio: no descriptor"), but silent — no
+		// broadcast channel for the log in the Go port.
+		return
+	}
+	ch.Substate = types.SUB_PERSONAL_BIO
+	ch.EditorSave = func(c *types.CharData) {
+		if c.PCData == nil {
+			return
+		}
+		if CopyBufferFunc != nil {
+			c.PCData.Bio = CopyBufferFunc(c)
+		}
+		if StopEditingFunc != nil {
+			StopEditingFunc(c)
+		}
+		c.Send("\n\r")
+	}
+	if StartEditingFunc != nil {
+		StartEditingFunc(ch, ch.PCData.Bio)
+	}
+}
+
+// DoDescription implements the 'description' command (C player.c:3366
+// do_description). Same shape as DoBio but targets ch.Description
+// (the CharData field, not a PCData field — C has description on
+// char_data itself, mud.h:2733).
+//
+// PCFLAG_NODESC is a hard block (C player.c:3374-3378).
+func DoDescription(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		ch.Send("Monsters are too dumb to do that!\n\r")
+		return
+	}
+	if ch.PCData == nil {
+		return
+	}
+	if (uint32(ch.PCData.Flags) & types.PCFLAG_NODESC) != 0 {
+		ch.Send("You cannot set your description.\n\r")
+		return
+	}
+	if ch.Desc == nil {
+		return
+	}
+	ch.Substate = types.SUB_PERSONAL_DESC
+	ch.EditorSave = func(c *types.CharData) {
+		if CopyBufferFunc != nil {
+			c.Description = CopyBufferFunc(c)
+		}
+		if StopEditingFunc != nil {
+			StopEditingFunc(c)
+		}
+		c.Send("\n\r")
+	}
+	if StartEditingFunc != nil {
+		StartEditingFunc(ch, ch.Description)
+	}
+}
+
 // DoPassword implements the 'password' command (C act_info.c:5078 do_password).
 //
 // Divergence from C: the C port takes `<new> <again>` only (the old-password

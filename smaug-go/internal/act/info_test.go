@@ -253,6 +253,43 @@ func TestDoWho(t *testing.T) {
 	}
 }
 
+// AFK players should show "[AFK]" marker in the listing. C ref:
+// src/act_info.c:3686 — xIS_SET(wch->act, PLR_AFK) ? "[AFK] " : "".
+func TestDoWho_AfkPlayerShowsAfkMarker(t *testing.T) {
+	w := setupTestWorld()
+	ch, client := makeTestChar("Gandalf")
+	defer client.Close()
+	ch.Act.Set(types.PLR_AFK)
+	w.Descriptors = append(w.Descriptors, ch.Desc)
+
+	DoWho(ch, "")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(out, "[AFK]") {
+		t.Errorf("AFK player listing missing [AFK] marker, got: %q", out)
+	}
+	if !strings.Contains(out, "Gandalf") {
+		t.Errorf("output missing player name, got: %q", out)
+	}
+}
+
+// Non-AFK players must NOT show the [AFK] marker — guards against the
+// mutation that unconditionally prepends [AFK].
+func TestDoWho_NonAfkPlayerHasNoAfkMarker(t *testing.T) {
+	w := setupTestWorld()
+	ch, client := makeTestChar("Gandalf")
+	defer client.Close()
+	// Do NOT set PLR_AFK.
+	w.Descriptors = append(w.Descriptors, ch.Desc)
+
+	DoWho(ch, "")
+	out := readOutput(ch, client)
+
+	if strings.Contains(out, "[AFK]") {
+		t.Errorf("non-AFK player listing should not contain [AFK] marker, got: %q", out)
+	}
+}
+
 func TestDoInventory_Empty(t *testing.T) {
 	setupTestWorld()
 	ch, client := makeTestChar("Gandalf")

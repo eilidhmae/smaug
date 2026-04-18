@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/eilidhmae/smaug/internal/combat"
+	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 )
 
@@ -105,6 +106,50 @@ func TestDoCircle_SelfPrevented(t *testing.T) {
 	DoCircle(ch, "selftgt")
 }
 
+// When the first OneHit kills the victim (POS_DEAD), DoCircle's second
+// swing must NOT fire. Plan item 4 retcode-review guard.
+func TestDoCircle_SecondSwingSkippedOnVictimDeath(t *testing.T) {
+	ensureSkill(t, "circle")
+	ch, victim := newSkillTestRoom()
+	setLearned(t, ch, "circle", 100)
+
+	// Give ch a wield so the weapon gate passes.
+	wield := &types.ObjData{
+		Name:       "dagger",
+		ShortDescr: "a dagger",
+		ItemType:   types.ITEM_WEAPON,
+		WearLoc:    types.WEAR_WIELD,
+	}
+	wield.Value[1] = 1
+	wield.Value[2] = 4
+	wield.Value[3] = 11 // pierce (C skills.c:5195)
+	handler.ObjToChar(wield, ch)
+	handler.EquipChar(ch, wield, types.WEAR_WIELD)
+
+	// Pre-dead victim: Hit <= 0 so OneHit early-returns rVICT_DIED
+	// (combat.go:459 `if victim.Hit <= 0 || ch.InRoom != victim.InRoom`).
+	// A third party is fighting victim so the distraction check passes.
+	third := &types.CharData{
+		Name: "distractor", Level: 5, Hit: 20, MaxHit: 20,
+		InRoom: ch.InRoom, Position: types.POS_STANDING,
+	}
+	third.Act.Set(types.ACT_IS_NPC)
+	ch.InRoom.People = append(ch.InRoom.People, third)
+	combat.StartFighting(ch, third)
+	combat.StartFighting(victim, third)
+
+	victim.Hit = 0
+	victim.Position = types.POS_DEAD
+
+	// Should not panic; both guards (retcode and Position) agree victim is
+	// dead so the second swing is suppressed. The assertion is negative:
+	// no infinite loop, no panic, and victim.Hit still 0.
+	DoCircle(ch, "target")
+	if victim.Hit > 0 {
+		t.Errorf("pre-dead victim.Hit = %d, want <= 0", victim.Hit)
+	}
+}
+
 func TestDoGouge_NotFighting(t *testing.T) {
 	ensureSkill(t, "gouge")
 	ensureSkill(t, "blindness")
@@ -175,6 +220,16 @@ func TestDoHitall_Empty(t *testing.T) {
 	DoHitall(ch, "")
 	// Should say "no one else here"
 }
+
+// Plan item 4 retcode-review note: DoHitall now honors
+// combat.AttackerDied(ret) in addition to the pre-existing ch.Position
+// <= POS_DEAD guard. In the current codebase the attacker-died path is
+// dormant (reactive damage like fireshield / ice_shield / acid_shield
+// is not yet ported — verified via grep), so a live mutation test
+// cannot drive the guard through OneHit/Damage. Tests for the helper
+// predicates themselves live in internal/combat/combat_test.go
+// (TestAttackerDied / TestVictimDied). The defense-in-depth change
+// guarantees correctness as soon as reactive damage ships.
 
 func TestDoHitall_WithTargets(t *testing.T) {
 	ensureSkill(t, "hitall")

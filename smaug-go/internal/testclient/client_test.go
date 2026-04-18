@@ -1,6 +1,7 @@
 package testclient
 
 import (
+	"bytes"
 	"net"
 	"regexp"
 	"strings"
@@ -297,6 +298,7 @@ func TestClient_SendErr_ClosedPeer(t *testing.T) {
 		t.Fatal("sendErr to closed peer should return error, got nil")
 	}
 }
+
 // first Read delivers a bare trailing IAC byte that stripIAC cannot yet
 // consume, and a later Read supplies the rest of the WILL ECHO triple plus
 // payload. The final buffer must contain 'C' with all IAC bytes stripped.
@@ -344,5 +346,57 @@ func newTestClient(t *testing.T, conn net.Conn) *Client {
 		t:         t,
 		stripANSI: true,
 		stripIAC:  true,
+	}
+}
+
+// TestClient_ScratchBufferReused verifies that the read scratch slice is
+// allocated lazily once and persists across fillOnce calls — a regression
+// guard against reintroducing per-call `make([]byte, 4096)`. Uses the
+// identity of the underlying array via &c.scratch[0] since slices of the
+// same backing array compare that way.
+func TestClient_ScratchBufferReused(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	c := newTestClient(t, clientConn)
+	if c.scratch != nil {
+		t.Fatal("scratch must be nil before first fillOnce")
+	}
+
+	// Pump one byte through to trigger allocation.
+	go func() { _, _ = serverConn.Write([]byte("X")) }()
+	_, _ = c.readUntilErr("X", 500*time.Millisecond)
+
+	if c.scratch == nil {
+		t.Fatal("scratch must be non-nil after first fillOnce")
+	}
+	if len(c.scratch) != readScratchSize {
+		t.Errorf("scratch len = %d, want %d", len(c.scratch), readScratchSize)
+	}
+	firstPtr := &c.scratch[0]
+
+	// Do a second round-trip. Scratch must NOT be reallocated.
+	go func() { _, _ = serverConn.Write([]byte("Y")) }()
+	_, _ = c.readUntilErr("Y", 500*time.Millisecond)
+
+	if &c.scratch[0] != firstPtr {
+		t.Error("scratch must be reused across fillOnce calls, not reallocated")
+	}
+}
+
+// TestClient_ReadUntil_CaseInsensitive_AfterBytesRefactor verifies that
+// the bytes.ToLower / bytes.Index refactor preserved the original
+// case-insensitive match semantics.
+func TestClient_ReadUntil_CaseInsensitive_AfterBytesRefactor(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	go func() { _, _ = serverConn.Write([]byte("Some MIXED Case Output")) }()
+	c := newTestClient(t, clientConn)
+	got := c.ReadUntil("mixed", 500*time.Millisecond)
+	if !bytes.Contains([]byte(got), []byte("MIXED")) {
+		t.Errorf("got = %q, want to contain 'MIXED'", got)
 	}
 }

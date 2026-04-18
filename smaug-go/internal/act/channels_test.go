@@ -654,6 +654,67 @@ func TestDoChannels_AllAvtalkGatedOnLevelImmortal(t *testing.T) {
 	}
 }
 
+// Derivation test: manually append a fake entry with publicAll=true to
+// the table; the `+all` handler must include it without any change to
+// DoChannels' logic. Guards against regressing to an ad-hoc duplicate
+// slice.
+func TestDoChannels_PublicAllDerivedFromToggleTable(t *testing.T) {
+	_ = setupCommWorld()
+	// Pick an otherwise-unused channel bit the existing table does NOT
+	// already flag publicAll=true: CHANNEL_TELLS (publicAll=false).
+	origTable := channelToggleTable
+	t.Cleanup(func() { channelToggleTable = origTable })
+	channelToggleTable = append([]struct {
+		name      string
+		bit       int
+		publicAll bool
+	}{}, origTable...)
+	// Flip TELLS to publicAll=true for this one test.
+	for i := range channelToggleTable {
+		if channelToggleTable[i].name == "tells" {
+			channelToggleTable[i].publicAll = true
+			break
+		}
+	}
+
+	ch, client := makeChannelsPC("Deriv")
+	defer client.Close()
+	ch.Level = 10
+
+	// Fresh character — TELLS bit clear.
+	if ch.Deaf.IsSet(types.CHANNEL_TELLS) {
+		t.Fatal("precondition: CHANNEL_TELLS should start clear")
+	}
+	DoChannels(ch, "-all")
+	if !ch.Deaf.IsSet(types.CHANNEL_TELLS) {
+		t.Error("'-all' must set CHANNEL_TELLS once its table entry is publicAll=true")
+	}
+
+	DoChannels(ch, "+all")
+	if ch.Deaf.IsSet(types.CHANNEL_TELLS) {
+		t.Error("'+all' must clear CHANNEL_TELLS once its table entry is publicAll=true")
+	}
+}
+
+// Negative direction: a channel whose table entry has publicAll=false
+// MUST NOT be touched by `+all`/`-all`. Guards the other mutation
+// direction (accidentally iterating every entry in the table).
+func TestDoChannels_PrivateChannelsNotToggledByAll(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Priv")
+	defer client.Close()
+	ch.Level = 10
+
+	// WHISPER has publicAll=false in the table.
+	if ch.Deaf.IsSet(types.CHANNEL_WHISPER) {
+		t.Fatal("precondition: CHANNEL_WHISPER should start clear")
+	}
+	DoChannels(ch, "-all")
+	if ch.Deaf.IsSet(types.CHANNEL_WHISPER) {
+		t.Error("'-all' must NOT touch CHANNEL_WHISPER (publicAll=false)")
+	}
+}
+
 func TestDoChannels_AllTogglePublicSet(t *testing.T) {
 	_ = setupCommWorld()
 	ch, client := makeChannelsPC("Norm")

@@ -97,6 +97,7 @@ func TestBoot_WiresCallbacks(t *testing.T) {
 	act.StartEditingFunc = nil
 	act.CopyBufferFunc = nil
 	act.StopEditingFunc = nil
+	game.PromptExpBase = nil
 	act.ShutdownFunc = nil
 	act.DisconnectFunc = nil
 	mudprog.WorldRef = nil
@@ -150,6 +151,9 @@ func TestBoot_WiresCallbacks(t *testing.T) {
 	}
 	if act.StopEditingFunc == nil {
 		t.Error("act.StopEditingFunc not wired")
+	}
+	if game.PromptExpBase == nil {
+		t.Error("game.PromptExpBase not wired")
 	}
 	// ShutdownFunc should be wired to the ProductionOpts default
 	// (save-and-exit). Do NOT invoke it — it calls os.Exit.

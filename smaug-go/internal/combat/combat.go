@@ -18,6 +18,23 @@ const (
 	rBOTH_DIED = 3
 )
 
+// AttackerDied returns true if the given retcode indicates the attacker
+// (ch) died during the call — rCHAR_DIED or rBOTH_DIED. Used by skills
+// that cascade OneHit/Damage over multiple victims (DoHitall) so the
+// attacker's death (e.g. from reactive damage like fireshield) stops
+// the cascade immediately. C-equivalent: skills.c:5334
+// `global_retcode == rCHAR_DIED || global_retcode == rBOTH_DIED`.
+func AttackerDied(retcode int) bool {
+	return retcode == rCHAR_DIED || retcode == rBOTH_DIED
+}
+
+// VictimDied returns true if the retcode indicates the victim (vch)
+// died during the call — rVICT_DIED or rBOTH_DIED. Sibling helper to
+// AttackerDied; exported for the same cross-package reason.
+func VictimDied(retcode int) bool {
+	return retcode == rVICT_DIED || retcode == rBOTH_DIED
+}
+
 // Hook variables populated at boot to avoid an import cycle with mudprog.
 // When nil, combat silently skips the trigger fire.
 var (
