@@ -2,11 +2,13 @@
 
 ## Recommended next steps (ordered)
 
-1. **Commit batch 1 fixes** once the coverage-gap follow-up worker lands and adversary-verifies (in-flight at the time of this writing).
-2. **Combat depth** (P0, highest player-visibility gain): port multi-attack, weapon proficiency bonus, and stance application. The three are tightly coupled in C `fight.c` and natural to do as one unit. Acceptance: a level-30 PC warrior with `second_attack`/`third_attack` learned gets the expected extra attacks per round.
-3. **Player-config commands** (P1, easy wins): `password`, `title`, `afk`, `save`. These are one-session tasks and close 4 TODO items.
-4. **Communication channels** (P1): at least `immtalk`, `gtell`, `auction` — these three unblock multi-player coordination. Other channels (music/newbiechat/racetalk/wartalk) are lower priority.
-5. **Interactive OLC substates** (P2): `CON_OEDITING` / `CON_MEDITING`. Harness has the `WithPrompt` seam ready (Tier 5). Unlocks a real builder experience.
+Four plans are adversary-verified and ready to execute (2026-04-17). Each has its own doc under `smaug-go/doc/` with gap inventory, task groups (G1, G2…), acceptance criteria, and open questions.
+
+1. **`plan-combat-depth.md`** (P0) — multi-attack cascade (second…seventh_attack), weapon proficiency bonus, stance application. Acceptance: a level-30 PC warrior with `second_attack`/`third_attack` learned gets the expected extra attacks per round.
+2. **`plan-dammessage-gaps.md`** (P1) — `was_in_room` swap, `PCFLAG_GAG` self-suppress, poisoned-weapon prefix. Pairs naturally with the combat-depth plan (same package).
+3. **`plan-player-config.md`** (P1) — `save`, `afk`, `title`, `password` (+ optional `pagelen` alias). Closes four TODO items in one session.
+4. **`plan-channels.md`** (P1) — `immtalk`, `gtell`, `auction`-helper + stub. Unblocks multi-player coordination. Full auction system deferred to Phase 6.
+5. **Interactive OLC substates** (P2): `CON_OEDITING` / `CON_MEDITING`. Blocked on an `editor.go` fix (`/s` doesn't call `StopEditing` — see `plan-player-config.md` R6). Harness has the `WithPrompt` seam ready (Tier 5).
 6. **Hotboot/copyover** (P2, infrastructure): Go-native design required — C's `exec()` + fd-inheritance doesn't translate. Design pass first (save-all-state + graceful restart + auto-reconnect handshake), then implementation.
 7. **Big optional systems** (P3): overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps. Each is large and self-contained; pick by demand signal, not order.
 
@@ -16,25 +18,20 @@
 
 ### High-impact combat gaps (from 2026-04-17 audit — P0)
 
-- [ ] Port PC multi-attack skills (second_attack … seventh_attack) into combat loop
-  - Reference: C `src/fight.c:1058–1132`
-  - Target: `smaug-go/internal/combat/combat.go:ViolenceUpdate` / `OneHit`
-  - Note: a level-30 PC currently gets 1 attack/round in Go; C gives 3–5
-- [ ] Port weapon proficiency bonus into `OneHit`
-  - Reference: C `src/fight.c:1385–1566` (`weapon_prof_bonus_check`)
-  - Target: `smaug-go/internal/combat/combat.go`
-- [ ] Apply `ch.Stance` in combat (currently stored/saved but unused)
-  - Reference: C `src/fight.c:1058–1070`
-  - Target: `smaug-go/internal/combat/combat.go`; `smaug-go/internal/act/skills4.go:183`
+**→ See `smaug-go/doc/plan-combat-depth.md` for the full plan (9 task groups, adversary-verified).**
+
+- [ ] Port PC multi-attack skills (second_attack … seventh_attack) into combat loop (plan G1–G4)
+- [ ] Port weapon proficiency bonus into `OneHit` (plan G6)
+- [ ] Apply `ch.Stance` in combat — currently stored/saved but unused (plan G7)
 
 ### Player-visible command gaps (P1)
 
-- [ ] Register `password` command (change own password)
-- [ ] Register `title` command (set own title)
-- [ ] Register `afk` command (toggle `PLR_AFK` — flag already exists, `ban.go`/`comm.go` honor it)
-- [ ] Register `save` command (manual save) — create `DoSave` calling the existing save path
-- [ ] Register `bio`, `description`, `pagelen` (verify field plumbing first)
-- [ ] Communication channels: `immtalk`, `gtell`, `auction` (top three); `music`, `newbiechat`, `racetalk`, `wartalk`, `counciltalk`, `guildtalk` (remainder)
+**→ See `smaug-go/doc/plan-player-config.md` for the player commands (4 groups) and `smaug-go/doc/plan-channels.md` for the channels (5 groups). Both adversary-verified.**
+
+- [ ] Register `password`, `title`, `afk`, `save` (plan groups G1–G4)
+- [ ] Optional `pagelen` alias (plan G5)
+- [ ] Communication channels: `immtalk`, `gtell`, `auction`-helper + stub (`plan-channels.md` G1–G4). Full auction system and `music`/`newbiechat`/`racetalk`/`wartalk`/`counciltalk`/`guildtalk` deferred to Phase 6.
+- [ ] `bio`/`description` deferred — blocked on `editor.go` `/s` bug where descriptor stays in `CON_EDITING` permanently (`plan-player-config.md` R6).
 
 ### Persistence gaps
 
@@ -69,11 +66,11 @@ From `phase5-tier3-completed.md` known deferrals + code-level TODOs:
 
 ### Combat / damage-message gaps
 
-From `combat/dammessage.go` TODOs:
+**→ See `smaug-go/doc/plan-dammessage-gaps.md` for the full plan (3 task groups, adversary-verified). Pairs with combat-depth.**
 
-- [ ] Port `was_in_room` swap (C `fight.c:4432–4438`) so dying/moved characters see messages from the right room
-- [ ] Port `PCFLAG_GAG` handling (C `fight.c:4481–4486`) so gagged players are skipped
-- [ ] Port `is_wielding_poisoned` prefix (C `fight.c:4496–4512`)
+- [ ] Port `was_in_room` swap (plan G1)
+- [ ] Port `PCFLAG_GAG` self-suppress (plan G2)
+- [ ] Port `is_wielding_poisoned` prefix (plan G3) — must check both `WEAR_WIELD` and `WEAR_DUAL_WIELD` for obj identity
 
 ### Usability polish (from audit U1–U3 + phase notes)
 
