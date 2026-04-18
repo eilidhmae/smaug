@@ -136,6 +136,17 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	act.CopyBufferFunc = game.CopyBuffer
 	act.StopEditingFunc = game.StopEditing
 
+	// TIMER_DO_FUN callback registry (plan-tranche-b.md G2). Registry
+	// is empty today because no Go skill command currently sets a
+	// TIMER_DO_FUN timer. When `do_detrap` / `do_dig` / `do_search` /
+	// `do_mend` / `do_reading` / `do_cast` port, add
+	// `handler.RegisterTimerFunc("do_detrap", act.DoDetrap)` etc. here
+	// (or in their own init closures). See C `src/skills.c:1965`,
+	// `:2104`, `:2265`, `:2934`, `:3045`, and `src/magic.c:1858` for the
+	// authoritative names. The registry MUST be cleared on re-boot so
+	// tests that call Boot multiple times don't inherit stale entries.
+	handler.ClearTimerRegistry()
+
 	// Prompt %X token (XP-to-next-level) — C handler.c:107-112 get_exp_base.
 	// NPCs use the C literal 1000; PCs look up the class table's ExpBase.
 	game.PromptExpBase = func(ch *types.CharData) int {
@@ -271,6 +282,17 @@ func bootDB(w *world.World, dataDir string) error {
 		return fmt.Errorf("failed to load skills: %w", err)
 	}
 	log.Printf("Loaded %d skills/spells.", len(w.Skills))
+
+	// Load stance table overrides from db/system/stances.dat, if present.
+	// The shipped file is a 4-byte `End\n` stub so this is a no-op on a
+	// stock tree; a populated file will selectively override the combat
+	// defaults in combat.StanceIndex. Missing file / malformed blocks are
+	// logged via util.Bug but non-fatal — matches C `load_stances`
+	// fail-soft convention at src/stances.c:311.
+	stancesPath := filepath.Join(dataDir, "system", "stances.dat")
+	if err := persist.LoadStancesInto(&combat.StanceIndex, stancesPath); err != nil {
+		log.Printf("WARNING: failed to load stances: %v", err)
+	}
 
 	// Wire skill lookups so player save/load persists learned proficiencies.
 	persist.SkillNameLookup = func(name string) int {

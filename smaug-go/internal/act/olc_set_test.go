@@ -199,6 +199,174 @@ func TestDoMset_AlignClamp(t *testing.T) {
 	}
 }
 
+// --- DoMset stance branch (plan-tranche-b.md G1b) ---
+
+// setupMsetWorldWithPC builds an admin caller + a PC victim in the same
+// room so G1b tests can exercise the PC-target code path.
+func setupMsetWorldWithPC(t *testing.T, callerTrust int) (*types.CharData, net.Conn, *types.CharData, func()) {
+	t.Helper()
+	w := setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	ch.Trust = callerTrust // overrides makeImmTestChar's level-based trust
+	room := &types.RoomIndexData{Vnum: 9100, Name: "OLC Room"}
+	w.Rooms[9100] = room
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim := &types.CharData{
+		Name:       "bob",
+		ShortDescr: "Bob",
+		Level:      10,
+		Position:   types.POS_STANDING,
+		PCData:     &types.PCData{},
+	}
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+
+	return ch, client, victim, func() { client.Close() }
+}
+
+func TestDoMset_StanceSetsPCMastery(t *testing.T) {
+	ch, client, victim, cleanup := setupMsetWorldWithPC(t, types.LEVEL_LESSER)
+	defer cleanup()
+
+	DoMset(ch, "bob dragon 200")
+	out := readOutput(ch, client)
+	if victim.PCData.Stances[types.STANCE_DRAGON] != 200 {
+		t.Errorf("PCData.Stances[DRAGON] = %d, want 200",
+			victim.PCData.Stances[types.STANCE_DRAGON])
+	}
+	if !strings.Contains(strings.ToLower(out), "done") {
+		t.Errorf("expected 'Done.' confirmation, got: %q", out)
+	}
+}
+
+func TestDoMset_StanceNPCTarget(t *testing.T) {
+	ch, client, _, cleanup := setupMsetWorld()
+	defer cleanup()
+
+	// The existing setup's "testmob" is an NPC; reuse it.
+	DoMset(ch, "testmob dragon 175")
+	out := readOutput(ch, client)
+	// Fetch the mob back via the registry.
+	w := WorldRef
+	var mob *types.CharData
+	for _, c := range w.Characters {
+		if c.Name == "testmob" {
+			mob = c
+			break
+		}
+	}
+	if mob == nil {
+		t.Fatal("testmob not in world")
+	}
+	if mob.IndexData == nil {
+		// Build a skeletal IndexData so the setter has somewhere to write.
+		// (The NPC-path must survive an nil IndexData; if Go chose to write
+		// to mob.Stances instead that is also acceptable — see below.)
+		t.Logf("testmob has nil IndexData; G1b may need to write to mob.Stances instead")
+	}
+	// Accept either IndexData.Stances or mob.Stances per the plan wording.
+	got := mob.Stances[types.STANCE_DRAGON]
+	if mob.IndexData != nil {
+		got = mob.IndexData.Stances[types.STANCE_DRAGON]
+	}
+	if got != 175 {
+		t.Errorf("NPC mastery = %d, want 175", got)
+	}
+	if !strings.Contains(strings.ToLower(out), "done") {
+		t.Errorf("expected 'Done.' confirmation, got: %q", out)
+	}
+}
+
+func TestDoMset_StanceClampsToMax(t *testing.T) {
+	ch, client, victim, cleanup := setupMsetWorldWithPC(t, types.LEVEL_LESSER)
+	defer cleanup()
+
+	DoMset(ch, "bob dragon 250")
+	out := readOutput(ch, client)
+	// Rejected: value stays 0 (default) AND an error message is emitted
+	// matching C `Stance value is from 0 to 200`.
+	if victim.PCData.Stances[types.STANCE_DRAGON] != 0 {
+		t.Errorf("rejected set leaked: Stances[DRAGON] = %d, want 0",
+			victim.PCData.Stances[types.STANCE_DRAGON])
+	}
+	if !strings.Contains(out, "Stance value is from 0 to 200") {
+		t.Errorf("expected C-faithful range message, got: %q", out)
+	}
+}
+
+func TestDoMset_StanceNegativeRejected(t *testing.T) {
+	ch, client, victim, cleanup := setupMsetWorldWithPC(t, types.LEVEL_LESSER)
+	defer cleanup()
+
+	DoMset(ch, "bob dragon -5")
+	out := readOutput(ch, client)
+	if victim.PCData.Stances[types.STANCE_DRAGON] != 0 {
+		t.Errorf("negative leaked: Stances[DRAGON] = %d, want 0",
+			victim.PCData.Stances[types.STANCE_DRAGON])
+	}
+	if !strings.Contains(out, "Stance value is from 0 to 200") {
+		t.Errorf("expected range message, got: %q", out)
+	}
+}
+
+func TestDoMset_StanceInsufficientTrustPC(t *testing.T) {
+	// LEVEL_LESSER = 57. Caller trust = 56 → below gate.
+	ch, client, victim, cleanup := setupMsetWorldWithPC(t, types.LEVEL_LESSER-1)
+	defer cleanup()
+
+	DoMset(ch, "bob dragon 100")
+	out := readOutput(ch, client)
+	if victim.PCData.Stances[types.STANCE_DRAGON] != 0 {
+		t.Errorf("set should have been blocked, got %d",
+			victim.PCData.Stances[types.STANCE_DRAGON])
+	}
+	if !strings.Contains(out, "You can only modify a mobile's immunities") {
+		t.Errorf("expected trust-rejection message, got: %q", out)
+	}
+}
+
+func TestDoMset_StanceUnknownName(t *testing.T) {
+	ch, client, _, cleanup := setupMsetWorldWithPC(t, types.LEVEL_LESSER)
+	defer cleanup()
+
+	// "nonesuch" is not a stance name; falls through to the default
+	// "Valid fields:" usage message, matching C's fall-through to do_mset
+	// usage recursion.
+	DoMset(ch, "bob nonesuch 50")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Valid fields") {
+		t.Errorf("expected default bad-field path, got: %q", out)
+	}
+}
+
+func TestDoMset_StanceNoneSilentNoop(t *testing.T) {
+	// C build.c:3502 guards on `get_stance_number(arg2) > 0` (strict
+	// positive). STANCE_NONE is 0, so `mset bob none <val>` is a silent
+	// no-op in C — falls through to the usage path.
+	ch, client, victim, cleanup := setupMsetWorldWithPC(t, types.LEVEL_LESSER)
+	defer cleanup()
+
+	DoMset(ch, "bob none 5")
+	out := readOutput(ch, client)
+	if victim.PCData.Stances[types.STANCE_NONE] != 0 {
+		t.Errorf("STANCE_NONE should not be writeable via mset; got %d",
+			victim.PCData.Stances[types.STANCE_NONE])
+	}
+	// Silent no-op means: no "Done." and no range error.
+	if strings.Contains(strings.ToLower(out), "done") {
+		t.Errorf("STANCE_NONE should not emit 'Done.'; got %q", out)
+	}
+	if strings.Contains(out, "Stance value is from") {
+		t.Errorf("STANCE_NONE should not emit range message; got %q", out)
+	}
+	// Falls through to the usage path — expect "Valid fields".
+	if !strings.Contains(out, "Valid fields") {
+		t.Errorf("expected usage fall-through, got: %q", out)
+	}
+}
+
 // --- DoOset tests ---
 
 func setupOsetWorld() (*types.CharData, net.Conn, *types.ObjData, func()) {

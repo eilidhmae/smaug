@@ -422,13 +422,65 @@ func TestOprogSpeechTrigger_NoMatch(t *testing.T) {
 	}
 }
 
-func TestOprogCommandTrigger_Stub(t *testing.T) {
-	// Current Go port has no MPROG_CMD bit; helper is a stub that never
-	// consumes commands. Will flip to true once Tier 3 adds the bit.
+// plan-tranche-b.md G4: OprogCommandTrigger matches MPROG_CMD progs on
+// objs in ch's ROOM (floor-only, matches C mud_prog.c:3569-3580).
+
+func TestOprogCommandTrigger_RoomObjMatches(t *testing.T) {
+	room := &types.RoomIndexData{Vnum: 3001}
+	_ = makeTestObj(room, types.MPROG_CMD, "twist", "mpecho FIRED")
 	ch, client := makeDescChar("Commander")
 	defer client.Close()
-	if OprogCommandTrigger(ch, "wiggle") {
-		t.Error("command trigger should return false until MPROG_CMD is defined")
+	ch.InRoom = room
+	room.People = append(room.People, ch)
+
+	progNest = 0
+	if !OprogCommandTrigger(ch, "twist") {
+		t.Fatal("OprogCommandTrigger should fire on room-floor obj with MPROG_CMD")
+	}
+	out := readTrigOutput(ch, client)
+	if !strings.Contains(out, "FIRED") {
+		t.Errorf("CMD: got %q", out)
+	}
+}
+
+func TestOprogCommandTrigger_CarryingObjDoesNotMatch(t *testing.T) {
+	// Matches C mud_prog.c:3569-3580 which walks ONLY
+	// ch->in_room->first_content. Carried/equipped progs must NOT fire
+	// on commands even if MPROG_CMD is set.
+	room := &types.RoomIndexData{Vnum: 3001}
+	obj := makeTestObj(nil, types.MPROG_CMD, "twist", "mpecho FIRED")
+	ch, client := makeDescChar("Commander")
+	defer client.Close()
+	ch.InRoom = room
+	room.People = append(room.People, ch)
+	ch.Carrying = append(ch.Carrying, obj)
+	obj.CarriedBy = ch
+
+	progNest = 0
+	if OprogCommandTrigger(ch, "twist") {
+		t.Fatal("carried obj's CMD prog should NOT fire (C-faithful room-only)")
+	}
+}
+
+func TestOprogCommandTrigger_NonMatchingReturnsFalse(t *testing.T) {
+	room := &types.RoomIndexData{Vnum: 3001}
+	_ = makeTestObj(room, types.MPROG_CMD, "pull", "mpecho FIRED")
+	ch, client := makeDescChar("Commander")
+	defer client.Close()
+	ch.InRoom = room
+	room.People = append(room.People, ch)
+
+	progNest = 0
+	if OprogCommandTrigger(ch, "twist") {
+		t.Error("OprogCommandTrigger should return false on non-matching command")
+	}
+}
+
+func TestOprogCommandTrigger_NilRoom(t *testing.T) {
+	ch, client := makeDescChar("Commander")
+	defer client.Close()
+	if OprogCommandTrigger(ch, "twist") {
+		t.Error("nil room should be false")
 	}
 }
 

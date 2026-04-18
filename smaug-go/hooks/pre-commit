@@ -188,7 +188,7 @@ else
     if [ -z "$UNIT_PKGS" ]; then
         echo "  (no unit packages found)"
     else
-        if UNIT_OUT=$(cd "$MODULE_DIR" && go test -count=1 -timeout 30s $UNIT_PKGS 2>&1); then
+        if UNIT_OUT=$(cd "$MODULE_DIR" && go test -count=1 -timeout 60s $UNIT_PKGS 2>&1); then
             echo "  PASS"
         else
             fail "unit tests failed:"

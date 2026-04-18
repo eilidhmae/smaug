@@ -1,0 +1,13 @@
+StartStance Dragon
+Attacks 2
+DamDone 150
+DamTaken 90
+EndStance
+
+StartStance Tiger
+Attacks 3
+DamDone 120
+DamTaken 110
+EndStance
+
+End

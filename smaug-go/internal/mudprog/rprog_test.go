@@ -197,6 +197,59 @@ func TestRprogCommandTrigger_Consumes(t *testing.T) {
 	}
 }
 
+// plan-tranche-b.md G4: wordlist match with true word boundaries.
+func TestRprogCommandTrigger_SubstringWithoutWordBoundaryDoesNotFire(t *testing.T) {
+	// arglist "wigg" should NOT match input "wiggle hard" (no right
+	// word boundary after "wigg"). Regression against the previous
+	// first-word-exact-match implementation which would have... still
+	// returned false since "wigg" != "wiggle" either way. Use a
+	// clearer variant: arglist "wig" input "wiggle hard" → no match.
+	room := makeProgRoom(3009, types.MPROG_CMD, "wig", "mpecho FIRED")
+	ch, client := watcherIn(room, "Commander")
+	defer client.Close()
+
+	progNest = 0
+	if RprogCommandTrigger(ch, "wiggle hard") {
+		t.Fatal("CMD prog should NOT consume substring-only match")
+	}
+	out := readTrigOutput(ch, client)
+	if strings.Contains(out, "FIRED") {
+		t.Errorf("substring match should not fire; got %q", out)
+	}
+}
+
+// plan-tranche-b.md G4: match on non-first word.
+func TestRprogCommandTrigger_WordMatchInMiddle(t *testing.T) {
+	room := makeProgRoom(3009, types.MPROG_CMD, "hard", "mpecho FIRED")
+	ch, client := watcherIn(room, "Commander")
+	defer client.Close()
+
+	progNest = 0
+	if !RprogCommandTrigger(ch, "wiggle hard") {
+		t.Fatal("CMD prog should fire on middle-of-input keyword match")
+	}
+	out := readTrigOutput(ch, client)
+	if !strings.Contains(out, "FIRED") {
+		t.Errorf("CMD: got %q", out)
+	}
+}
+
+// plan-tranche-b.md G4: phrase prefix "p " support.
+func TestRprogCommandTrigger_PhrasePrefix(t *testing.T) {
+	room := makeProgRoom(3009, types.MPROG_CMD, "p say hello", "mpecho FIRED")
+	ch, client := watcherIn(room, "Commander")
+	defer client.Close()
+
+	progNest = 0
+	if !RprogCommandTrigger(ch, "say hello world") {
+		t.Fatal("phrase prefix should match `say hello world`")
+	}
+	out := readTrigOutput(ch, client)
+	if !strings.Contains(out, "FIRED") {
+		t.Errorf("CMD: got %q", out)
+	}
+}
+
 func TestRprogCommandTrigger_DoesNotConsumeUnmatched(t *testing.T) {
 	room := makeProgRoom(3009, types.MPROG_CMD, "wiggle", "mpecho FIRED")
 	ch, client := watcherIn(room, "Commander")

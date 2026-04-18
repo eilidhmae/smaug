@@ -205,17 +205,42 @@ func OprogSpeechTrigger(ch *types.CharData, argument string) {
 }
 
 // OprogCommandTrigger is the command-trigger hook called from the command
-// interpreter. If any obj-prog on an item in ch's room or inventory matches
-// the command, returns true and callers should skip normal dispatch.
+// interpreter. If any obj-prog on an item on the FLOOR of ch's room (not
+// carried or equipped) matches the command via the word-boundary
+// wordlist helper, returns true and callers should skip normal dispatch.
 //
-// NOTE: C uses a dedicated CMD_PROG enum value (src/mud.h:6546). The Go port
-// does not yet have a MPROG_CMD bit, so this helper is stubbed to always
-// return false. TODO(tier3): add MPROG_CMD bit + loader plumbing and enable
-// keyword matching here (logic would mirror OprogSpeechTrigger + return true
-// on first match).
+// Mirrors C `oprog_command_trigger` at src/mud_prog.c:3569-3580 which
+// iterates ONLY `ch->in_room->first_content`. Carried and equipped
+// objects are deliberately excluded — a lever on the floor is usable,
+// but the same lever carried around in a sack is not.
 func OprogCommandTrigger(ch *types.CharData, argument string) bool {
-	if ch == nil || argument == "" {
+	if ch == nil || ch.InRoom == nil || argument == "" {
 		return false
+	}
+	// Snapshot so a prog that extracts obj doesn't corrupt iteration.
+	contents := make([]*types.ObjData, len(ch.InRoom.Contents))
+	copy(contents, ch.InRoom.Contents)
+	for _, obj := range contents {
+		if obj == nil || obj.IndexData == nil {
+			continue
+		}
+		if len(obj.IndexData.MudProgs) == 0 {
+			continue
+		}
+		for _, prog := range obj.IndexData.MudProgs {
+			if prog.Type&types.MPROG_CMD == 0 {
+				continue
+			}
+			if !wordlistMatch(prog.ArgList, argument) {
+				continue
+			}
+			sm := buildSupermob(obj)
+			if sm == nil {
+				continue
+			}
+			Driver(prog.ComList, sm, ch, obj, nil, nil, false)
+			return true
+		}
 	}
 	return false
 }

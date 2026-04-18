@@ -1,8 +1,6 @@
 package mudprog
 
 import (
-	"strings"
-
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -139,7 +137,13 @@ func RprogSpeechTrigger(ch *types.CharData, message string) {
 
 // RprogCommandTrigger fires CMD progs on ch's room. Returns true if any prog
 // consumed the command (caller should skip normal dispatch).
-// C: rprog_command_trigger.
+// C: rprog_command_trigger / rprog_wordlist_check at src/mud_prog.c:4109-4178.
+//
+// Match semantics use the full C word-boundary algorithm via
+// `wordlistMatch`: arglist words (or a `"p "`-prefixed phrase) are
+// searched as substrings in the command line with left/right boundary
+// checks. This is stricter than the pre-tranche-B first-word-equal
+// match and also broader (matches on middle-of-line keywords).
 func RprogCommandTrigger(ch *types.CharData, line string) bool {
 	if ch == nil || ch.InRoom == nil || line == "" {
 		return false
@@ -148,28 +152,11 @@ func RprogCommandTrigger(ch *types.CharData, line string) bool {
 	if len(room.MudProgs) == 0 {
 		return false
 	}
-	// C matches CMD progs by comparing the first word of the command against
-	// the prog's arglist (space-separated keyword list). This mirrors the
-	// C wordlist_check logic in a lightweight form.
-	cmd, _ := firstWord(line)
-	cmd = strings.ToLower(cmd)
 	for _, prog := range room.MudProgs {
 		if prog.Type&types.MPROG_CMD == 0 {
 			continue
 		}
-		argList := strings.TrimSpace(prog.ArgList)
-		matched := false
-		if argList == "" {
-			matched = true
-		} else {
-			for _, kw := range strings.Fields(strings.ToLower(argList)) {
-				if kw == cmd {
-					matched = true
-					break
-				}
-			}
-		}
-		if !matched {
+		if !wordlistMatch(prog.ArgList, line) {
 			continue
 		}
 		sm := buildSupermobForRoom(room)

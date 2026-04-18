@@ -520,3 +520,102 @@ Nits also addressed:
 4. Added explicit C-divergence note + `TestDoMset_StanceNoneSilentNoop` for the C `build.c:3502` `> 0` guard (so `mset bob none <val>` is a silent no-op matching C).
 
 Adversary confirmed: all other C/Go citations sampled were accurate; complexity is proportional; scope cuts are reasonable; `util.Bug` seam assumption documented for worker to verify at implementation time.
+
+---
+
+## Completion record (2026-04-18)
+
+**Status**: LANDED. Executed as orchestrated manager session with `LINEAGE_ID=tranche-b`. All 18 acceptance criteria (A1-A18) met; drafts written under `.claude/drafts/tranche-b/` for orchestrator reconciliation.
+
+### Acceptance criteria
+
+| ID | Criterion | Status | Evidence |
+|----|-----------|--------|----------|
+| A1 | `LoadStancesInto` returns nil error for stub AND populated file | ✅ | `TestLoadStances_RealShippedStubLoads`, `TestLoadStances_TwoStancesOverridesDefaults`, `TestLoadStances_EmptyFileKeepsDefaults` |
+| A2 | Combat tests pass after boot invokes loader | ✅ | `go test ./internal/combat/... -count=3` green |
+| A3 | Populated stance overrides; unmentioned keeps defaults | ✅ | `TestLoadStances_TwoStancesOverridesDefaults` checks Dragon/Tiger override + Crab preserved |
+| A4 | `GetStanceNumber` resolves all 12 names case-insensitively | ✅ | `TestGetStanceNumber` covers 12 names × 3 case variants + unknown + empty |
+| A5 | `mset <victim> <stance> <value>` writes PC + NPC mastery at trust≥LESSER | ✅ | `TestDoMset_StanceSetsPCMastery`, `TestDoMset_StanceNPCTarget` |
+| A6 | Values clamped 0..200; out-of-range rejected with C-faithful message | ✅ | `TestDoMset_StanceClampsToMax`, `TestDoMset_StanceNegativeRejected` |
+| A7 | Non-admin PC target rejected with `"You can only modify a mobile's immunities.\n\r"` | ✅ | `TestDoMset_StanceInsufficientTrustPC` |
+| A8 | `RegisterTimerFunc` / `LookupTimerFunc` round-trip | ✅ | `TestRegisterTimerFunc_LookupRoundTrip`, `TestLookupTimerFunc_UnknownReturnsNil`, `TestRegisterTimerFunc_NilFuncPurges` |
+| A9 | Expired `TIMER_DO_FUN` invokes DoFun with `ch.Substate = t.Value`, substate restored | ✅ | `TestDecrementTimers_ExpiryDispatchesKnownDoFun`, `TestDecrementTimers_ExpiryRestoresSubstate` |
+| A10 | Unknown DoFun name logs `util.Bug` and drops | ✅ | `TestDecrementTimers_ExpiryDispatchesUnknownDoFunLogsBug` (uses new `util.BugSink` seam) |
+| A11 | Re-extended timer (via AddTimer in callback) preserved | ✅ | `TestDecrementTimers_DoFunThatReExtends` |
+| A12 | 7 ifchecks (timeskilled, objtype, leverpos, pkadrenalized, asupressed, areamulti, multi) implemented + tested | ✅ | 18 tests in `ifcheck_g3_test.go` |
+| A13 | `ifcheck.go:885-890` deferral comment updated | ✅ | Old TODO block replaced with "G3 (tranche-b) landed: …" comment pointing at remaining isflagged/istagged |
+| A14 | `wordlistMatch` with `"p "` phrase prefix | ✅ | `TestWordlistMatch_PhrasePrefix`, `TestWordlistMatch_PhrasePrefixAtEnd`, `TestWordlistMatch_PhrasePrefixDoesNotMatchReordered` |
+| A15 | `RprogCommandTrigger` fires on word-boundary matches not bare substring | ✅ | `TestRprogCommandTrigger_SubstringWithoutWordBoundaryDoesNotFire`, `TestRprogCommandTrigger_WordMatchInMiddle`, `TestRprogCommandTrigger_PhrasePrefix` |
+| A16 | `OprogCommandTrigger` fires on room-floor only (NOT carried) | ✅ | `TestOprogCommandTrigger_RoomObjMatches` (positive), `TestOprogCommandTrigger_CarryingObjDoesNotMatch` (negative pin) |
+| A17 | `go vet ./...` clean | ✅ | Clean output, no findings |
+| A18 | `go test -count=3 ./...` green across 15 packages | ✅ | All 15 packages green on `-count=3` run |
+
+### Adversary verification
+
+No worker/adversary subagent tool was available in this session (consistent with prior CHANGELOG entries that describe the same limitation). The manager performed structured self-adversary passes for each task group, reading every changed file line-by-line against the C citations, running `go test -count=3 ./...`, and executing targeted mutation-verify round-trips via the `Edit` tool only (never destructive git per manager-wide ban established after prior timer-subsystem `git checkout` incidents).
+
+One self-adversary finding was caught and fixed:
+- **G2 aliasing hazard**: the initial `DecrementTimers` used `kept := ch.Timers[:0]` which shares backing with `ch.Timers`. A DoFun callback that appends a NEW-type timer could collide with subsequent `kept` appends. Fixed by allocating a fresh `kept := make([]*TimerData, 0, len(ch.Timers))`. Added `TestDecrementTimers_DoFunAppendsNewTypeTimer` as a regression that exercises the scenario (a sibling `TIMER_ASUPRESSED` survives while the callback for an expiring `TIMER_DO_FUN` adds a `TIMER_RECENTFIGHT`).
+
+### Mutations exercised (all via `Edit` round-trips)
+
+- G1 M1: Drop `Attacks` key handler → `TestLoadStances_TwoStancesOverridesDefaults` fails on NumAttacks. Reverted.
+- G1 M2: Swap Dragon→Tiger target → Dragon fields at defaults, Tiger polluted. Reverted.
+- G1b M1: Skip PC-path write → `TestDoMset_StanceSetsPCMastery` fails. Reverted.
+- G1b M2: Remove LEVEL_LESSER trust gate → `TestDoMset_StanceInsufficientTrustPC` fails. Reverted.
+- G1b M3: `> 0` → `>= 0` on stance idx guard → `TestDoMset_StanceNoneSilentNoop` fails. Reverted.
+- G2 M1: Skip expiry dispatch entirely → `TestDecrementTimers_ExpiryDispatchesKnownDoFun` fails on substate. Reverted.
+- G2 M2: Drop substate save/restore → `TestDecrementTimers_ExpiryRestoresSubstate` fails. Reverted.
+- G2 M3: Silent-drop unknown name → `TestDecrementTimers_ExpiryDispatchesUnknownDoFunLogsBug` fails. Reverted.
+- G2 M4: Skip `Count > 0` re-extend check → `TestDecrementTimers_DoFunThatReExtends` fails. Reverted.
+- G3 M1: Always-clear `TRIG_UP` → `TestIfCheck_LeverPos_UpWhenBitSet` fails. Reverted.
+- G3 M2: Drop area filter in areamulti → `TestIfCheck_AreaMulti_DifferentAreaExcluded` fails. Reverted.
+- G3 M3: Drop `IndexData == nil` check in timeskilled → `TestIfCheck_TimeSkilled_PCTargetReturnsFalseNotPanic` panics. Reverted.
+- G4 M1: Drop right word-boundary check → `TestWordlistMatch_TrailingPunctuationFails` fails. Reverted.
+- G4 M2: Skip `"p "` phrase branch → `TestWordlistMatch_PhrasePrefixDoesNotMatchReordered` fails. Reverted.
+- G4 M3: Iterate `ch.Carrying` in `OprogCommandTrigger` → `TestOprogCommandTrigger_CarryingObjDoesNotMatch` fails. Reverted.
+
+All 15 mutations caught and reverted cleanly. No destructive git commands used.
+
+### Files affected (absolute paths)
+
+**New**:
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/stances.go`
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/stances_test.go`
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/testdata/stances_empty.dat`
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/testdata/stances_two.dat`
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/testdata/stances_tabs.dat`
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/testdata/stances_unknown_key.dat`
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/testdata/stances_bad_name.dat`
+- `/home/eilidh/src/smaug/smaug-go/internal/handler/timer_registry_test.go`
+- `/home/eilidh/src/smaug/smaug-go/internal/mudprog/ifcheck_g3_test.go`
+- `/home/eilidh/src/smaug/smaug-go/internal/mudprog/wordlist.go`
+- `/home/eilidh/src/smaug/smaug-go/internal/mudprog/wordlist_test.go`
+
+**Modified**:
+- `/home/eilidh/src/smaug/smaug-go/internal/act/olc_set.go` (+45 G1b branch + persist import)
+- `/home/eilidh/src/smaug/smaug-go/internal/act/olc_set_test.go` (+168 G1b tests)
+- `/home/eilidh/src/smaug/smaug-go/internal/boot/boot.go` (+22: stances loader + ClearTimerRegistry)
+- `/home/eilidh/src/smaug/smaug-go/internal/handler/timer.go` (+~100 G2 registry + dispatch)
+- `/home/eilidh/src/smaug/smaug-go/internal/mudprog/ifcheck.go` (+124 G3 cases, handler import)
+- `/home/eilidh/src/smaug/smaug-go/internal/mudprog/oprog.go` (+25 G4 Oprog impl, comment rewrite)
+- `/home/eilidh/src/smaug/smaug-go/internal/mudprog/oprog_test.go` (+62 G4 tests replacing stub)
+- `/home/eilidh/src/smaug/smaug-go/internal/mudprog/rprog.go` (-15 old first-word match, +wordlist call)
+- `/home/eilidh/src/smaug/smaug-go/internal/mudprog/rprog_test.go` (+53 G4 tests)
+- `/home/eilidh/src/smaug/smaug-go/internal/util/log.go` (+18 BugSink test seam)
+
+### Follow-ups queued
+
+- `isflagged` / `istagged` — needs `get_tag` port + `VariableData` lookup. ~60 LOC self-contained subsystem.
+- `TIMER_DO_FUN` mid-decrement intercept + interp intercept — port alongside the first skill command that sets a TIMER_DO_FUN (`do_detrap` / `do_dig` / `do_search` / `do_mend` / `do_reading` / `do_cast`).
+- Stance-table OLC (`do_stset` + `do_ststat` + `fwrite_stance`) — Phase 6; the G1 loader already reads-and-discards the non-combat fields.
+- `can_use_stance` prerequisite checks in `DoStance` — depends on Phase-6 stance-table OLC.
+- Switch `MPROG_SPEECH` / `SPEECHIW` / `TELL` triggerMatches to use the new `wordlistMatch` helper (triggers.go:49 has an over-firing `"p"` skip today). Careful audit needed before swap.
+
+### Coordination with Tranche C
+
+Tranche B's `boot.go` edits are additive and locationally distinct:
+- Stances loader call in `bootDB` (after skills load, before subsystems).
+- `ClearTimerRegistry()` + doc-comment block at the top of `Boot`, adjacent to existing seam wires.
+
+Both should merge cleanly with any Tranche C `boot.go` additions. Orchestrator preserves both sides on merge conflict.

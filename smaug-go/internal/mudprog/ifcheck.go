@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -882,12 +883,125 @@ func DoIfCheck(check string, mob *types.CharData, actor *types.CharData,
 		}
 		return compareInt(count, op, val)
 
-	// TODO(tier3): timeskilled — needs MobIndexData.Killed counter
-	// TODO(tier3): leverpos — needs lever/switch trigger data on ObjData (Value[0] bitflag TRIG_UP)
+	// ---------- G3 (plan-tranche-b.md) — mudprog if-checks newly wired ----------
+
+	case "timeskilled":
+		// C mud_prog.c:574-586. Read MobIndexData.Killed of chkchar.
+		// For a PC chkchar (no IndexData), return false rather than
+		// panic — C would also skip, and stock area files don't use
+		// this check against PCs.
+		if chk == nil {
+			// Fallback path: try vnum from argStr.
+			if WorldRef != nil {
+				if vnum, err := strconv.Atoi(strings.TrimSpace(argStr)); err == nil {
+					if idx := WorldRef.GetMobIndex(vnum); idx != nil {
+						return compareInt(idx.Killed, op, val)
+					}
+				}
+			}
+			return false
+		}
+		if chk.IndexData == nil {
+			return false
+		}
+		return compareInt(chk.IndexData.Killed, op, val)
+
+	case "objtype":
+		// C mud_prog.c:1486-1489. chkobj->item_type.
+		if chkObj == nil {
+			return false
+		}
+		return compareInt(chkObj.ItemType, op, val)
+
+	case "leverpos":
+		// C mud_prog.c:1490-1503. Buggy guard in C; port the *intent*:
+		// only switch/lever/pullchain respond, else false.
+		if chkObj == nil {
+			return false
+		}
+		typ := chkObj.ItemType
+		if typ != types.ITEM_SWITCH && typ != types.ITEM_LEVER && typ != types.ITEM_PULLCHAIN {
+			return false
+		}
+		isUp := 0
+		if uint32(chkObj.Value[0])&types.TRIG_UP != 0 {
+			isUp = 1
+		}
+		wantsUp := 0
+		if strings.EqualFold(strings.TrimSpace(valStr), "up") {
+			wantsUp = 1
+		}
+		// C passes (wantsup, opr, isup) which means the default == gives
+		// TRUE when both match. mprog_veval's default op in C is "==".
+		return compareInt(wantsUp, op, isUp)
+
+	case "pkadrenalized":
+		// C mud_prog.c:1431-1435. get_timer(chkchar, TIMER_RECENTFIGHT).
+		if chk == nil {
+			return false
+		}
+		return compareInt(handler.GetTimer(chk, types.TIMER_RECENTFIGHT), op, val)
+
+	case "asupressed":
+		// C mud_prog.c:1436-1440. get_timer(chkchar, TIMER_ASUPRESSED).
+		// See plan G3.1: the Value==-1 permanent branch of DecrementTimers
+		// means a timer with Count=0 can persist indefinitely; this
+		// ifcheck returns Count, not presence, so a permanent
+		// TIMER_ASUPRESSED installed with Value=-1 Count=0 reads as 0.
+		// No stock C caller installs a permanent one today, so this is
+		// a theoretical-only edge case.
+		if chk == nil {
+			return false
+		}
+		return compareInt(handler.GetTimer(chk, types.TIMER_ASUPRESSED), op, val)
+
+	case "areamulti":
+		// C mud_prog.c:1161-1181. Count PCs in the same area with the
+		// same descriptor host as chkchar. NPCs excluded on both sides
+		// of the loop guard — an NPC chkchar yields count=0, which
+		// then goes through compareInt (not an early-false).
+		n := 0
+		if chk != nil && !chk.IsNPC() && chk.Desc != nil && chk.InRoom != nil && WorldRef != nil {
+			area := chk.InRoom.Area
+			host := chk.Desc.Host
+			for _, c := range WorldRef.Characters {
+				if c == nil || c.IsNPC() || c.Desc == nil || c.InRoom == nil {
+					continue
+				}
+				if c.InRoom.Area != area {
+					continue
+				}
+				if c.Desc.Host != host {
+					continue
+				}
+				n++
+			}
+		}
+		return compareInt(n, op, val)
+
+	case "multi":
+		// C mud_prog.c:1182-1199. Same as areamulti but world-wide.
+		// Same NPC-guard-yields-0 semantics as areamulti above.
+		n := 0
+		if chk != nil && !chk.IsNPC() && chk.Desc != nil && WorldRef != nil {
+			host := chk.Desc.Host
+			for _, c := range WorldRef.Characters {
+				if c == nil || c.IsNPC() || c.Desc == nil {
+					continue
+				}
+				if c.Desc.Host != host {
+					continue
+				}
+				n++
+			}
+		}
+		return compareInt(n, op, val)
+
 	// TODO(tier3): isflagged / istagged — needs VariableData get_tag implementation
-	// TODO(tier3): pkadrenalized / asupressed — handler.GetTimer(TIMER_PKADRENALINE / TIMER_ASUPRESSED) > 0 / timer.Value == -1; subsystem now present (handler/timer.go), callers to be wired in a follow-up
-	// TODO(tier3): areamulti / multi — require host-descriptor matching across all chars (host comparison is implemented but requires every PC to have a descriptor; untested without integration fixture)
-	// TODO(tier3): objtype — duplicate of obj type check; rarely used in stock areas
+	// G3 (tranche-b) landed: timeskilled, objtype, leverpos, pkadrenalized,
+	// asupressed, areamulti, multi. isflagged/istagged remain because they
+	// require the variable subsystem (VariableData + get_tag port); out of
+	// scope for tranche B.
 
 	default:
 		return false

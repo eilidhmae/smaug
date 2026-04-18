@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -155,6 +156,50 @@ func DoMset(ch *types.CharData, argument string) {
 		ch.Sendf("%s's class set to %d.\n\r", victim.Name, val)
 
 	default:
+		// Stance-name branch (plan-tranche-b.md G1b, mirrors C
+		// src/build.c:3499-3537 inside do_mset). If arg2 resolves to a
+		// stance via persist.GetStanceNumber AND the resolved index is
+		// strictly > 0 (C `> 0` excludes STANCE_NONE silently), treat
+		// `mset <victim> <stance-name> <value>` as a stance-mastery
+		// setter. Falls through to the usage path otherwise.
+		if stanceIdx := persist.GetStanceNumber(field); stanceIdx > 0 && stanceIdx < types.MAX_STANCE {
+			val := parseIntOrZero(value)
+			if victim.IsNPC() {
+				if val < 0 || val > types.MAX_MOB_STANCE {
+					ch.Sendf("Stance value is from 0 to %d\n\r", types.MAX_MOB_STANCE)
+					return
+				}
+				// NPC path: C writes to pIndexData->stances. Go must
+				// cope with instances whose IndexData is nil (e.g.
+				// tests that build a raw NPC). Write to both the
+				// per-instance `CharData.Stances` and the shared
+				// prototype when available — matches C fidelity for
+				// prototyped NPCs while still supporting ad-hoc ones.
+				victim.Stances[stanceIdx] = val
+				if victim.IndexData != nil {
+					victim.IndexData.Stances[stanceIdx] = val
+				}
+				ch.Send("Done.\n\r")
+				return
+			}
+			if ch.GetTrust() < types.LEVEL_LESSER {
+				ch.Send("You can only modify a mobile's immunities.\n\r")
+				return
+			}
+			if val < 0 || val > types.MAX_PC_STANCE {
+				ch.Sendf("Stance value is from 0 to %d\n\r", types.MAX_PC_STANCE)
+				return
+			}
+			if victim.PCData == nil {
+				// Defensive: non-NPC without PCData is a malformed
+				// fixture; don't panic, just refuse.
+				ch.Send("Cannot set stance mastery on that target.\n\r")
+				return
+			}
+			victim.PCData.Stances[stanceIdx] = val
+			ch.Send("Done.\n\r")
+			return
+		}
 		ch.Send("Valid fields: level str int wis dex con cha lck hp mana move hitroll damroll gold align name short long sex race class\n\r")
 	}
 }

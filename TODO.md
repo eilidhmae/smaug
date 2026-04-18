@@ -35,17 +35,17 @@ Follow-ups queued from plan-combat-depth.md:
 - [x] `handler.AddTimer` subsystem + `TIMER_RECENTFIGHT` wiring (LANDED 2026-04-18 via plan-timer-subsystem.md)
 
 Follow-ups queued from plan-timer-subsystem.md:
-- [ ] `TIMER_DO_FUN` callback dispatch — `AddTimer` accepts a `doFun string` parameter and stores it, but `DecrementTimers` drops the timer silently on expiry without dispatching. Needs a string-to-function registry (analogous to the spell registry) and a hook in the expiry branch.
+- [x] `TIMER_DO_FUN` callback dispatch (LANDED 2026-04-18 via plan-tranche-b.md G2). Registry + expiry dispatch with substate save/restore; mid-decrement + interp intercepts deferred until first skill command ports.
 - [ ] `TIMER_PKILLED` persistence via `PTimer` line in `SavePlayer` (C `save.c:546` load + `save.c:1863` read — plan v1 adversary corrected the file citation from `db.c` to `save.c`). No Go code currently sets `TIMER_PKILLED` so nothing persists; add alongside PKilled mechanics port.
 - [ ] `TIMER_NUISANCE` / `TIMER_SHOVEDRAG` wiring — these timer types are defined but no setter or consumer exists (the underlying commands are not ported).
-- [ ] Mudprog `timerskilled` / `asupressed` / `pkadrenalized` if-check wiring (`internal/mudprog/ifcheck.go:888`) — subsystem is ready; consumer glue is trivial once the if-check bodies are written.
+- [x] Mudprog `timerskilled` / `asupressed` / `pkadrenalized` if-check wiring — LANDED 2026-04-18 via plan-tranche-b.md G3 (note: C name is `timeskilled` without the 'r' — external adversary caught this typo).
 - [ ] Deity prayer gate on `TIMER_RECENTFIGHT` — C `src/deity.c:1498` blocks prayer when a player recently PK-fought; Go deity system has the hook point but no timer check yet.
 - [ ] Wiz-stat display of remaining timer counts (C `src/act_wiz.c:2552-2554`) — useful for immortals debugging timer state.
 - [ ] Manager process note: two separate workers inadvertently ran `git checkout -- combat.go` during mutation verification and destroyed uncommitted work. Ban `git checkout` / `git reset --hard` / `git stash` in future worker and adversary prompts; use `Edit` round-trips for mutation verification instead.
 - [ ] Devoted-clan favor penalty in `WeaponProfBonusCheck` (C fight.c:1312-1313)
 - [ ] Per-round move-cost tracking (C fight.c:1149-1171)
-- [ ] `db/system/stances.dat` loader — currently `StanceIndex` is hard-coded in `combat/stance_index.go`
-- [ ] PC practice-stance flow — `PCData.Stances[]` counter never increments today, so GM-bonus path is unreachable for existing players
+- [x] `db/system/stances.dat` loader — LANDED 2026-04-18 via plan-tranche-b.md G1. `internal/persist/stances.go`; wired in `boot.bootDB`. Non-combat fields read-and-discard pending Phase-6 `StanceInfo` extension.
+- [x] PC practice-stance flow — LANDED 2026-04-18 via plan-tranche-b.md G1b. `mset <victim> <stance-name> <value>` now seeds PC mastery per C `build.c:3499-3537`. No player-facing grind command (C has none either — deliberate fidelity).
 - [x] Review `DoCircle` (`act/skills3.go:88-99`) and `DoHitall` (`act/skills3.go:294`) for explicit retcode handling now that `OneHit` returns `int`. **LANDED 2026-04-18 (Tranche A item 4).** Added `combat.AttackerDied(int) bool` / `combat.VictimDied(int) bool` exported helpers; `DoHitall` now breaks on `combat.AttackerDied(ret) || ch.Position <= POS_DEAD`; `DoCircle` now guards the second swing on `!VictimDied(ret) && !AttackerDied(ret) && victim.Position > POS_DEAD && ch.Position > POS_DEAD`. Attacker-death path is dormant (no fireshield/ice_shield/acid_shield yet) — defense-in-depth for when reactive damage ships. Helper predicates mutation-verified via combat_test.go.
 
 ### Player-visible command gaps (P1)
@@ -92,7 +92,7 @@ Follow-ups queued from plan-player-config.md:
 
 From `phase5-tier3-completed.md` known deferrals + code-level TODOs:
 
-- [ ] `OprogCommandTrigger` / `RprogCommandTrigger` — port C `rprog_wordlist_check` wordlist-match logic (`mudprog/oprog.go:216–220`)
+- [x] `OprogCommandTrigger` / `RprogCommandTrigger` — LANDED 2026-04-18 via plan-tranche-b.md G4. Full word-boundary algorithm + `"p "` phrase prefix in `internal/mudprog/wordlist.go`; Oprog iterates room-floor only per C.
 - [ ] `mpPeace` per-target argument (currently always room-wide)
 - [ ] `OprogDamageTrigger` — C fires once per weapon-damage event; Go fires per worn item
 - [ ] `mpsleep` in a false-if branch does not queue (minor divergence)
@@ -103,7 +103,15 @@ From `phase5-tier3-completed.md` known deferrals + code-level TODOs:
 - [ ] `mphate` — richer hate-list (currently single-slot `Hating`)
 - [ ] `mpapply` / `mpapplyb` — auth state machine not ported
 - [ ] Sleep queue uses raw mob pointers — a generation counter is the proper defensive fix (`mudprog/sleep.go:61`)
-- [ ] `timeskilled`, `leverpos`, `isflagged`, `istagged`, `pkadrenalized`, `asupressed`, `areamulti`, `multi`, `objtype` if-checks (`mudprog/ifcheck.go:885–890`)
+- [ ] `isflagged` / `istagged` mudprog if-checks — port C `get_tag` at `src/mud_prog.c:2236+` + `VariableData` lookup by name/vnum (~60 LOC + tests). Scope cut from Tranche B.
+- [ ] `TIMER_DO_FUN` mid-decrement intercept (C `fight.c:386-398`) — combat-aborts-skill; ports with the first skill command (`do_detrap` / `do_dig` / `do_search` / `do_mend` / `do_reading` / `do_cast`).
+- [ ] `TIMER_DO_FUN` interp intercept (C `interp.c:713-733`) — new-command-aborts-skill; ports with the first skill command.
+- [ ] When the first skill command (`do_detrap`, etc.) ports, register it via `handler.RegisterTimerFunc("do_detrap", act.DoDetrap)` in `boot.Boot`. The 6 canonical C names are listed in the new `boot.go` comment block.
+- [ ] Switch `MPROG_SPEECH` / `SPEECHIW` / `TELL` triggers to the new `wordlistMatch` helper — currently `internal/mudprog/triggers.go:49` has an incomplete `"p"`-skip that over-fires. Small follow-up after auditing the existing `triggerMatches` `"p"` handling.
+- [ ] Stance-table OLC (full `do_stset` with field editing, `do_ststat`, `fwrite_stance`) — Phase 6 OLC. Tranche B G1 loader read-and-discards non-combat fields (class/race restrictions, immune/resist/suscept, dodge/parry, max_weight, dual_wield, wait, prerequisite stance[]) pending `StanceInfo` extension.
+- [ ] `can_use_stance` prerequisite checks in `DoStance` — depends on Phase-6 `StanceInfo` extension.
+- [ ] Class/race stance restrictions + `max_weight` / `dual_wield` restrictions — same prerequisite.
+- [x] `timeskilled`, `leverpos`, `pkadrenalized`, `asupressed`, `areamulti`, `multi`, `objtype` if-checks — LANDED 2026-04-18 via plan-tranche-b.md G3 (7 of 9). `isflagged` / `istagged` remain; need variable-subsystem port of C `get_tag` at `src/mud_prog.c:2236+`.
 - [ ] `util/act.go:35,69` — replace local `actCanSee`/`actCanSeeObj` with a shared canonical port when available
 
 ### Combat / damage-message gaps

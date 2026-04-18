@@ -49,12 +49,12 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 13 (`DoGag` standalone toggle) | `plan-do-gag.md` (plan + completion) | — |
 | 5 Tier 14 (`rollD20` function-variable seam — eliminates combat test flake) | `plan-rollD20-seam.md` (plan + completion) | — |
 | 5 Tier 15 (Tranche A quick wins — `DoBio`/`DoDescription`, `[AFK]` on who, `%X` prompt, retcode guards, testclient idiom polish, publicAll derivation) | — (ran without dedicated plan doc) | CHANGELOG.md 2026-04-18 entry |
+| 5 Tier 16 (Tranche B — stances loader + DoMset stance branch + TIMER_DO_FUN callback registry + 7 mudprog if-checks + wordlist match + Oprog/Rprog CMD port) | `plan-tranche-b.md` (plan + completion) | — |
 
 **Planned next work (adversary-verified, ready to execute):**
 
 | Plan | Scope |
 |---|---|
-| `plan-tranche-b.md` | Stances loader + practice-stance flow (G1, G1b), `TIMER_DO_FUN` callback registry + expiry dispatch (G2), 7 mudprog if-check bodies (G3), `OprogCommandTrigger` / `RprogCommandTrigger` wordlist-match port (G4). 5 task groups, 18 acceptance criteria. External-adversary-verified 2026-04-18. |
 | `plan-tranche-c.md` | `util.Act` per-call AType color parameter + 33-site migration (G1-G3, G8), `update_aris` audit correction + regression test (G5), `PLR_BLANK` blank-line emission (G6), `XP-on-skill-gain` + adept-cap "fully learned" message (G7). 8 task groups, 10 acceptance criteria. External-adversary-verified 2026-04-18. |
 
 Remaining work in `TODO.md` Active: persistence gaps, deferred mudprog depth items (isflagged/istagged pending variable subsystem), per-AT color customization (Phase 6), Phase-6 candidates (hotboot/copyover, overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps, interactive OLC `CON_OEDITING` / `CON_MEDITING` substates).
