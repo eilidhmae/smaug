@@ -232,3 +232,53 @@ A9. No regression in Tier 9 channel commands (DoImmtalk, DoGtell, BroadcastAucti
 2. Ship G2 + G3 + G4 + G5 as a second commit.
 
 This lets G1 land immediately (unblocks any player who has deafened any channel today), with G2 following as the UX completion.
+
+---
+
+## Completion record (2026-04-17)
+
+Landed in two commits per the suggested phasing. Adversary reviewed each commit independently; both PASS.
+
+### Commit `ab47893` — G1 `Deaf` persistence fix (standalone)
+
+- `internal/persist/player.go`: added `if !ch.Deaf.IsEmpty() { fmt.Fprintf(w, "Deaf       %s\n", ch.Deaf.String()) }` inside `SavePlayer`, adjacent to the existing `Act` / `AffectedBy` writers. The load path at `player.go:189-191` was already reading `case "Deaf":` via `ParseBitVector` — the writer was the sole missing half of the round-trip.
+- `internal/persist/player_test.go`: added `TestSaveLoadPlayer_DeafRoundTrip` (two distinct channel bits through real `bytes.Buffer`) and `TestSaveLoadPlayer_EmptyDeafNotEmitted` (forward-compat — no `"Deaf"` substring in output when bitvector is empty; old saves without the line load cleanly).
+- Mutation-verified: wrapping the conditional in `if false` fails `TestSaveLoadPlayer_DeafRoundTrip`; revert → green.
+- Note: a prior worker session lost the tests during a git operation; a follow-up worker re-added them. A preceding `2a200f2` cleanup commit ran `gofmt -w` on the pre-existing file to unblock the pre-commit hook.
+
+### Commit (next) — G2/G3/G4/G5
+
+- `internal/act/channels.go`:
+  - 30-entry `channelToggleTable` in C order (matches `act_info.c:5414-5473`). Non-obvious mappings pinned by tests: `muse → CHANNEL_HIGHGOD` (NOT `CHANNEL_MUSIC`); `chat` (NOT `gossip`).
+  - `DoChannels(ch, argument)` with: NPC gate first (silent no-op); empty arg → `PLR_SILENCE` check then grouped display; `+<name>`/`-<name>` → exact match via `strings.EqualFold` through the table; `+all`/`-all` → public-channel set including AVTALK gated on `Level >= LEVEL_IMMORTAL` (adversary-corrected from plan v1's `IS_HERO`). Error strings are C-exact with `\n\r` line endings.
+  - No-arg display mirrors C's four sections (Public / Private / Immortal / trust-gated) with `&g`/`&G` colors. `+NAME` uppercase = enabled; `-name` lowercase = deafened. Per-section gates: auction > trust 4; clan/council/guild on `PCData` predicates (guild uses `ClanType == CLAN_GUILD`); avatar on `Level >= LEVEL_HERO`; immortal section entirely gated on `IsImmortal()`.
+  - `pray` omitted from display (matches C comment-out at `5358`) but present in the toggle table, so `channels -pray` works individually.
+  - `shout` omitted from the toggle table (C doesn't include it) — tradeoff documented in the plan scope cuts.
+- `internal/act/channels_test.go`: 16 new tests covering every branch + an end-to-end `TestDoChannels_RoundTripPersistsViaSave` that composes G1 and G2 through real `persist.SavePlayer` → `bytes.Buffer` → `persist.LoadPlayer`. Five worker-applied mutations all caught by specific named tests; adversary independently applied a sixth mutation (inverting `fClear` at `channels.go:275`) with expected failure.
+- `internal/boot/boot.go`: registered `channels` once, no alias, adjacent to the Tier 9 channel registrations.
+- `go vet ./...` clean. `gofmt -l` silent on the three touched files. `go test -count=3 ./...` green across all 15 packages. No regression in Tier 9 (`DoImmtalk` / `DoGtell` / `BroadcastAuction` / `DoAuction`) or any other package.
+
+### Deliberate simplifications (flagged for follow-up in `TODO.md`)
+
+- **Immortal section trust gates collapsed to `IsImmortal()`.** C uses per-entry trust thresholds (`sysdata.muse_level` / `sysdata.log_level` / `sysdata.think_level` + hardcoded 57 for bug). Refinement requires a `sysdata` port first.
+- **`publicAll` slice duplicates part of `channelToggleTable`** — `channels.go:247`. Low drift risk today (public set hasn't changed in decades) but worth deriving one from the other when the next channel gets added.
+- **Display AVTALK gate uses `Level >= LEVEL_HERO` (not trust-based `IS_HERO`).** Consistent with port convention; adversary noted as undocumented but correct.
+
+### Adversary findings resolved during implementation
+
+- Plan v1's `IsHero()` assumption → replaced by inline `Level >= LEVEL_HERO`.
+- Plan v1's `+all`/`-all` AVTALK gate using `IS_HERO` → corrected to `LEVEL_IMMORTAL`, mutation-guarded with a new LEVEL_HERO-level mortal subcase in `TestDoChannels_AllAvtalkGatedOnLevelImmortal`.
+- Line endings `\r\n` → `\n\r` across all error strings.
+- `channelToggleTable` documented as 30 entries with the `muse → CHANNEL_HIGHGOD` non-obvious row pinned by a dedicated test.
+
+### Acceptance criteria status
+
+- A1 ✅ Deaf written by SavePlayer in parseable format.
+- A2 ✅ Round-trip byte-exact for any combination of bits.
+- A3 ✅ NPC gate silent.
+- A4 ✅ No-arg grouped display with `+`/`-` prefixes.
+- A5 ✅ Exact-match toggles; invalid-format + unknown-channel errors byte-exact.
+- A6 ✅ `+all`/`-all` toggles the exact C public set.
+- A7 ✅ `TestDoChannels_RoundTripPersistsViaSave` proves `-chat` survives save/load.
+- A8 ✅ `go test -count=3 ./...` green.
+- A9 ✅ No Tier 9 regression.

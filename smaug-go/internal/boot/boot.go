@@ -361,6 +361,8 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "gtell", DoFun: act.DoGtell, Position: types.POS_SLEEPING, Level: 0})
 	reg.Register(&command.Command{Name: ";", DoFun: act.DoGtell, Position: types.POS_SLEEPING, Level: 0})
 	reg.Register(&command.Command{Name: "auction", DoFun: act.DoAuction, Position: types.POS_SLEEPING, Level: 0})
+	// `channels` — per-player channel toggle (plan-do-channels.md).
+	reg.Register(&command.Command{Name: "channels", DoFun: act.DoChannels, Position: types.POS_DEAD, Level: 0})
 
 	// Object commands
 	reg.Register(&command.Command{Name: "get", DoFun: act.DoGet, Position: types.POS_RESTING, Level: 0})

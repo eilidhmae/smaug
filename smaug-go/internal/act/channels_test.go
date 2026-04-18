@@ -1,12 +1,14 @@
 package act
 
 import (
+	"bytes"
 	"net"
 	"strings"
 	"testing"
 
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 )
 
@@ -415,5 +417,291 @@ func TestInterpret_GtellAlias_Semicolon(t *testing.T) {
 	bOut := readOutput(b, bClient)
 	if !strings.Contains(bOut, "via alias") {
 		t.Errorf("'; via alias' should reach group member; got %q", bOut)
+	}
+}
+
+// --- DoChannels (plan-do-channels.md G2) ---
+
+// makeChannelsPC is a minimal PC with a descriptor — no room, no world
+// registration needed because DoChannels does not broadcast.
+func makeChannelsPC(name string) (*types.CharData, net.Conn) {
+	ch, client := makeTestChar(name)
+	return ch, client
+}
+
+func TestDoChannels_NPCIsNoop(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Mob")
+	defer client.Close()
+	ch.Act.Set(types.ACT_IS_NPC)
+
+	DoChannels(ch, "")
+	out := readOutput(ch, client)
+	if out != "" {
+		t.Errorf("NPC DoChannels must be a silent no-op; got %q", out)
+	}
+}
+
+func TestDoChannels_SilencedPrintsMessage(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Gagged")
+	defer client.Close()
+	ch.Act.Set(types.PLR_SILENCE)
+
+	DoChannels(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "You are silenced.") {
+		t.Errorf("silenced PC should see 'You are silenced.'; got %q", out)
+	}
+}
+
+func TestDoChannels_NoArgDisplaysGroups(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Public channels") {
+		t.Errorf("no-arg display must include 'Public channels' header; got %q", out)
+	}
+	if !strings.Contains(out, "Private channels") {
+		t.Errorf("no-arg display must include 'Private channels' header; got %q", out)
+	}
+}
+
+func TestDoChannels_NoArgShowsEnabledWithPlus(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "+CHAT") {
+		t.Errorf("enabled CHAT channel should render as '+CHAT'; got %q", out)
+	}
+}
+
+func TestDoChannels_NoArgShowsDisabledWithMinus(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+	ch.Deaf.Set(types.CHANNEL_CHAT)
+
+	DoChannels(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "-chat") {
+		t.Errorf("disabled CHAT channel should render as '-chat'; got %q", out)
+	}
+	if strings.Contains(out, "+CHAT") {
+		t.Errorf("CHAT is disabled so '+CHAT' must NOT appear; got %q", out)
+	}
+}
+
+func TestDoChannels_ToggleOffSetsBit(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "-chat")
+	if !ch.Deaf.IsSet(types.CHANNEL_CHAT) {
+		t.Error("'-chat' must SET the CHANNEL_CHAT deaf bit")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Ok.") {
+		t.Errorf("'-chat' should confirm with 'Ok.'; got %q", out)
+	}
+}
+
+func TestDoChannels_ToggleOnClearsBit(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+	ch.Deaf.Set(types.CHANNEL_CHAT)
+
+	DoChannels(ch, "+chat")
+	if ch.Deaf.IsSet(types.CHANNEL_CHAT) {
+		t.Error("'+chat' must CLEAR the CHANNEL_CHAT deaf bit")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Ok.") {
+		t.Errorf("'+chat' should confirm with 'Ok.'; got %q", out)
+	}
+}
+
+func TestDoChannels_InvalidFormat(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "chat")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Channels -channel or +channel?") {
+		t.Errorf("missing sign should produce format error; got %q", out)
+	}
+}
+
+func TestDoChannels_UnknownChannel(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "-foobar")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Set or clear which channel?") {
+		t.Errorf("unknown channel should produce 'Set or clear...'; got %q", out)
+	}
+}
+
+// `gossip` is not a valid keyword — C uses `chat`. Guards against a future
+// refactor that accidentally adds `gossip` as an alias.
+func TestDoChannels_GossipKeywordRejected(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "-gossip")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Set or clear which channel?") {
+		t.Errorf("`gossip` is not a channel keyword — should be rejected; got %q", out)
+	}
+	if ch.Deaf.IsSet(types.CHANNEL_CHAT) {
+		t.Error("'-gossip' must NOT toggle CHANNEL_CHAT")
+	}
+}
+
+// C oddity preserved: `muse` toggles CHANNEL_HIGHGOD, not CHANNEL_MUSIC.
+func TestDoChannels_MuseTogglesHighgodNotMusic(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "-muse")
+	if !ch.Deaf.IsSet(types.CHANNEL_HIGHGOD) {
+		t.Error("'-muse' must SET CHANNEL_HIGHGOD")
+	}
+	if ch.Deaf.IsSet(types.CHANNEL_MUSIC) {
+		t.Error("'-muse' must NOT touch CHANNEL_MUSIC")
+	}
+}
+
+// `pray` is commented out in C's no-arg display (act_info.c:5358).
+func TestDoChannels_PrayNotInNoArgDisplay(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "")
+	out := readOutput(ch, client)
+	if strings.Contains(strings.ToLower(out), "pray") {
+		t.Errorf("pray must not appear in the no-arg display; got %q", out)
+	}
+}
+
+// But `-pray` / `+pray` still toggle individually via the table.
+func TestDoChannels_PrayIndividualToggleWorks(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+
+	DoChannels(ch, "-pray")
+	if !ch.Deaf.IsSet(types.CHANNEL_PRAY) {
+		t.Error("'-pray' must SET CHANNEL_PRAY")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Ok.") {
+		t.Errorf("'-pray' should confirm with 'Ok.'; got %q", out)
+	}
+}
+
+// Mortal `+all` does NOT clear AVTALK; immortal `+all` does.
+// Mortal is at LEVEL_HERO so a `>= LEVEL_HERO` mutation in the gate is
+// caught — only `>= LEVEL_IMMORTAL` preserves the adversary's catch.
+func TestDoChannels_AllAvtalkGatedOnLevelImmortal(t *testing.T) {
+	_ = setupCommWorld()
+
+	// Hero-level mortal (still mortal — LEVEL_HERO < LEVEL_IMMORTAL).
+	mortal, mClient := makeChannelsPC("Mort")
+	defer mClient.Close()
+	mortal.Level = types.LEVEL_HERO
+	mortal.Deaf.Set(types.CHANNEL_AVTALK)
+
+	DoChannels(mortal, "+all")
+	if !mortal.Deaf.IsSet(types.CHANNEL_AVTALK) {
+		t.Error("mortal '+all' must NOT clear CHANNEL_AVTALK (level < LEVEL_IMMORTAL)")
+	}
+
+	// Also verify on a low-level mortal.
+	lowly, lClient := makeChannelsPC("Low")
+	defer lClient.Close()
+	lowly.Level = 10
+	lowly.Deaf.Set(types.CHANNEL_AVTALK)
+
+	DoChannels(lowly, "+all")
+	if !lowly.Deaf.IsSet(types.CHANNEL_AVTALK) {
+		t.Error("low-level mortal '+all' must NOT clear CHANNEL_AVTALK")
+	}
+
+	// Immortal path.
+	imm, iClient := makeChannelsPC("Imm")
+	defer iClient.Close()
+	imm.Level = types.LEVEL_IMMORTAL
+	imm.Deaf.Set(types.CHANNEL_AVTALK)
+
+	DoChannels(imm, "+all")
+	if imm.Deaf.IsSet(types.CHANNEL_AVTALK) {
+		t.Error("immortal '+all' must clear CHANNEL_AVTALK")
+	}
+}
+
+func TestDoChannels_AllTogglePublicSet(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Norm")
+	defer client.Close()
+	ch.Level = 10
+
+	DoChannels(ch, "-all")
+
+	publicSet := []int{
+		types.CHANNEL_RACETALK, types.CHANNEL_AUCTION, types.CHANNEL_CHAT,
+		types.CHANNEL_QUEST, types.CHANNEL_WARTALK, types.CHANNEL_PRAY,
+		types.CHANNEL_TRAFFIC, types.CHANNEL_MUSIC, types.CHANNEL_ASK,
+		types.CHANNEL_YELL,
+	}
+	for _, bit := range publicSet {
+		if !ch.Deaf.IsSet(bit) {
+			t.Errorf("'-all' must SET public-set bit %d", bit)
+		}
+	}
+	if ch.Deaf.IsSet(types.CHANNEL_TELLS) {
+		t.Error("'-all' must NOT touch CHANNEL_TELLS (private)")
+	}
+	if ch.Deaf.IsSet(types.CHANNEL_AVTALK) {
+		t.Error("mortal '-all' must NOT touch CHANNEL_AVTALK")
+	}
+}
+
+// End-to-end proof that G1 persistence + G2 command round-trip a Deaf bit.
+func TestDoChannels_RoundTripPersistsViaSave(t *testing.T) {
+	_ = setupCommWorld()
+	ch, client := makeChannelsPC("Rover")
+	defer client.Close()
+
+	DoChannels(ch, "-chat")
+	if !ch.Deaf.IsSet(types.CHANNEL_CHAT) {
+		t.Fatal("precondition: '-chat' should set CHANNEL_CHAT deaf bit")
+	}
+
+	var buf bytes.Buffer
+	if err := persist.SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer failed: %v", err)
+	}
+
+	loaded, err := persist.LoadPlayer(&buf, "rover")
+	if err != nil {
+		t.Fatalf("LoadPlayer failed: %v", err)
+	}
+	if !loaded.Deaf.IsSet(types.CHANNEL_CHAT) {
+		t.Error("CHANNEL_CHAT deaf bit must survive Save/Load round trip")
 	}
 }
