@@ -470,12 +470,35 @@ func TestEditBuffer_UnknownCommand(t *testing.T) {
 }
 
 func TestEditBuffer_SaveCommand(t *testing.T) {
-	_, ch := newEditorDesc()
+	// /s must transition the descriptor to CON_PLAYING and invoke the
+	// caller's save callback. A bare /s with no callback still transitions.
+	d, ch := newEditorDesc()
 	StartEditing(ch, "Some text\n\r")
+	invocations := 0
+	var received *types.CharData
+	ch.EditorSave = func(c *types.CharData) {
+		invocations++
+		received = c
+		StopEditing(c)
+	}
 
-	// /s should return without adding prompt (caller handles substate)
 	EditBuffer(ch, "/s")
-	// Editor should still exist (caller clears it)
+
+	if d.Connected != types.CON_PLAYING {
+		t.Errorf("expected CON_PLAYING after /s, got %d", d.Connected)
+	}
+	if invocations != 1 {
+		t.Errorf("expected callback invoked exactly once, got %d", invocations)
+	}
+	if received != ch {
+		t.Errorf("callback received wrong char: %p want %p", received, ch)
+	}
+	if ch.EditorSave != nil {
+		t.Error("EditorSave must be cleared before invocation (one-shot)")
+	}
+	if ch.Editor != nil {
+		t.Error("callback called StopEditing; Editor should be nil")
+	}
 }
 
 func TestEditBuffer_BackslashCommand(t *testing.T) {
@@ -617,5 +640,120 @@ func TestEditBuffer_DeleteUpdatesSize(t *testing.T) {
 	EditBuffer(ch, "/d 1") // Delete "Hello"
 	if ch.Editor.Size != origSize-5 {
 		t.Errorf("size should be %d after deleting 'Hello', got %d", origSize-5, ch.Editor.Size)
+	}
+}
+
+// --- /s callback and transition ---
+
+// TestEditBuffer_SaveInvokesCallbackAndTransitions asserts that /s transitions
+// the descriptor back to CON_PLAYING and invokes the caller's save callback
+// exactly once with the correct char.
+func TestEditBuffer_SaveInvokesCallbackAndTransitions(t *testing.T) {
+	d, ch := newEditorDesc()
+	StartEditing(ch, "")
+	EditBuffer(ch, "Line A")
+
+	invocations := 0
+	var received *types.CharData
+	ch.EditorSave = func(c *types.CharData) {
+		invocations++
+		received = c
+	}
+
+	EditBuffer(ch, "/s")
+
+	if d.Connected != types.CON_PLAYING {
+		t.Errorf("expected CON_PLAYING, got %d", d.Connected)
+	}
+	if invocations != 1 {
+		t.Errorf("callback should be invoked exactly once, got %d", invocations)
+	}
+	if received != ch {
+		t.Errorf("callback received wrong char: got %p want %p", received, ch)
+	}
+}
+
+// TestEditBuffer_SaveCallsCallback_ClearsState verifies a realistic save flow:
+// callback grabs buffer text, calls StopEditing, and all editor state is clean.
+func TestEditBuffer_SaveCallsCallback_ClearsState(t *testing.T) {
+	d, ch := newEditorDesc()
+	StartEditing(ch, "")
+	EditBuffer(ch, "First line")
+	EditBuffer(ch, "Second line")
+
+	var saved string
+	ch.EditorSave = func(c *types.CharData) {
+		saved = CopyBuffer(c)
+		StopEditing(c)
+	}
+	EditBuffer(ch, "/s")
+
+	if ch.Editor != nil {
+		t.Error("Editor should be nil after StopEditing")
+	}
+	if ch.Substate != types.SUB_NONE {
+		t.Errorf("Substate should be SUB_NONE, got %d", ch.Substate)
+	}
+	if d.Connected != types.CON_PLAYING {
+		t.Errorf("expected CON_PLAYING, got %d", d.Connected)
+	}
+	if !strings.Contains(saved, "First line") || !strings.Contains(saved, "Second line") {
+		t.Errorf("expected both lines captured, got %q", saved)
+	}
+}
+
+// TestEditBuffer_SaveNoCallback_StillTransitions protects the no-callback
+// edge case: /s must still transition CON_PLAYING and must not panic.
+func TestEditBuffer_SaveNoCallback_StillTransitions(t *testing.T) {
+	d, ch := newEditorDesc()
+	StartEditing(ch, "")
+	// No EditorSave assigned.
+
+	EditBuffer(ch, "/s") // must not panic
+
+	if d.Connected != types.CON_PLAYING {
+		t.Errorf("expected CON_PLAYING even with no callback, got %d", d.Connected)
+	}
+}
+
+// TestEditBuffer_AbortDoesNotInvokeCallback verifies /a discards pending save.
+func TestEditBuffer_AbortDoesNotInvokeCallback(t *testing.T) {
+	_, ch := newEditorDesc()
+	StartEditing(ch, "")
+
+	invocations := 0
+	ch.EditorSave = func(c *types.CharData) {
+		invocations++
+	}
+
+	EditBuffer(ch, "/a")
+
+	if invocations != 0 {
+		t.Errorf("/a must NOT invoke save callback, got %d invocations", invocations)
+	}
+}
+
+// TestEditBuffer_SaveDoubleFireUsesOneShotClear protects against a buggy
+// re-invoke: if the caller's save fails to clear EditorSave and the user
+// somehow re-enters the editor, a second /s must not fire the SAME original
+// callback again. Enforced by the one-shot clear in the /s handler.
+func TestEditBuffer_SaveDoubleFireUsesOneShotClear(t *testing.T) {
+	_, ch := newEditorDesc()
+	StartEditing(ch, "")
+
+	invocations := 0
+	ch.EditorSave = func(c *types.CharData) {
+		invocations++
+		// Intentionally do NOT re-assign EditorSave from within.
+	}
+
+	EditBuffer(ch, "/s")
+	// EditorSave was cleared before invocation; a subsequent StartEditing
+	// with no re-assignment, followed by /s, must not re-fire the prior save.
+	StartEditing(ch, "")
+	EditBuffer(ch, "/s")
+
+	if invocations != 1 {
+		t.Errorf("one-shot clear failed: callback fired %d times, want 1", invocations)
 	}
 }

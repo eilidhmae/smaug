@@ -423,6 +423,129 @@ func TestDoRedit_SetSector(t *testing.T) {
 	}
 }
 
+// TestDoRedit_SetsEditorSave verifies that `redit desc` installs a non-nil
+// EditorSave closure on the character BEFORE StartEditingFunc is invoked.
+func TestDoRedit_SetsEditorSave(t *testing.T) {
+	_ = setupOlcWorld()
+	room := &types.RoomIndexData{Vnum: 7210, Name: "Test Desc Room", Description: "Old description\n\r"}
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	ch.InRoom = room
+
+	// Install a stub StartEditingFunc that captures state at call time so
+	// we can assert EditorSave was set BEFORE StartEditing was invoked.
+	var editorSaveAtCall func(*types.CharData)
+	prev := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {
+		editorSaveAtCall = c.EditorSave
+	}
+	defer func() { StartEditingFunc = prev }()
+
+	DoRedit(ch, "desc")
+
+	if editorSaveAtCall == nil {
+		t.Fatal("EditorSave must be non-nil when StartEditingFunc is called")
+	}
+	if ch.Substate != types.SUB_ROOM_DESC {
+		t.Errorf("Substate should be SUB_ROOM_DESC, got %d", ch.Substate)
+	}
+}
+
+// TestDoRedit_EdSetsEditorSave verifies the `redit ed <keyword>` path also
+// installs an EditorSave closure before StartEditingFunc.
+func TestDoRedit_EdSetsEditorSave(t *testing.T) {
+	_ = setupOlcWorld()
+	room := &types.RoomIndexData{Vnum: 7211, Name: "Test ExDesc Room"}
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	ch.InRoom = room
+
+	var editorSaveAtCall func(*types.CharData)
+	prev := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {
+		editorSaveAtCall = c.EditorSave
+	}
+	defer func() { StartEditingFunc = prev }()
+
+	DoRedit(ch, "ed fountain")
+
+	if editorSaveAtCall == nil {
+		t.Fatal("EditorSave must be non-nil when StartEditingFunc is called for redit ed")
+	}
+	if ch.InterEditing != "fountain" {
+		t.Errorf("InterEditing should be 'fountain', got %q", ch.InterEditing)
+	}
+}
+
+// TestDoRedit_DescSaveRoundTrip is the end-to-end smoke test: invoke
+// `redit desc`, simulate the editor save closure firing after text was
+// buffered, and verify the room description is updated and the descriptor
+// is back to CON_PLAYING.
+//
+// NOTE: the act package cannot import game, so this test drives the save
+// closure directly (the EditorSave closure captured by DoRedit). A true
+// end-to-end test through EditBuffer lives in internal/game/editor_test.go.
+func TestDoRedit_DescSaveRoundTrip(t *testing.T) {
+	_ = setupOlcWorld()
+	room := &types.RoomIndexData{Vnum: 7212, Name: "RoundTrip Room", Description: "stale description\n\r"}
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	ch.InRoom = room
+
+	// Fake the two game-package seams so the callback can run without
+	// the game package being imported here.
+	expectedBuf := "A grand marble hall with gilded columns.\n\r"
+	prevCopy := CopyBufferFunc
+	prevStop := StopEditingFunc
+	prevStart := StartEditingFunc
+	defer func() {
+		CopyBufferFunc = prevCopy
+		StopEditingFunc = prevStop
+		StartEditingFunc = prevStart
+	}()
+
+	CopyBufferFunc = func(c *types.CharData) string { return expectedBuf }
+	StopEditingFunc = func(c *types.CharData) {
+		c.Editor = nil
+		c.Substate = types.SUB_NONE
+		c.EditorSave = nil
+		if c.Desc != nil {
+			c.Desc.Connected = types.CON_PLAYING
+		}
+	}
+	// Emulate the real StartEditing: toggle to CON_EDITING.
+	StartEditingFunc = func(c *types.CharData, text string) {
+		if c.Desc != nil {
+			c.Desc.Connected = types.CON_EDITING
+		}
+	}
+
+	DoRedit(ch, "desc")
+
+	if ch.Desc.Connected != types.CON_EDITING {
+		t.Fatalf("expected CON_EDITING after redit desc, got %d", ch.Desc.Connected)
+	}
+	if ch.EditorSave == nil {
+		t.Fatal("EditorSave should be set after redit desc")
+	}
+
+	// Simulate the /s handler: transition then invoke save.
+	ch.Desc.Connected = types.CON_PLAYING
+	save := ch.EditorSave
+	ch.EditorSave = nil
+	save(ch)
+
+	if room.Description != expectedBuf {
+		t.Errorf("room.Description = %q, want %q", room.Description, expectedBuf)
+	}
+	if ch.Desc.Connected != types.CON_PLAYING {
+		t.Errorf("expected CON_PLAYING after save, got %d", ch.Desc.Connected)
+	}
+	if ch.Editor != nil {
+		t.Error("Editor should be nil after StopEditing")
+	}
+}
+
 func TestDoRedit_AddExdesc(t *testing.T) {
 	_ = setupOlcWorld()
 	room := &types.RoomIndexData{Vnum: 7204, Name: "Test"}

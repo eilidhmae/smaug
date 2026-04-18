@@ -535,6 +535,68 @@ func TestDoPassword_CasePreserved(t *testing.T) {
 	}
 }
 
+// -------------- DoGag (plan-do-gag.md) --------------
+
+func TestDoGag_TogglesOn(t *testing.T) {
+	ch, client := makeTestChar("Silent")
+	defer client.Close()
+
+	if ch.PCData.Flags&int(types.PCFLAG_GAG) != 0 {
+		t.Fatal("PCFLAG_GAG should start unset")
+	}
+
+	DoGag(ch, "")
+	if ch.PCData.Flags&int(types.PCFLAG_GAG) == 0 {
+		t.Errorf("PCFLAG_GAG should be set after toggle")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Combat messages will be gagged.") {
+		t.Errorf("expected self-message 'Combat messages will be gagged.'; got %q", out)
+	}
+}
+
+func TestDoGag_TogglesOff(t *testing.T) {
+	ch, client := makeTestChar("Chatty")
+	defer client.Close()
+	ch.PCData.Flags |= int(types.PCFLAG_GAG)
+
+	DoGag(ch, "")
+	if ch.PCData.Flags&int(types.PCFLAG_GAG) != 0 {
+		t.Errorf("PCFLAG_GAG should be cleared after toggle")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Combat messages will no longer be gagged.") {
+		t.Errorf("expected self-message 'Combat messages will no longer be gagged.'; got %q", out)
+	}
+}
+
+func TestDoGag_NPCIsNoop(t *testing.T) {
+	ch, client := makeTestChar("Mob")
+	defer client.Close()
+	ch.Act.Set(types.ACT_IS_NPC)
+
+	// NPC should neither panic nor emit output. Running DoGag on an NPC with
+	// PCData still present proves the IsNPC gate fires first.
+	DoGag(ch, "")
+	if out := readOutput(ch, client); out != "" {
+		t.Errorf("NPC DoGag must emit nothing; got %q", out)
+	}
+}
+
+func TestDoGag_NilPCDataIsNoop(t *testing.T) {
+	ch, client := makeTestChar("Corrupt")
+	defer client.Close()
+	// Non-NPC (ACT_IS_NPC not set) but PCData == nil: simulates a malformed PC.
+	// The nil-PCData guard is load-bearing because IsNPC() only checks Act.
+	ch.PCData = nil
+
+	// Must not panic.
+	DoGag(ch, "")
+	if out := readOutput(ch, client); out != "" {
+		t.Errorf("nil-PCData DoGag must emit nothing; got %q", out)
+	}
+}
+
 // -------------- G5: pagelen alias (dispatcher-level) --------------
 
 // TestInterpret_PagelenAlias checks that registering `pagelen` alongside

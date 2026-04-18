@@ -84,7 +84,7 @@ No existing GAG or poisoned-weapon test coverage.
 
 - `PCFLAG_GAG` constant defined at `types/constants.go:652` (`1 << 5`).
 - `CharData.PCData.Flags int` (`types/pcdata.go:38`).
-- No `DoGag` player command exists in Go yet. Tests set the flag directly; a follow-up task can port `do_gag` (`act_info.c:5795`) separately.
+- `DoGag` player command shipped 2026-04-18 (see `plan-do-gag.md`). Tests in this plan set the flag directly; end-users now toggle via `gag`.
 
 **G3 (poisoned prefix):**
 

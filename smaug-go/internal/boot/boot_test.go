@@ -95,6 +95,8 @@ func TestBoot_WiresCallbacks(t *testing.T) {
 	act.CmdRegistry = nil
 	act.SaveFunc = nil
 	act.StartEditingFunc = nil
+	act.CopyBufferFunc = nil
+	act.StopEditingFunc = nil
 	act.ShutdownFunc = nil
 	act.DisconnectFunc = nil
 	mudprog.WorldRef = nil
@@ -142,6 +144,12 @@ func TestBoot_WiresCallbacks(t *testing.T) {
 	}
 	if act.StartEditingFunc == nil {
 		t.Error("act.StartEditingFunc not wired")
+	}
+	if act.CopyBufferFunc == nil {
+		t.Error("act.CopyBufferFunc not wired")
+	}
+	if act.StopEditingFunc == nil {
+		t.Error("act.StopEditingFunc not wired")
 	}
 	// ShutdownFunc should be wired to the ProductionOpts default
 	// (save-and-exit). Do NOT invoke it — it calls os.Exit.

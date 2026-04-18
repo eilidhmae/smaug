@@ -17,6 +17,16 @@ import (
 // Written once at boot before the game loop starts; read only from the game loop goroutine. Safe without synchronization.
 var StartEditingFunc func(ch *types.CharData, text string)
 
+// CopyBufferFunc and StopEditingFunc are the companion seams to
+// StartEditingFunc — set from boot alongside it. EditorSave closures set by
+// DoRedit (and future editor callers) reach game.CopyBuffer / game.StopEditing
+// through these function variables to avoid the otherwise-circular
+// game -> act -> game import path.
+var (
+	CopyBufferFunc  func(ch *types.CharData) string
+	StopEditingFunc func(ch *types.CharData)
+)
+
 // --- Room editing ---
 
 // DoRedit implements the 'redit' command: edit the current room.
@@ -49,6 +59,18 @@ func DoRedit(ch *types.CharData, argument string) {
 
 	case "desc":
 		ch.Substate = types.SUB_ROOM_DESC
+		targetRoom := room
+		ch.EditorSave = func(c *types.CharData) {
+			if CopyBufferFunc != nil {
+				targetRoom.Description = CopyBufferFunc(c)
+			}
+			if StopEditingFunc != nil {
+				StopEditingFunc(c)
+			}
+			// Trailing newline so the post-CON_PLAYING prompt lands on
+			// a fresh line (plan § G4 prompt caveat).
+			c.Send("\n\r")
+		}
 		if StartEditingFunc != nil {
 			StartEditingFunc(ch, room.Description)
 		}
@@ -112,6 +134,16 @@ func DoRedit(ch *types.CharData, argument string) {
 		}
 		ch.Substate = types.SUB_ROOM_EXTRA
 		ch.InterEditing = kw
+		targetExtra := existing
+		ch.EditorSave = func(c *types.CharData) {
+			if CopyBufferFunc != nil {
+				targetExtra.Description = CopyBufferFunc(c)
+			}
+			if StopEditingFunc != nil {
+				StopEditingFunc(c)
+			}
+			c.Send("\n\r")
+		}
 		if StartEditingFunc != nil {
 			StartEditingFunc(ch, existing.Description)
 		} else {
@@ -274,17 +306,17 @@ func editBidirExit(ch *types.CharData, args string) {
 
 // exitFlagBits maps flag names to EX_* bits.
 var exitFlagBits = map[string]uint32{
-	"isdoor":    types.EX_ISDOOR,
-	"closed":    types.EX_CLOSED,
-	"locked":    types.EX_LOCKED,
-	"secret":    types.EX_SECRET,
-	"pickproof": types.EX_PICKPROOF,
-	"hidden":    types.EX_HIDDEN,
-	"nomob":     types.EX_NOMOB,
+	"isdoor":     types.EX_ISDOOR,
+	"closed":     types.EX_CLOSED,
+	"locked":     types.EX_LOCKED,
+	"secret":     types.EX_SECRET,
+	"pickproof":  types.EX_PICKPROOF,
+	"hidden":     types.EX_HIDDEN,
+	"nomob":      types.EX_NOMOB,
 	"nopassdoor": types.EX_NOPASSDOOR,
-	"nopass":    types.EX_NOPASSDOOR,
-	"bashed":    types.EX_BASHED,
-	"bashproof": types.EX_BASHPROOF,
+	"nopass":     types.EX_NOPASSDOOR,
+	"bashed":     types.EX_BASHED,
+	"bashproof":  types.EX_BASHPROOF,
 }
 
 func editExitFlags(ch *types.CharData, args string) {
@@ -444,13 +476,13 @@ func DoOcreate(ch *types.CharData, argument string) {
 	}
 
 	idx := &types.ObjIndexData{
-		Vnum:       vnum,
-		Name:       name,
-		ShortDescr: name,
+		Vnum:        vnum,
+		Name:        name,
+		ShortDescr:  name,
 		Description: util.Capitalize(name) + " is here.",
-		ItemType:   types.ITEM_TRASH,
-		Level:      1,
-		Weight:     1,
+		ItemType:    types.ITEM_TRASH,
+		Level:       1,
+		Weight:      1,
 	}
 	WorldRef.ObjIndex[vnum] = idx
 

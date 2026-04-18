@@ -56,7 +56,8 @@ type CharData struct {
 	PCData *PCData
 
 	// Editor state
-	Editor *EditorData
+	Editor     *EditorData
+	EditorSave func(*CharData) // invoked on /s after CON_PLAYING transition
 
 	// Timers
 	Timers []*TimerData

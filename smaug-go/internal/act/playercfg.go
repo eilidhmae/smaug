@@ -52,6 +52,36 @@ func DoAfk(ch *types.CharData, argument string) {
 	util.Act("$n is now afk.", ch, nil, nil, nil, types.TO_CANSEE)
 }
 
+// DoGag implements the 'gag' command — a standalone no-arg toggle for
+// PCFLAG_GAG, which suppresses zero-damage combat-miss messages (honored in
+// internal/combat/dammessage.go:342-349).
+//
+// C divergence: the C port embeds gag toggling inside `do_config` at
+// src/act_info.c:5585 (gag branch at :5794), dispatched via `config +gag` /
+// `config -gag` syntax with a generic `"Ok.\n"` echo. The Go port instead
+// ships standalone per-flag toggles (matching DoAfk's local precedent) with
+// directional messages. See smaug-go/doc/plan-do-gag.md for rationale.
+//
+// The nil-PCData guard is load-bearing: IsNPC() only checks Act.ACT_IS_NPC
+// and does not look at PCData, so a malformed non-NPC with nil PCData would
+// pass IsNPC() and crash dereferencing .Flags without this guard.
+func DoGag(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		return
+	}
+	if ch.PCData == nil {
+		return
+	}
+	mask := int(types.PCFLAG_GAG)
+	if ch.PCData.Flags&mask != 0 {
+		ch.PCData.Flags &^= mask
+		ch.Send("Combat messages will no longer be gagged.\n\r")
+		return
+	}
+	ch.PCData.Flags |= mask
+	ch.Send("Combat messages will be gagged.\n\r")
+}
+
 // setTitle is the Go port of C player.c:3112 set_title. If title starts with
 // an alphanumeric character it is prefixed with a space (so titles like "the
 // Wizard" read naturally after the player's name); otherwise the title is

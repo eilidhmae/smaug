@@ -130,7 +130,11 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	combat.ResolveGSNs()
 
 	// OLC editor entry point (act.DoRedit et al. call this to start editing).
+	// CopyBufferFunc / StopEditingFunc are the companion seams used by
+	// EditorSave closures — see act/olc.go for why act can't import game.
 	act.StartEditingFunc = game.StartEditing
+	act.CopyBufferFunc = game.CopyBuffer
+	act.StopEditingFunc = game.StopEditing
 
 	// Shutdown + disconnect hooks. If the caller supplied overrides use
 	// those, otherwise fall back to the mode-appropriate default.
@@ -385,6 +389,7 @@ func registerCommands() *command.Registry {
 	// Trust=0, mortals-only logic inside each handler.
 	reg.Register(&command.Command{Name: "save", DoFun: act.DoSave, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "afk", DoFun: act.DoAfk, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "gag", DoFun: act.DoGag, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "title", DoFun: act.DoTitle, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "password", DoFun: act.DoPassword, Position: types.POS_DEAD, Level: 0})
 

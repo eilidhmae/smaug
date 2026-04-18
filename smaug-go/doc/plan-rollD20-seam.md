@@ -1,6 +1,6 @@
 # Plan: `rollD20` Function-Variable Seam — Eliminate Combat Test Flake
 
-**Status:** Planned (2026-04-17). Adversary-verified research: PASS with one addendum (`profbonus_test.go:254` is also seam-exposed but statistically robust).
+**Status:** Landed 2026-04-18. Adversary verdict PASS. All five acceptance criteria satisfied.
 **Priority:** P2 — ~1/20 spurious failure in a single test. Fix is ~10 LOC.
 **Scope:** `internal/combat/combat.go`, `internal/combat/combat_test.go`. Optionally `internal/combat/profbonus_test.go`.
 
@@ -124,3 +124,19 @@ A5. Production behavior unchanged: `OneHit` / `oneHitFull` use `rollD20` via the
 1. **Mutation-verify `-count=30` insufficiently sensitive** — bumped to `-count=100` (false-pass rate 0.6% vs 21% at 30).
 2. **"Always hit" comment misleading** — replacement wording specified in G2.
 3. **`t.Parallel()` constraint undocumented** — added a "Known Constraints" section.
+
+---
+
+## Completion record (2026-04-18)
+
+Landed as planned. `rollD20` at `internal/combat/combat.go:784` is now a package-local `var = func() int { ... }` rather than `func rollD20() int`, matching the three existing seams in the file (`numberPercent`, `oneHit`, `oneHitOffhand`). Single call site at `combat.go:487` needed no change — identifier resolution is identical. Seam comment on the var declaration documents the no-`t.Parallel()` constraint (Known Constraints § of the plan).
+
+`TestOneHitFull_ExplicitWieldUsed` (`combat_test.go:1981`) now saves `rollD20`, installs a stub returning `10` (normal hit band — non-zero auto-miss, non-19 crit-hit), and restores via `t.Cleanup`. `Hitroll=999` comment updated to the plan-specified wording. A new `TestRollD20_IsSeam` at the end of `combat_test.go` pins the save/restore pattern for future authors.
+
+`profbonus_test.go:255` gained the plan-specified documenting comment (`// Deliberately unstubbed — tests statistical distribution; stubbing would defeat the test.`). The 2000-round `TestOneHit_ProfBonus_HigherLearnedDealsMoreDamage` stays unstubbed on purpose — per adversary analysis, statistical robustness absorbs the 1/20 auto-miss variance.
+
+Worker TDD cycle: `TestRollD20_IsSeam` red before G1 (compile error on `rollD20 = func...` against a `func` declaration); green after conversion. Pre-fix flake observed at 6/100 on one probe run before the stub landed; post-fix `-count=100` runs green deterministically. Mutation verified by changing the stub from `10` to `0` (auto-miss sentinel) with `Edit`: test fails with `offhand dam=0 should exceed primary dam=0`; Edit back to `10`: green.
+
+Adversary PASS. All 5 acceptance criteria satisfied. One pre-existing unrelated flake (`TestViolenceUpdate_DualWield` — does not stub `rollD20`) observed once by the adversary on their first `-count=3` run; five subsequent runs were green, confirming it's a pre-existing statistical flake in an unrelated test, not a regression from this PR. Tracked for a separate future seam application if the flake recurs.
+
+`go build ./...` clean. `go test -count=3 ./...` green across all 15 packages. Not committed yet — this landing batches with `plan-do-gag.md` and `plan-editor-save.md` (three independent plans executed in parallel, one commit each at landing).

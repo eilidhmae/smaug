@@ -778,7 +778,10 @@ func updatePos(ch *types.CharData) {
 }
 
 // rollD20 returns a value 0-19 (equivalent to C's number_bits(5) clamped < 20).
-func rollD20() int {
+// Declared as a var so tests can stub it via save/restore; see
+// TestRollD20_IsSeam for the pattern. Tests that mutate this var MUST NOT
+// use t.Parallel() — the mutation is package-global.
+var rollD20 = func() int {
 	for {
 		v := util.NumberBits(5)
 		if v < 20 {

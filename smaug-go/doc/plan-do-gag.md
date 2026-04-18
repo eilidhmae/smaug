@@ -1,6 +1,6 @@
 # Plan: `DoGag` Player Command — Standalone Toggle
 
-**Status:** Planned (2026-04-17). Adversary-verified research: PASS with minor doc-labeling nit.
+**Status:** Landed 2026-04-18. Adversary verdict PASS on the code; three CONCERNS were doc-wrap-up items within manager scope (TODO checkmark, status header, stale prose in sister plan) — all addressed in this landing.
 **Priority:** P2 — `PCFLAG_GAG` already honored by `dammessage.go`; command is the only missing piece.
 **Scope:** `internal/act/playercfg.go`, `internal/act/playercfg_test.go`, `internal/boot/boot.go`. Doc correction to TODO.md + plan-dammessage-gaps.md.
 
@@ -112,3 +112,9 @@ A6. A PC who runs `save` after `gag` reloads with the flag intact (proves the ro
 2. **`\r\n` vs `\n\r` line endings** — resolved: use `\n\r` everywhere to match every existing `ch.Send` in `playercfg.go`.
 3. **Redundant nil guard** — clarified: guard is load-bearing because `IsNPC()` doesn't check `PCData`. Test added.
 4. **TODO.md line 98 doc-correction target** — adversary's grep miss; line 98 in `/home/eilidh/src/smaug/TODO.md` DOES read `"Port DoGag player command (act_info.c:5795 ...)"`. Correction task remains valid.
+
+---
+
+## Completion record (2026-04-18)
+
+Landed as planned. `DoGag` at `internal/act/playercfg.go:68-83` mirrors `DoAfk` exactly: `IsNPC` gate, nil-`PCData` guard (load-bearing — `IsNPC()` does not check `PCData`), conditional `if IsSet { Remove; off-msg; return }; Set; on-msg`. Messages: on = `"Combat messages will be gagged.\n\r"`, off = `"Combat messages will no longer be gagged.\n\r"`. Registered in `internal/boot/boot.go` adjacent to `afk`: `Name: "gag"`, `Position: POS_DEAD`, `Level: 0`. Four mutation-verified tests in `internal/act/playercfg_test.go`: `TestDoGag_TogglesOn` / `TestDoGag_TogglesOff` / `TestDoGag_NPCIsNoop` / `TestDoGag_NilPCDataIsNoop`. Mutation matrix from plan § G3 exercised fully (`|=` → `&^=`, `&^=` → `|=`, remove `IsNPC` guard, remove nil-PCData guard, swap messages) — all caught. Doc corrections applied: `TODO.md` and `plan-dammessage-gaps.md` line 87 citation updated from `act_info.c:5795` to `act_info.c:5585 do_config (gag branch at :5794)`; stale prose around the citation in `plan-dammessage-gaps.md` also refreshed since `DoGag` is no longer a follow-up. Persistence round-trip worked without new code — `persist/player.go` load (`:243`) and save (`:520`) already round-trip the full `PCData.Flags` bitvector. Adversary returned CONCERNS citing three doc items (TODO checkmark, this status header, stale sentence in sister plan); all three are manager-scope updates per the Document Management authority and handled in this wrap-up. `go test -count=3 ./internal/act/... ./internal/boot/... ./internal/persist/...` green; `go test ./...` green across all 15 packages.

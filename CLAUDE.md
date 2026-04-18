@@ -45,14 +45,11 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 9 (communication channels — immtalk / gtell / auction stub) | `plan-channels.md` (plan + completion) | — |
 | 5 Tier 10 (Deaf persistence fix + DoChannels toggle command) | `plan-do-channels.md` (plan + completion) | — |
 | 5 Tier 11 (Timer subsystem + IsAttackSuppressed wiring + TIMER_RECENTFIGHT + DoQuit gate) | `plan-timer-subsystem.md` (plan + completion) | — |
+| 5 Tier 12 (editor `/s` save — `EditorSave` callback + `CON_PLAYING` transition) | `plan-editor-save.md` (plan + completion) | — |
+| 5 Tier 13 (`DoGag` standalone toggle) | `plan-do-gag.md` (plan + completion) | — |
+| 5 Tier 14 (`rollD20` function-variable seam — eliminates combat test flake) | `plan-rollD20-seam.md` (plan + completion) | — |
 
-**Next work:** three remaining polish plans from the 2026-04-17 wave-2 audit. Ordered in `TODO.md` "Recommended next steps":
-
-1. `plan-editor-save.md` (P2) — `/s` stuck-state fix; unblocks `bio`/`description` and Phase-6 OLC substates.
-2. `plan-do-gag.md` (P2) — standalone `DoGag` toggle.
-3. `plan-rollD20-seam.md` (P2) — function-variable seam eliminates ~5% combat-test flake.
-
-Both wave-2 P1 plans (do-channels, timer-subsystem) have landed (see Done section of `TODO.md`). Phase-6-sized optional systems, polish items, and follow-up queues remain tracked in `TODO.md` Active.
+**Next work:** All five 2026-04-17 wave-2 plans have landed. Phase-5 polish work is substantially complete. Remaining work in `TODO.md` Active: persistence gaps, mudprog depth gaps, Go idiom polish, documentation corrections, Phase-6 candidates (hotboot/copyover, overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps, `DoBio` / `DoDescription` now that editor `/s` is fixed, interactive OLC `CON_OEDITING` / `CON_MEDITING` substates).
 
 **Reviews:**
 

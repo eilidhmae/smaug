@@ -1979,12 +1979,19 @@ func TestOneHit_DualWieldAlternatesWeapons(t *testing.T) {
 // oneHitFull called directly with a chosen wield uses that wield's
 // damage dice (not the primary).
 func TestOneHitFull_ExplicitWieldUsed(t *testing.T) {
+	// Stub rollD20 to a normal-hit value (not 0 = crit-miss, not 19 = crit-hit).
+	// Without this, the test flakes ~5% of runs because rollD20 returns 0
+	// with probability 1/20, which is treated as an auto-miss.
+	savedRoll := rollD20
+	t.Cleanup(func() { rollD20 = savedRoll })
+	rollD20 = func() int { return 10 } // non-zero, non-19 — normal hit path
+
 	w := newCombatWorld()
 	room := &types.RoomIndexData{Vnum: 10300, Name: "Dual Arena"}
 	w.Rooms[10300] = room
 
 	ch := newFighter("DualWielder", 50)
-	ch.Hitroll = 999 // always hit
+	ch.Hitroll = 999 // large positive hitroll; combined with rollD20 stub above, guarantees hit
 	handler.CharToRoom(ch, room)
 	w.AddChar(ch)
 
@@ -2201,5 +2208,17 @@ func TestIsAttackSuppressed_CountOneBoundary(t *testing.T) {
 	handler.AddTimer(ch, types.TIMER_ASUPRESSED, 1, "", 0)
 	if !IsAttackSuppressed(ch) {
 		t.Error("Count=1 TIMER_ASUPRESSED should suppress (>= 1 boundary)")
+	}
+}
+
+// rollD20 is a function-variable seam so tests can stub the d20 roll.
+// Save/restore via t.Cleanup; do NOT use t.Parallel on tests that mutate it.
+func TestRollD20_IsSeam(t *testing.T) {
+	saved := rollD20
+	t.Cleanup(func() { rollD20 = saved })
+
+	rollD20 = func() int { return 42 }
+	if got := rollD20(); got != 42 {
+		t.Errorf("stubbed rollD20 = %d, want 42", got)
 	}
 }

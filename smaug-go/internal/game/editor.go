@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	maxBufLines    = 24 // normal editing limit
-	maxBufLinesMp  = 48 // mudprog/help editing limit
-	maxLineLen     = 79
-	formatLineLen  = 75
+	maxBufLines   = 24 // normal editing limit
+	maxBufLinesMp = 48 // mudprog/help editing limit
+	maxLineLen    = 79
+	formatLineLen = 75
 )
 
 // editorHelp is the help text for the string editor.
@@ -86,6 +86,9 @@ func StopEditing(ch *types.CharData) {
 	}
 	ch.Editor = nil
 	ch.Substate = types.SUB_NONE
+	// Defensive: drop any pending callback so a leaked closure can't
+	// hold a large context (plan § Open Q 1).
+	ch.EditorSave = nil
 	if ch.Desc != nil {
 		ch.Desc.Connected = types.CON_PLAYING
 	}
@@ -154,9 +157,19 @@ func EditBuffer(ch *types.CharData, line string) {
 			return
 
 		case 's':
-			// Save is handled by the caller via substate callback
-			ch.Send("Done.\n\r")
-			// The caller checks substate to know what to do with the text
+			// Transition the descriptor out of CON_EDITING FIRST (matches C
+			// build.c:7004-7010) so the callback can re-enter StartEditing
+			// safely for nested edits.
+			if ch.Desc != nil {
+				ch.Desc.Connected = types.CON_PLAYING
+			}
+			// One-shot callback: clear BEFORE invoking so a nested
+			// StartEditing inside the save handler can install its own.
+			if ch.EditorSave != nil {
+				save := ch.EditorSave
+				ch.EditorSave = nil
+				save(ch)
+			}
 			return
 
 		default:

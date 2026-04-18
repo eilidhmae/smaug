@@ -231,3 +231,35 @@ func TestCharData_GetCurrStats(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// EditorSave callback field
+// ---------------------------------------------------------------------------
+
+func TestCharData_EditorSaveField(t *testing.T) {
+	ch := &CharData{}
+	// Field must be nil by default (nilable).
+	if ch.EditorSave != nil {
+		t.Error("EditorSave should default to nil")
+	}
+	// Field must be assignable with the documented signature.
+	called := false
+	ch.EditorSave = func(c *CharData) {
+		called = true
+		if c != ch {
+			t.Errorf("callback received wrong char")
+		}
+	}
+	if ch.EditorSave == nil {
+		t.Fatal("EditorSave should be assignable")
+	}
+	ch.EditorSave(ch)
+	if !called {
+		t.Error("assigned callback was not invoked")
+	}
+	// Nilable again.
+	ch.EditorSave = nil
+	if ch.EditorSave != nil {
+		t.Error("EditorSave should be nilable")
+	}
+}

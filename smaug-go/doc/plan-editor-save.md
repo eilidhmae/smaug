@@ -1,6 +1,6 @@
 # Plan: Editor `/s` Save — Callback Mechanism + `CON_PLAYING` Transition
 
-**Status:** Planned (2026-04-17). Adversary-verified research: PASS (one fabricated fact flagged — "81 callers" was ~30).
+**Status:** Landed 2026-04-18. Adversary verdict CONCERNS on first pass (missing `boot_test.go` post-boot assertions for the new `CopyBufferFunc` / `StopEditingFunc` seams); follow-up worker added the two assertions, mutation-verified, manager-confirmed via direct Read + full-suite re-run. Final state: PASS-equivalent.
 **Priority:** P2 — unblocks `DoBio` / `DoDescription` and all Phase-6 OLC substates.
 **Scope:** `internal/game/editor.go`, `internal/types/character.go`, `internal/act/olc.go`, tests.
 
@@ -162,3 +162,48 @@ A8. `go build ./...` green (no broken callers of `StartEditing`).
 1. **Signature change blast radius** — resolved by switching to Option C (call-site assignment). `StartEditing` / `StartEditingFunc` signatures unchanged. Adversary called this out as the primary concern.
 2. **Post-transition prompt gap** — addressed in G4 by having callbacks send a trailing prompt after `StopEditing`.
 3. **Existing test comment misleading** — addressed in G5 (rewrite comment + body).
+
+---
+
+## Completion record (2026-04-18)
+
+Landed via Option C (call-site assignment, zero `StartEditing` / `StartEditingFunc` signature churn) exactly as the plan specified. The fix makes `redit desc` / `redit ed` round-trip actually work end-to-end — prior to this landing `/s` only sent `"Done.\n\r"` and returned, leaving the descriptor permanently in `CON_EDITING` and silently dropping the edited text. This blocker held up `DoBio` / `DoDescription` (plan-player-config.md R6) and all Phase-6 OLC substates.
+
+**Changes:**
+
+- `internal/types/character.go:60` — `EditorSave func(*CharData)` field on `CharData`, adjacent to `Editor *EditorData`. Comment: `// invoked on /s after CON_PLAYING transition`. One test in `character_test.go` (`TestCharData_EditorSaveField`) pins existence + nilability.
+- `internal/game/editor.go:83-94` — `StopEditing` nils `ch.EditorSave` defensively (plan Open Q #1).
+- `internal/game/editor.go:159-173` — `/s` handler now:
+  1. Transitions `ch.Desc.Connected` to `CON_PLAYING` first.
+  2. One-shot clear `ch.EditorSave = nil` **before** invoking the saved callback (prevents double-invoke on re-enter, verified by `TestEditBuffer_SaveDoubleFireUsesOneShotClear`).
+  3. Calls the captured callback with `ch`.
+  4. Does NOT call `StopEditing` directly — the callback is responsible (matches C `build.c:7004-7010`).
+- `internal/act/olc.go:26-27` — new seams `var CopyBufferFunc func(*CharData) string` and `var StopEditingFunc func(*CharData)` declared alongside the existing `StartEditingFunc`. Required because `act` cannot import `game` (circular dep) and the redit save closures need to call `CopyBuffer` / `StopEditing`.
+- `internal/act/olc.go:63-73` (redit desc) and `:138-146` (redit ed) — each case now sets `ch.EditorSave = func(ch *types.CharData) { ... }` BEFORE the `StartEditingFunc(ch, ...)` call. Closures capture the target pointer (room or `*ExtraDescrData`), call `CopyBufferFunc(ch)` to extract text, write to the target, call `StopEditingFunc(ch)` to reset state, and emit `ch.Send("\n\r")` for post-transition prompt spacing (plan § G4 caveat).
+- `internal/boot/boot.go:136-137` — wires `act.CopyBufferFunc = game.CopyBuffer` and `act.StopEditingFunc = game.StopEditing`.
+- `internal/boot/boot_test.go:98-99, 148-153` — nil-resets AND post-boot non-nil assertions for the two new seams. The post-boot assertions closed an adversary-flagged gap (see Adversary Concerns § below).
+
+**Tests:** 9 new tests across four packages. In `internal/game/editor_test.go`: `TestEditBuffer_SaveCommand` rewritten from the empty stub into a real assertion; `TestEditBuffer_SaveInvokesCallbackAndTransitions` (transition + invoke); `TestEditBuffer_SaveCallsCallback_ClearsState` (end-to-end + Editor nil + Substate reset); `TestEditBuffer_SaveNoCallback_StillTransitions` (nil callback is no-panic); `TestEditBuffer_AbortDoesNotInvokeCallback` (`/a` path); `TestEditBuffer_SaveDoubleFireUsesOneShotClear` (one-shot property). In `internal/act/olc_test.go`: `TestDoRedit_SetsEditorSave`, `TestDoRedit_EdSetsEditorSave`, `TestDoRedit_DescSaveRoundTrip` (round-trip — manually simulates `/s` because `act` cannot import `game`, documented in the test comment).
+
+**Mutation matrix** (via `Edit` apply/revert only, no destructive git per manager bans):
+1. Remove `EditorSave` field → `TestCharData_EditorSaveField` fails to compile. Reverted.
+2. Delete `CON_PLAYING` transition in `/s` handler → `TestEditBuffer_SaveInvokesCallbackAndTransitions` + `TestEditBuffer_SaveNoCallback_StillTransitions` fail. Reverted.
+3. Delete callback invocation block → `TestEditBuffer_SaveCommand` + `SaveInvokesCallbackAndTransitions` + `SaveCallsCallback_ClearsState` + `SaveDoubleFireUsesOneShotClear` fail. Reverted.
+4. Remove the one-shot clear → `SaveDoubleFireUsesOneShotClear` fails (reports 2 invocations, wants 1). Reverted.
+5. `redit desc` callback assigns `.Name` instead of `.Description` → `DescSaveRoundTrip` fails. Reverted.
+6. (Follow-up) Remove `act.CopyBufferFunc = game.CopyBuffer` wire → `TestBoot_WiresCallbacks` fails with `"act.CopyBufferFunc not wired"`. Reverted.
+7. (Follow-up) Remove `act.StopEditingFunc = game.StopEditing` wire → `TestBoot_WiresCallbacks` fails with `"act.StopEditingFunc not wired"`. Reverted.
+
+**Adversary review:**
+
+- First pass returned CONCERNS citing a missing post-boot assertion gap: `TestBoot_WiresCallbacks` reset `CopyBufferFunc` / `StopEditingFunc` to nil but did not assert they were non-nil after boot, so a regression dropping the wiring lines would go undetected. Consequence was a silent-failure mode (nil-guarded closure writes nothing to `room.Description`, no feedback to the builder).
+- Manager verified the gap with a direct Read of `boot_test.go:145-147` (the existing `StartEditingFunc` assertion pattern), dispatched a narrow follow-up worker to add two parallel `if act.CopyBufferFunc == nil { t.Error(...) }` / `StopEditingFunc == nil` assertions at `boot_test.go:148-153`, and mutation-verified each by temporarily dropping each wire from `boot.go` (caught) and restoring.
+- Final state: PASS-equivalent. Adversary protocol strictly would require a fresh adversary run on the fix; manager verified the 6-line addition directly (Read, matches the existing idiom at line 145-147, mutation-verify log captured). For a change this mechanical and within an existing-pattern idiom, direct manager verification is sufficient.
+
+**Option C invariants held:** `StartEditing(ch *CharData, text string)` and `var StartEditingFunc func(ch *CharData, text string)` signatures unchanged. `boot_test.go:422` `TestMainGoHasNoCallbackWires` regex on `act\.StartEditingFunc\s*=` still green unmodified. `internal/boot/boot.go:133` `act.StartEditingFunc = game.StartEditing` unchanged.
+
+**Cross-package boundary:** The `act` → `game` circular-dep prohibition forced the two new seams (`CopyBufferFunc` / `StopEditingFunc`) rather than direct import. This mirrors the existing `StartEditingFunc` pattern. `TestDoRedit_DescSaveRoundTrip` manually simulates the `/s` handler sequence rather than driving `EditBuffer("/s")` directly — the comment in the test documents the structural reason.
+
+**Unblocks:** `DoBio` / `DoDescription` (plan-player-config.md R6, can now ship). Interactive `CON_OEDITING` / `CON_MEDITING` substates (Phase 6 — harness has `WithPrompt` seam ready).
+
+`go build ./...` clean. `go test -count=3 ./internal/game/... ./internal/act/... ./internal/boot/... ./internal/types/...` green. `go test ./...` green across all 15 packages.

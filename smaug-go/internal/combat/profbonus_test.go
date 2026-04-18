@@ -251,6 +251,8 @@ func setupProfScenario(t *testing.T, learned int) (*world.World, *types.RoomInde
 // is impossible without RNG stubs on rollD20; instead we run enough
 // rounds to confirm the high-Learned PC deals strictly more total damage
 // than the Learned=0 baseline.
+//
+// Deliberately unstubbed — tests statistical distribution; stubbing would defeat the test.
 func TestOneHit_ProfBonus_HigherLearnedDealsMoreDamage(t *testing.T) {
 	stubProfGsns(t)
 	const rounds = 2000
