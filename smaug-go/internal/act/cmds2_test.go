@@ -1,6 +1,7 @@
 package act
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -396,6 +397,69 @@ func TestDoAlias_RejectTilde(t *testing.T) {
 	out := readOutput(ch, client)
 	if !strings.Contains(out, "~") {
 		t.Errorf("expected tilde rejection, got: %q", out)
+	}
+}
+
+func TestDoAlias_CapOnCreate(t *testing.T) {
+	_ = setupGroupWorld()
+	ch, client := makeTestChar("Alice")
+	defer client.Close()
+
+	// Pre-populate at the cap.
+	for i := 0; i < MaxAliases; i++ {
+		ch.PCData.Aliases = append(ch.PCData.Aliases,
+			&types.AliasData{Name: fmt.Sprintf("a%d", i), Cmd: "say hi"})
+	}
+	_ = readOutput(ch, client) // drain any prior output
+
+	DoAlias(ch, "newalias say new")
+	out := readOutput(ch, client)
+
+	if len(ch.PCData.Aliases) != MaxAliases {
+		t.Errorf("expected alias count to stay at %d, got %d",
+			MaxAliases, len(ch.PCData.Aliases))
+	}
+	if !strings.Contains(strings.ToLower(out), "too many aliases") {
+		t.Errorf("expected too-many-aliases refusal, got: %q", out)
+	}
+}
+
+func TestDoAlias_ReplaceAtCapStillWorks(t *testing.T) {
+	_ = setupGroupWorld()
+	ch, client := makeTestChar("Alice")
+	defer client.Close()
+
+	// Pre-populate at the cap; include a known name to replace.
+	ch.PCData.Aliases = append(ch.PCData.Aliases,
+		&types.AliasData{Name: "g", Cmd: "get all"})
+	for i := 0; i < MaxAliases-1; i++ {
+		ch.PCData.Aliases = append(ch.PCData.Aliases,
+			&types.AliasData{Name: fmt.Sprintf("a%d", i), Cmd: "say hi"})
+	}
+	if len(ch.PCData.Aliases) != MaxAliases {
+		t.Fatalf("setup: expected %d aliases, got %d", MaxAliases, len(ch.PCData.Aliases))
+	}
+	_ = readOutput(ch, client)
+
+	DoAlias(ch, "g get all corpse")
+	out := readOutput(ch, client)
+
+	if len(ch.PCData.Aliases) != MaxAliases {
+		t.Errorf("expected alias count to stay at %d, got %d",
+			MaxAliases, len(ch.PCData.Aliases))
+	}
+	var replaced *types.AliasData
+	for _, a := range ch.PCData.Aliases {
+		if a.Name == "g" {
+			replaced = a
+			break
+		}
+	}
+	if replaced == nil || replaced.Cmd != "get all corpse" {
+		t.Errorf("expected alias 'g' to be modified to 'get all corpse', got: %+v", replaced)
+	}
+	if !strings.Contains(out, "Modified") && !strings.Contains(out, "modified") {
+		t.Errorf("expected modified msg, got: %q", out)
 	}
 }
 

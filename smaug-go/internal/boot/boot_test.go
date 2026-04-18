@@ -254,6 +254,123 @@ func TestTestOpts_LowersBcryptCost(t *testing.T) {
 	}
 }
 
+// copyFile copies a single regular file from src to dst, creating
+// intermediate directories as needed. Used to assemble scoped-fixture
+// data dirs for the fail-loud tests below.
+func copyFile(t *testing.T, src, dst string) {
+	t.Helper()
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read %s: %v", src, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(dst), err)
+	}
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		t.Fatalf("write %s: %v", dst, err)
+	}
+}
+
+// makeMinimalDataDir builds a temp data dir under t.TempDir() that
+// contains a valid areas subtree copied from the shared testdata fixture,
+// plus whichever of classes / races / skills the caller chooses to
+// include. Used to drive the "missing foundational subsystem" tests: the
+// missing subsystem's source files are simply not copied, so its loader
+// will fail when Boot runs.
+func makeMinimalDataDir(t *testing.T, includeClasses, includeRaces, includeSkills bool) string {
+	t.Helper()
+	dst := t.TempDir()
+
+	// Areas are always required — copy the whole dir.
+	copyFile(t, filepath.Join(testDataDir, "area", "area.lst"),
+		filepath.Join(dst, "area", "area.lst"))
+	copyFile(t, filepath.Join(testDataDir, "area", "test_boot.are"),
+		filepath.Join(dst, "area", "test_boot.are"))
+
+	if includeClasses {
+		copyFile(t, filepath.Join(testDataDir, "classes", "class.lst"),
+			filepath.Join(dst, "classes", "class.lst"))
+		copyFile(t, filepath.Join(testDataDir, "classes", "Warrior.class"),
+			filepath.Join(dst, "classes", "Warrior.class"))
+	}
+	if includeRaces {
+		copyFile(t, filepath.Join(testDataDir, "races", "race.lst"),
+			filepath.Join(dst, "races", "race.lst"))
+		copyFile(t, filepath.Join(testDataDir, "races", "Human.race"),
+			filepath.Join(dst, "races", "Human.race"))
+	}
+	if includeSkills {
+		copyFile(t, filepath.Join(testDataDir, "system", "en", "skills.dat"),
+			filepath.Join(dst, "system", "en", "skills.dat"))
+	}
+	return dst
+}
+
+// TestBoot_FailsLoudWhenClassesMissing asserts that Boot returns an error
+// (and no usable registry / loop) when the classes directory is missing.
+// A misconfigured -data dir must not silently produce a server that then
+// fails character creation at runtime.
+func TestBoot_FailsLoudWhenClassesMissing(t *testing.T) {
+	dir := makeMinimalDataDir(t, false /*classes*/, true /*races*/, true /*skills*/)
+	w := world.New(dir)
+
+	reg, loop, err := boot.Boot(w, dir, makeIncoming(), boot.ProductionOpts())
+	if err == nil {
+		t.Fatal("Boot should fail when classes are missing, got nil error")
+	}
+	if !regexp.MustCompile(`(?i)class`).MatchString(err.Error()) {
+		t.Errorf("error should mention classes, got: %v", err)
+	}
+	if reg != nil {
+		t.Error("Boot should return nil registry on failure")
+	}
+	if loop != nil {
+		t.Error("Boot should return nil loop on failure")
+	}
+}
+
+// TestBoot_FailsLoudWhenRacesMissing asserts that Boot returns an error
+// when the races directory is missing. Same rationale as the classes test.
+func TestBoot_FailsLoudWhenRacesMissing(t *testing.T) {
+	dir := makeMinimalDataDir(t, true /*classes*/, false /*races*/, true /*skills*/)
+	w := world.New(dir)
+
+	reg, loop, err := boot.Boot(w, dir, makeIncoming(), boot.ProductionOpts())
+	if err == nil {
+		t.Fatal("Boot should fail when races are missing, got nil error")
+	}
+	if !regexp.MustCompile(`(?i)race`).MatchString(err.Error()) {
+		t.Errorf("error should mention races, got: %v", err)
+	}
+	if reg != nil {
+		t.Error("Boot should return nil registry on failure")
+	}
+	if loop != nil {
+		t.Error("Boot should return nil loop on failure")
+	}
+}
+
+// TestBoot_FailsLoudWhenSkillsMissing asserts that Boot returns an error
+// when system/en/skills.dat is missing. Same rationale as above.
+func TestBoot_FailsLoudWhenSkillsMissing(t *testing.T) {
+	dir := makeMinimalDataDir(t, true /*classes*/, true /*races*/, false /*skills*/)
+	w := world.New(dir)
+
+	reg, loop, err := boot.Boot(w, dir, makeIncoming(), boot.ProductionOpts())
+	if err == nil {
+		t.Fatal("Boot should fail when skills are missing, got nil error")
+	}
+	if !regexp.MustCompile(`(?i)skill`).MatchString(err.Error()) {
+		t.Errorf("error should mention skills, got: %v", err)
+	}
+	if reg != nil {
+		t.Error("Boot should return nil registry on failure")
+	}
+	if loop != nil {
+		t.Error("Boot should return nil loop on failure")
+	}
+}
+
 func TestMainGoHasNoCallbackWires(t *testing.T) {
 	data, err := os.ReadFile("../../cmd/smaug/main.go")
 	if err != nil {

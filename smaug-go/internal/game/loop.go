@@ -386,7 +386,7 @@ func (g *GameLoop) nannyGetOldPassword(d *types.DescriptorData, line string) {
 		log.Printf("Bad password for %s from %s", d.User, d.Host)
 		d.FailedAttempts++
 		if d.FailedAttempts >= 3 {
-			d.WriteToBuffer("Too many failed attempts. Disconnecting.\n\r")
+			d.WriteToBuffer("Too many password failures. Disconnecting.\n\r")
 		}
 		d.Character = nil
 		d.Connected = -1

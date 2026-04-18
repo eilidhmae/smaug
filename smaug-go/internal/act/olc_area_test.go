@@ -2,6 +2,8 @@ package act
 
 import (
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -190,5 +192,85 @@ func TestDoAstat_OutputContainsVnumRanges(t *testing.T) {
 	}
 	if !strings.Contains(out, "Reset Freq") {
 		t.Errorf("expected 'Reset Freq' in output, got: %q", out)
+	}
+}
+
+// --- DoSaveArea tests ---
+
+// setupSaveAreaWorld creates an area world rooted in a temp directory so
+// DoSaveArea can write real files without touching the repo.
+func setupSaveAreaWorld(t *testing.T) (*types.CharData, net.Conn, *types.AreaData, string, func()) {
+	t.Helper()
+	ch, client, area, cleanup := setupAreaWorld()
+
+	tmpDir := t.TempDir()
+	areaDir := filepath.Join(tmpDir, "area")
+	if err := os.MkdirAll(areaDir, 0o755); err != nil {
+		cleanup()
+		t.Fatalf("failed to create area dir: %v", err)
+	}
+	WorldRef.DataDir = tmpDir
+
+	return ch, client, area, tmpDir, cleanup
+}
+
+func TestDoSaveArea_WritesFileAndCleansTmp(t *testing.T) {
+	ch, client, area, tmpDir, cleanup := setupSaveAreaWorld(t)
+	defer cleanup()
+
+	DoSaveArea(ch, "")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(strings.ToLower(out), "saved") {
+		t.Errorf("expected success message, got: %q", out)
+	}
+
+	path := filepath.Join(tmpDir, "area", area.Filename)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected area file at %s: %v", path, err)
+	}
+
+	tmpPath := path + ".tmp"
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Errorf("expected no .tmp file after successful save, stat err=%v", err)
+	}
+}
+
+func TestDoSaveArea_LeavesLiveFileOnError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("cannot simulate permission failure as root")
+	}
+	ch, client, area, tmpDir, cleanup := setupSaveAreaWorld(t)
+	defer cleanup()
+
+	// Seed a known-good live file.
+	path := filepath.Join(tmpDir, "area", area.Filename)
+	originalContents := []byte("ORIGINAL CONTENT - DO NOT CORRUPT\n")
+	if err := os.WriteFile(path, originalContents, 0o644); err != nil {
+		t.Fatalf("failed to seed live file: %v", err)
+	}
+
+	// Make the area dir read-only so os.Create of the .tmp fails.
+	areaDir := filepath.Join(tmpDir, "area")
+	if err := os.Chmod(areaDir, 0o555); err != nil {
+		t.Fatalf("failed to chmod area dir: %v", err)
+	}
+	defer os.Chmod(areaDir, 0o755) //nolint:errcheck // test cleanup
+
+	DoSaveArea(ch, "")
+	_ = readOutput(ch, client)
+
+	// The live file must be untouched.
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("live file gone after failed save: %v", err)
+	}
+	if string(got) != string(originalContents) {
+		t.Errorf("live file was corrupted on failed save: got %q, want %q", got, originalContents)
+	}
+
+	// No lingering .tmp file.
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Errorf("expected no .tmp file after failed save, stat err=%v", err)
 	}
 }

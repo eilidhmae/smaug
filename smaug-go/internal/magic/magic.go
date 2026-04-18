@@ -110,6 +110,11 @@ func SavesSpellStaff(level int, victim *types.CharData) bool {
 	return util.NumberPercent() <= save
 }
 
+// savesSpellStaffFn is the package-level save-resolver hook used by
+// SpellFarsight; tests may override it to make save outcomes deterministic.
+// Mirrors the rollSaveFunc seam in spell_smaug.go.
+var savesSpellStaffFn = SavesSpellStaff
+
 // SavesPoisonDeath checks if a victim makes their saving throw vs poison/death.
 func SavesPoisonDeath(level int, victim *types.CharData) bool {
 	save := 50 + (victim.Level-level-victim.SavingPoisonDeath)*5
@@ -756,7 +761,7 @@ func SpellFarsight(w *world.World, sn int, level int, ch *types.CharData, victim
 		ch.Send("You fail to locate them.\n\r")
 		return
 	}
-	if victim.IsNPC() && SavesSpellStaff(level, victim) {
+	if victim.IsNPC() && savesSpellStaffFn(level, victim) {
 		ch.Send("You fail to locate them.\n\r")
 		return
 	}

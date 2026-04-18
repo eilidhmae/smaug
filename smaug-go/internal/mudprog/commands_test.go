@@ -354,6 +354,100 @@ func TestMpForce_EmptyArgs(t *testing.T) {
 	mpForce(mob, " player")  // no command
 }
 
+// TestMpForce_TrustCap covers security finding S3 (mudprog variant): mpForce
+// must cap the forced command's effective trust level at the caller mob's
+// own trust (via GetTrust). Otherwise a crafted area file could mpforce an
+// immortal PC to run a command registered at Level: LEVEL_IMMORTAL — the
+// command would dispatch under the victim's trust instead of the (lower)
+// mob's. With a proper trust cap, Find() returns nil for such a command and
+// the dispatcher falls through without invoking it.
+//
+// NOTE: GetTrust() returns the NPC's Level when it's below LEVEL_IMMORTAL
+// (types/character.go:384). makeNPC sets Level=10, so this mob's effective
+// trust is 10, far below the immortal-only command we register below.
+func TestMpForce_TrustCap(t *testing.T) {
+	w := setupTestWorld()
+	oldWorld := WorldRef
+	WorldRef = w
+	defer func() { WorldRef = oldWorld }()
+	oldReg := CmdRegistry
+	defer func() { CmdRegistry = oldReg }()
+
+	var invoked bool
+	reg := command.NewRegistry()
+	reg.Register(&command.Command{
+		Name:  "godcmd",
+		Level: types.LEVEL_IMMORTAL,
+		DoFun: func(ch *types.CharData, argument string) {
+			invoked = true
+		},
+	})
+	CmdRegistry = reg
+
+	room := w.Rooms[3001]
+	mob := makeNPC("guard") // Level=10 ⇒ GetTrust()=10
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+
+	// High-trust victim whose own trust would be enough to run godcmd.
+	victim, client := makePlayerInRoom("Imm", room)
+	defer client.Close()
+	victim.Level = types.LEVEL_IMMORTAL
+	w.AddChar(victim)
+
+	mpForce(mob, " Imm godcmd")
+
+	if invoked {
+		t.Error("mpForce must cap effective trust at mob's GetTrust() so an " +
+			"immortal-only command is refused when the forcing mob is low-trust")
+	}
+}
+
+// TestMpForce_PositiveDispatch is the positive-direction counterpart to
+// TestMpForce_TrustCap: when the mob's own GetTrust() is high enough for the
+// forced command's Level, the dispatcher MUST invoke it. Without this, a
+// regression that over-restricts mpForce (e.g. caps trust to 0, never
+// dispatches) would pass the suite silently.
+func TestMpForce_PositiveDispatch(t *testing.T) {
+	w := setupTestWorld()
+	oldWorld := WorldRef
+	WorldRef = w
+	defer func() { WorldRef = oldWorld }()
+	oldReg := CmdRegistry
+	defer func() { CmdRegistry = oldReg }()
+
+	var invoked bool
+	var invokedArg string
+	reg := command.NewRegistry()
+	reg.Register(&command.Command{
+		Name:  "say",
+		Level: 1, // well under the mob's trust (10)
+		DoFun: func(ch *types.CharData, argument string) {
+			invoked = true
+			invokedArg = argument
+		},
+	})
+	CmdRegistry = reg
+
+	room := w.Rooms[3001]
+	mob := makeNPC("guard") // Level=10 ⇒ GetTrust()=10
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+
+	victim := &types.CharData{Name: "Player", Level: 10, Position: types.POS_STANDING}
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+
+	mpForce(mob, " Player say hello world")
+
+	if !invoked {
+		t.Fatal("mpForce should dispatch when mob's GetTrust() >= command Level")
+	}
+	if invokedArg != "hello world" {
+		t.Errorf("expected forced command arg 'hello world', got %q", invokedArg)
+	}
+}
+
 func TestMpKill(t *testing.T) {
 	room := &types.RoomIndexData{Vnum: 3001, Name: "Test Room"}
 	mob := makeNPC("guard")

@@ -244,6 +244,12 @@ func DoThrow(ch *types.CharData, argument string) {
 	}
 }
 
+// MaxAliases caps per-player alias count. Runtime-only guard against a script
+// looping DoAlias forever (unbounded memory growth + O(n) tax on every command
+// dispatch via FindAlias). Not enforced on load — legacy player files with
+// more entries still parse.
+const MaxAliases = 50
+
 // DoAlias lists or creates player aliases. Maps to src/alias.c:do_alias.
 // Usage:
 //
@@ -296,6 +302,10 @@ func DoAlias(ch *types.CharData, argument string) {
 
 	// Create or modify.
 	if existing == nil {
+		if len(ch.PCData.Aliases) >= MaxAliases {
+			ch.Send("You have too many aliases. Remove some with 'unalias <name>' first.\n\r")
+			return
+		}
 		ch.PCData.Aliases = append(ch.PCData.Aliases,
 			&types.AliasData{Name: arg, Cmd: rest})
 		ch.Send("Created alias.\n\r")

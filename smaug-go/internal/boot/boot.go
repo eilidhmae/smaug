@@ -192,11 +192,16 @@ func bootDB(w *world.World, dataDir string) error {
 	// Resolve exit vnums to room pointers
 	w.FixExits()
 
-	// Load class and race data
+	// Load class and race data. Classes, races, and skills are foundational —
+	// nothing in the game works without them (character creation immediately
+	// fails with no classes/races, and combat/spells need the skill table).
+	// A misconfigured -data path must fail loudly at boot rather than
+	// silently accepting connections and breaking at runtime.
 	classDir := filepath.Join(dataDir, "classes")
 	if err := persist.LoadClasses(w, classDir); err != nil {
-		log.Printf("WARNING: failed to load classes: %v", err)
-	} else {
+		return fmt.Errorf("failed to load classes: %w", err)
+	}
+	{
 		count := 0
 		for _, c := range w.Classes {
 			if c != nil {
@@ -208,8 +213,9 @@ func bootDB(w *world.World, dataDir string) error {
 
 	raceDir := filepath.Join(dataDir, "races")
 	if err := persist.LoadRaces(w, raceDir); err != nil {
-		log.Printf("WARNING: failed to load races: %v", err)
-	} else {
+		return fmt.Errorf("failed to load races: %w", err)
+	}
+	{
 		count := 0
 		for _, r := range w.Races {
 			if r != nil {
@@ -222,10 +228,9 @@ func bootDB(w *world.World, dataDir string) error {
 	// Load skills data
 	skillsPath := filepath.Join(dataDir, "system", "en", "skills.dat")
 	if err := persist.LoadSkills(w, skillsPath); err != nil {
-		log.Printf("WARNING: failed to load skills: %v", err)
-	} else {
-		log.Printf("Loaded %d skills/spells.", len(w.Skills))
+		return fmt.Errorf("failed to load skills: %w", err)
 	}
+	log.Printf("Loaded %d skills/spells.", len(w.Skills))
 
 	// Wire skill lookups so player save/load persists learned proficiencies.
 	persist.SkillNameLookup = func(name string) int {

@@ -744,15 +744,31 @@ func DoSaveArea(ch *types.CharData, argument string) {
 	}
 
 	path := filepath.Join(WorldRef.DataDir, "area", filename)
-	f, err := os.Create(path)
+	tmpPath := path + ".tmp"
+
+	// Write to a temp file first so a crash or write error mid-save
+	// can't corrupt the live .are file.
+	f, err := os.Create(tmpPath)
 	if err != nil {
 		ch.Sendf("Error saving area: %v\n\r", err)
 		return
 	}
-	defer f.Close()
 
 	if err := persist.SaveArea(f, WorldRef, area); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
 		ch.Sendf("Error writing area: %v\n\r", err)
+		return
+	}
+
+	if err := f.Close(); err != nil {
+		os.Remove(tmpPath)
+		ch.Sendf("Error closing area file: %v\n\r", err)
+		return
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		ch.Sendf("Error replacing area file (backup at %s): %v\n\r", tmpPath, err)
 		return
 	}
 

@@ -103,6 +103,14 @@ func mpTransfer(mob *types.CharData, args string) {
 }
 
 // mpForce forces a character to execute a command.
+//
+// Security (finding S3, mudprog variant): dispatch through
+// InterpretWithTrustCap with the mob's own GetTrust() so a crafted area file
+// can't mpforce a high-trust PC into running a command that would be gated
+// above the mob's own trust. NPCs whose Level < LEVEL_IMMORTAL and whose
+// Trust==0 cap at Level — effectively preventing mudprog-driven privilege
+// escalation. That's the correct and intended behavior: a mudprog should
+// never elevate the forced command's trust beyond what the mob itself has.
 func mpForce(mob *types.CharData, args string) {
 	arg, cmd := firstWord(strings.TrimSpace(args))
 	if arg == "" || cmd == "" {
@@ -114,7 +122,7 @@ func mpForce(mob *types.CharData, args string) {
 		return
 	}
 	if CmdRegistry != nil {
-		CmdRegistry.Interpret(victim, cmd)
+		CmdRegistry.InterpretWithTrustCap(victim, cmd, mob.GetTrust())
 	}
 }
 

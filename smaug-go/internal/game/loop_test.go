@@ -1438,6 +1438,64 @@ func TestBruteForceProtection(t *testing.T) {
 	}
 }
 
+// TestNanny_GetOldPassword_LockoutMessage covers audit finding U1 (2026-04-17):
+// when a player hits the password-failure limit, the server must emit a
+// user-visible explanation before marking the descriptor dead. Without the
+// message a legitimate mistyper gets silently dropped and cannot tell the
+// difference between a server fault and a lockout.
+func TestNanny_GetOldPassword_LockoutMessage(t *testing.T) {
+	g := newTestLoop()
+	s, c := net.Pipe()
+	defer s.Close()
+	defer c.Close()
+
+	// Collect everything the server writes to the client side of the pipe.
+	got := make(chan string, 1)
+	go func() {
+		var sb strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := c.Read(buf)
+			if n > 0 {
+				sb.Write(buf[:n])
+			}
+			if err != nil {
+				got <- sb.String()
+				return
+			}
+		}
+	}()
+
+	hash, _ := bcrypt.GenerateFromPassword([]byte("realpassword"), bcrypt.MinCost)
+	d := types.NewDescriptor(s)
+	d.Host = "localhost"
+	d.FailedAttempts = 2 // one more failure trips the lockout
+	ch := &types.CharData{Name: "Lockout", PCData: &types.PCData{Pwd: string(hash)}}
+	d.Character = ch
+	ch.Desc = d
+
+	g.nannyGetOldPassword(d, "stillwrong")
+
+	// Flush pending output before closing, mirroring the pulse sequence
+	// (processInput -> flushOutput -> cleanupDescriptors).
+	if err := d.FlushOutput(); err != nil {
+		t.Fatalf("FlushOutput error: %v", err)
+	}
+	s.Close()
+
+	out := <-got
+	if !strings.Contains(out, "Too many password failures") {
+		t.Errorf("expected lockout message containing %q, got %q",
+			"Too many password failures", out)
+	}
+	if d.Connected != -1 {
+		t.Errorf("d.Connected = %d, want -1 (marked for cleanup after lockout)", d.Connected)
+	}
+	if d.FailedAttempts != 3 {
+		t.Errorf("FailedAttempts = %d, want 3 (lockout threshold unchanged)", d.FailedAttempts)
+	}
+}
+
 // --- Adversary-follow-up coverage tests ---
 
 func TestNanny_GetNewClass_Banned(t *testing.T) {

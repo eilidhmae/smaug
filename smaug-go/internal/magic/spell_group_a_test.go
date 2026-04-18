@@ -67,8 +67,10 @@ func TestSpellFarsight_Success(t *testing.T) {
 	targetRoom := &types.RoomIndexData{Vnum: 9411, Name: "Dragon's Lair", Description: "A dark cavern."}
 	ch, client := newCasterWithDesc("Scryer", 30)
 	handler.CharToRoom(ch, casterRoom)
+	// Target is a PC (ACT_IS_NPC unset) so SavesSpellStaff is bypassed —
+	// the URANGE floor of 5 in the save formula would otherwise give a
+	// 5% flake rate even with optimal caster vs. victim level math.
 	victim := &types.CharData{Name: "dragon", Level: 10}
-	victim.Act.Set(types.ACT_IS_NPC)
 	handler.CharToRoom(victim, targetRoom)
 
 	SpellFarsight(w, 0, ch.Level, ch, victim)
@@ -76,6 +78,33 @@ func TestSpellFarsight_Success(t *testing.T) {
 	out := readOutput(ch, client)
 	if !strings.Contains(out, "Dragon's Lair") {
 		t.Errorf("expected target room name in output, got %q", out)
+	}
+}
+
+// TestSpellFarsight_NPCTargetSucceeds exercises the NPC-victim branch at
+// magic.go:759 with the save forced to fail, so the spell succeeds. Without
+// this test the entire `victim.IsNPC()` arm is dead coverage — a regression
+// that always-fails the save for NPCs (or flips the branch) would go
+// unnoticed. The seam is a single package-level savesSpellStaffFn var that
+// mirrors the rollSaveFunc pattern in spell_smaug.go.
+func TestSpellFarsight_NPCTargetSucceeds(t *testing.T) {
+	orig := savesSpellStaffFn
+	savesSpellStaffFn = func(level int, victim *types.CharData) bool { return false }
+	t.Cleanup(func() { savesSpellStaffFn = orig })
+
+	w := newMagicWorld()
+	casterRoom := &types.RoomIndexData{Vnum: 9414, Name: "Caster's Room"}
+	targetRoom := &types.RoomIndexData{Vnum: 9415, Name: "Ogre's Cave", Description: "A reeking cavern."}
+	ch, client := newCasterWithDesc("Scryer", 30)
+	handler.CharToRoom(ch, casterRoom)
+	victim := newNPCVictim("ogre", 10)
+	handler.CharToRoom(victim, targetRoom)
+
+	SpellFarsight(w, 0, ch.Level, ch, victim)
+
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Ogre's Cave") {
+		t.Errorf("expected target room name in output for NPC-victim success path, got %q", out)
 	}
 }
 
