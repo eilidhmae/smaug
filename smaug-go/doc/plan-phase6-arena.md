@@ -2,7 +2,7 @@
 
 **Status:** Planned (2026-04-18). Adversary-verified: to be filled after plan adversary pass.
 **Priority:** First-cut of Phase 6 (Wave 1). Smallest surface, all primitives already shipped.
-**Scope:** New files `internal/act/arena.go` + `internal/act/arena_test.go`, `internal/testclient/arena_test.go`. Modifications to `internal/types/pcdata.go` (`Akills` / `Adeaths` fields), `internal/types/constants.go` (`ROOM_VNUM_ARENA_MIN` / `MAX`, `ROOM_VNUM_ALTAR`), `internal/boot/boot.go` (command registration + arena-state var seam), `internal/persist/player.go` (persist `Akills` / `Adeaths`), `internal/combat/combat.go` (arena-victory branch in `Damage` or `rawKill`), `internal/game/update.go` (challenge-timeout tick). No new package.
+**Scope:** New files `internal/act/arena.go` + `internal/act/arena_test.go`, `internal/testclient/arena_test.go`. Modifications to `internal/types/pcdata.go` (`Akills` / `Adeaths` fields), `internal/types/constants.go` (add `ROOM_VNUM_ARENA_MIN` / `MAX` — `ROOM_VNUM_ALTAR` already present at L433), `internal/types/enums.go` (add `TIMER_CHALLENGE` at tag 8), `internal/boot/boot.go` (command registration + arena-state var seam), `internal/persist/player.go` (persist `Akills` / `Adeaths`), `internal/combat/combat.go` (arena-victory branch in `Damage` or `rawKill`), `internal/game/update.go` (challenge-timeout tick). No new package.
 
 ---
 
@@ -187,7 +187,7 @@ Verified 2026-04-18 against `internal/` tree.
 - **Flags:** `types.ACT_CHALLENGED = 44`, `types.ACT_CHALLENGER = 45` (`types/constants.go:482-483`). Defined; zero readers / zero writers.
 - **Room flag:** `types.ROOM_ARENA` (`types/enums.go:721`). Defined; zero readers.
 - **PCData fields:** `Akills int`, `Adeaths int` — **absent** (verified via grep in `types/pcdata.go`). Other kill-tracking fields (`PKills`, `PDeaths`, `MKills`, `MDeaths`) present.
-- **Room vnums:** `ROOM_VNUM_ARENA_MIN` / `ROOM_VNUM_ARENA_MAX` / `ROOM_VNUM_ALTAR` — none present in Go constants. `ROOM_VNUM_TEMPLE` is (already used by multiple subsystems).
+- **Room vnums:** `ROOM_VNUM_ARENA_MIN` / `ROOM_VNUM_ARENA_MAX` — not present in Go constants. `ROOM_VNUM_TEMPLE = 21001` and `ROOM_VNUM_ALTAR = 21194` are already defined at `types/constants.go:432-433` (audit 2026-04-18 correction — both altar and temple vnums already shipped; only the ARENA_MIN/MAX pair must be added).
 - **Commands:** no `DoChallenge` / `DoAccept` / `DoDecline` / `DoWithdraw` registered. No arena file exists under `internal/act/`.
 - **Combat victory hook:** `combat.Damage` has no arena branch. The death path in `internal/combat/combat.go:rawKill` (or equivalent) handles corpse + XP + extract — arena needs to intercept BEFORE that.
 - **Tick-timeout:** `internal/game/update.go:charUpdate` has no arena-timeout block. Challenge countdown needs integrating.
@@ -215,7 +215,7 @@ var arenaState struct {
 
 *Note:* package-level state mirrors the C `is_challenge` / `arena_is_busy` globals. Tests save/restore via a helper. This matches the pattern used by `internal/combat/stance_index.go` (package var with defaults) and the `DescRegistry` init in Tier 9 channels.
 
-**Per-player challenge timer** — use the shipped `handler.AddTimer(ch, TIMER_CHALLENGE, 5, 0, "")`. New timer-type constant `TIMER_CHALLENGE = 7` (next available slot — check `types/enums.go` for next unused tag; current tags 0-6 used by RECENTFIGHT, ASUPRESSED, DO_FUN, PKILLED, NUISANCE, SHOVEDRAG, plus one I need to verify). At expiry (via `handler.DecrementTimers`, which drops expired timers silently — per Tranche B design), the challenger's `ACT_CHALLENGER` bit is cleared AND a message is sent.
+**Per-player challenge timer** — use the shipped `handler.AddTimer(ch, TIMER_CHALLENGE, 5, "", 0)`. Signature is `AddTimer(ch *CharData, tType, count int, doFun string, value int)` per `internal/handler/timer.go:53` — doFun comes BEFORE value. New timer-type constant `TIMER_CHALLENGE = 8` (next available slot — audit 2026-04-18 confirmed `types/enums.go:897-906` currently defines TIMER_NONE=0, TIMER_RECENTFIGHT=1, TIMER_SHOVEDRAG=2, TIMER_DO_FUN=3, TIMER_APPLIED=4, TIMER_PKILLED=5, TIMER_ASUPRESSED=6, TIMER_NUISANCE=7). At expiry (via `handler.DecrementTimers`, which drops expired timers silently — per Tranche B design), the challenger's `ACT_CHALLENGER` bit is cleared AND a message is sent.
 
 *But* `DecrementTimers` does NOT currently dispatch on expiry except for `TIMER_DO_FUN`. To clear `ACT_CHALLENGER` on expiry, one of:
 
@@ -247,7 +247,7 @@ All tasks include the TDD mandate and the mutation-verify expectation. Mutation 
 
 **Files:**
 - Modified: `internal/types/pcdata.go` (add `Akills int`, `Adeaths int` after `PKills`/`PDeaths`/`MKills`/`MDeaths`).
-- Modified: `internal/types/constants.go` (add `ROOM_VNUM_ARENA_MIN = 10366`, `ROOM_VNUM_ARENA_MAX = 10382`, `ROOM_VNUM_ALTAR = <vnum>` — confirm altar vnum against `src/mud.h`; likely 3000 or similar).
+- Modified: `internal/types/constants.go` (add `ROOM_VNUM_ARENA_MIN = 10366`, `ROOM_VNUM_ARENA_MAX = 10382`). `ROOM_VNUM_ALTAR = 21194` already present at L433 — do not re-declare.
 - Modified: `internal/types/enums.go` (add `TIMER_CHALLENGE` at next unused tag).
 - Modified: `internal/persist/player.go` (append `Akills` and `Adeaths` to `SavePlayer` write path + `LoadPlayer` read path using C key names `Akills` / `Adeaths`).
 
@@ -329,7 +329,7 @@ func DoChallenge(ch *types.CharData, argument string) {
     ch.Sendf("\n\rIf they do not accept it will be automatically withdrawn from %s.\n\r", ch.Name)
     util.Act(types.AT_RED, "You have been challenged by $n.", ch, victim, nil, nil, types.TO_VICT)
     victim.Sendf("Type accept %s to accept or decline %s to decline.\n\r", ch.Name, ch.Name)
-    handler.AddTimer(ch, types.TIMER_CHALLENGE, 5, 0, "")
+    handler.AddTimer(ch, types.TIMER_CHALLENGE, 5, "", 0)
     arenaState.isChallenge = true
 }
 ```
@@ -496,7 +496,12 @@ func ArenaVictoryCheck(ch, victim *types.CharData) bool {
         p.Act.Remove(types.ACT_CHALLENGED)
         p.Act.Remove(types.PLR_SILENCE)
     }
-    act.SetArenaIsBusy(false)
+    // Clear arena-busy state via the ArenaIsBusyFunc hook (wired at boot to
+    // act.SetArenaIsBusy). Direct import of `act` would create a cycle; see
+    // Seams paragraph below.
+    if ArenaIsBusyFunc != nil {
+        ArenaIsBusyFunc(false)
+    }
     return true
 }
 

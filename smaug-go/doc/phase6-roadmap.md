@@ -104,7 +104,7 @@ Each entry: scope description + ordering rationale + dependencies + proposed pla
 #### Starmaps — `plan-phase6-starmap.md`
 
 - **Scope:** `look sky` port — pure-render terminal image of sun/moon/constellations driven by `time_info.hour`/`.day`/`.month` and `weather.precip`. No persistence; no player mutation.
-- **Key C sources:** `src/starmap.c:87-226` (`look_sky`). One function call-site in `src/act_info.c:1498` already has a Go stub in `internal/act/info.go` (the current Go `DoLook sky` branch falls through to the generic `DoWeather` — no sky map). No new entry points.
+- **Key C sources:** `src/starmap.c:87-226` (`look_sky`). One call-site in `src/act_info.c:1498` — the C `do_look` dispatches to `look_sky(ch)` when the outdoor player types `look sky`. The current Go `DoLook` (`internal/act/info.go:21-99`) has **no `sky` branch at all** — typing `look sky` falls through to the generic "You do not see that here." path. A new `case strings.EqualFold(arg, "sky"):` branch in `DoLook` plus a new `LookSky(ch)` function are the entry points this plan must add. No reuse of `DoWeather` — that command only describes weather, not constellations.
 - **Dependencies:** `types.TimeInfoData` (shipped), `weather.precip` (shipped). Constellation ANSI color codes (shipped).
 - **Ordering:** Second-smallest; excellent "warm-up" for a manager lineage new to the codebase.
 
@@ -117,30 +117,30 @@ Each entry: scope description + ordering rationale + dependencies + proposed pla
 
 #### Marriage — `plan-phase6-marriage.md`
 
-- **Scope:** 3 immortal commands: `marry <p1> <p2>`, `divorce <p1> <p2>`, `rings <p1> <p2>` (creates a wedding-ring object). Adds `PCData.Spouse string` field + persistence. The C source has commented-out level-10-minimum check at `src/marry.c:128-132` — decide whether to keep it.
+- **Scope:** 3 immortal commands: `marry <p1> <p2>`, `divorce <p1> <p2>`, `rings <p1> <p2>` (creates a wedding-ring object). Canonicalises on the already-defined `CharData.Spouse string` field (`character.go:212`, read by LoadPlayer) and removes the orphan `PCData.Spouse` duplicate; adds the matching `SavePlayer` writer that C has but Go lacks. C has a commented-out level-10-minimum check at `src/marry.c:128-132` — Marriage plan resolved Q1 as omit (structurally unreachable).
 - **Key C sources:** `src/marry.c:79-362`. `#ifdef MARRIAGE` gated in C; port unconditionally.
-- **Dependencies:** `PCData` schema extension — new `Spouse` field + persist load/save. `OBJ_VNUM_DIAMOND_RING` / `OBJ_VNUM_STEEL_RING` object vnums (need to exist in area data; check first — some MUDs ship these, some don't).
-- **Ordering:** After Holidays. PCData field addition is a minor schema change; bundle with any other PCData touches.
+- **Dependencies:** Both `CharData.Spouse` (canonical, read by LoadPlayer at `persist/player.go:285`) and `PCData.Spouse` (orphan, never read/written) are defined today; the marriage plan's G0 removes the orphan and G0b adds the missing SavePlayer writer. Ring vnums in C are `OBJ_VNUM_DIAMOND_RING = 100` and `OBJ_VNUM_WEDDING_BAND = 101` (`src/mud.h:2071-2072`). **Earlier roadmap text said `STEEL_RING` — that was wrong; corrected 2026-04-18.** Neither vnum is present in shipped `.are` files — Marriage plan Open Question 2.
+- **Ordering:** After Holidays. Orphan-field cleanup + SavePlayer writer + new commands; no net new schema additions.
 
 #### Planes — `plan-phase6-planes.md`
 
-- **Scope:** `do_plist` / `do_pstat` / `do_pset` commands. `PLANE_DATA` list with name-only payload (298 C LOC, most of which is banner + whitespace — actual code is ~150 LOC). Rooms get a `room.Plane` back-reference. `check_planes` assigns plane to any orphan room.
+- **Scope:** `do_plist` / `do_pstat` / `do_pset` commands. `PLANE_DATA` list with name-only payload (298 C LOC, most of which is banner + whitespace — actual code is ~150 LOC). The `room.Plane` back-reference already exists as a struct field (`types/room.go:26`); this plan populates it via the planes loader and `check_planes` orphan-assignment.
 - **Key C sources:** `src/planes.c:51-298`.
-- **Dependencies:** `RoomIndexData.Plane *PlaneData` (field missing). Persistence at `system/planes.dat`.
+- **Dependencies:** `RoomIndexData.Plane *PlaneData` is already present at `internal/types/room.go:26`; `PlaneData` struct is defined at `room.go:112` (audit 2026-04-18). Persistence at `system/planes.dat` still to wire.
 - **Ordering:** Low priority — feature is essentially cosmetic (named groupings of rooms). Ship when building-tool completeness pressure appears.
 
 #### Polymorph — `plan-phase6-polymorph.md`
 
 - **Scope:** `MORPH_DATA` struct + per-morph stat overrides (hp / mana / move / hitroll / damroll as DiceString). `do_morph` / `do_unmorph` / `do_morphset` / `do_morphstat` / `do_morphcreate` / `do_morphdestroy` commands. Mudprog `mpmorph` / `mpunmorph` — hook points landed, bodies not. Combat hooks (stat application on morph, removal on unmorph). Persistence of morph table + per-player current morph state.
 - **Key C sources:** `src/polymorph.c:72-2753`. `MORPH_DATA` defined in `src/mud.h`.
-- **Dependencies:** `CharData.Morph *MorphData` field (some fields stubbed; full schema missing). `Morph` table (new loader, new file). Stat-override application path in combat (new hook in `handler.AffectModify` or equivalent).
+- **Dependencies:** `CharData.Morph` is already `*CharMorph` at `internal/types/character.go:66`; `MorphData` (the template struct) is fully defined at `character.go:306` with all C fields present. **Schema is done; no struct additions needed.** `Morph` table (new loader, new file). Stat-override application path in combat (new hook in `handler.AffectModify` or equivalent). Per-player current-morph persistence (new `#MORPH` block in playerfile).
 - **Ordering:** Mid-Phase-6. Polymorph is a canonical SMAUG feature but high scope; ship after hotboot and arena.
 
 #### Archery — `plan-phase6-archery.md`
 
-- **Scope:** New `WEAR_MISSILE_WIELD` slot + `WEAR_LODGE_RIB` / `WEAR_LODGE_ARM` / `WEAR_LODGE_LEG` slots. Quiver container + projectile item type. `do_draw` / `do_fire` / `do_dislodge` commands. Ranged hit-roll path. Arrow-lodges-in-victim mechanic.
+- **Scope:** New `WEAR_LODGE_RIB` / `WEAR_LODGE_ARM` / `WEAR_LODGE_LEG` slots (arrow-lodge-in-victim); `WEAR_MISSILE_WIELD`, `ITEM_PROJECTILE`, `ITEM_QUIVER` already defined in Go (audit 2026-04-18). `do_draw` / `do_fire` / `do_dislodge` commands. Ranged hit-roll path. Arrow-lodges-in-victim mechanic.
 - **Key C sources:** `src/archery.c:125-1362`. Entry points `do_draw` / `do_dislodge` / `do_fire` cited above. `do_fire` is currently aliased to `do_throw` in Go.
-- **Dependencies:** WEAR_* slot enum extension (types/enums.go). Item type additions (projectile, quiver). Combat loop hook for ranged attack (need to verify if Go's `OneHit` has a WEAR_MISSILE_WIELD path — probably doesn't).
+- **Dependencies:** WEAR_* slot enum extension (`internal/types/enums.go`) — `WEAR_MISSILE_WIELD = 21` already exists (audit 2026-04-18); need to add `WEAR_LODGE_RIB` / `WEAR_LODGE_ARM` / `WEAR_LODGE_LEG` (C `src/mud.h:2448-2450`, gated behind `#ifdef ENABLE_ARCHERY`). **Item types are already present**: `ITEM_PROJECTILE` and `ITEM_QUIVER` at `enums.go:629-630`. Combat loop hook for ranged attack (need to verify if Go's `OneHit` has a WEAR_MISSILE_WIELD path — probably doesn't).
 - **Ordering:** Mid-Phase-6, after polymorph. Cross-cutting change to `types/` and combat.
 
 #### Housing — `plan-phase6-housing.md`
@@ -152,7 +152,7 @@ Each entry: scope description + ordering rationale + dependencies + proposed pla
 
 #### Dragon flight — `plan-phase6-dragonflight.md`
 
-- **Scope:** `do_call` / `do_release` / `do_fly` / `do_land` / `do_landing_sites` / `do_setlanding` commands. NPC dragon paired with a PC rider; coordinate-based movement across overland map. Uses `ch->map` / `ch->x` / `ch->y` fields (currently unset in Go — Overland not shipped).
+- **Scope:** `do_call` / `do_release` / `do_fly` / `do_land` / `do_landing_sites` / `do_setlanding` commands. NPC dragon paired with a PC rider; coordinate-based movement across overland map. Uses `ch->map` / `ch->x` / `ch->y` fields. **Go-state correction (2026-04-18):** the coordinate fields (`X`, `Y`, `Map`, `Sector`) already exist on `CharData` at `internal/types/character.go:226-229`; what's unset is their *population* (no overland loader, no sector-type lookup, no `get_terrain` equivalent). Shipping dragonflight still requires Overland first, but for the structural reason (no map data to move through), not for the schema reason.
 - **Key C sources:** `src/dragonflight.c:359-945`.
 - **Dependencies:** **Overland maps** (hard blocker — every dragonflight command reads `ch->map`).
 - **Ordering:** **Cannot start until Overland lands.** Parallelize design work with Overland implementation but do not dispatch a dragonflight execution plan until Overland has shipped.
@@ -161,7 +161,7 @@ Each entry: scope description + ordering rationale + dependencies + proposed pla
 
 - **Scope:** 3x 1000x1000 sector map files (`map1.raw` / `map2.raw` / `map3.raw`). `ENTRANCE_DATA` / `LANDMARK_DATA` / `MAPRESET_DATA` load+save. `do_survey` / `do_coords` / `do_landmarks` / `do_setmark` / `do_setexit` / `do_mapresets` / `do_mreset` / `do_mapedit`. Sector-type lookup. ANSI rendering of a view window around the player.
 - **Key C sources:** `src/overland.c:839-3363`. 3752 C LOC — the single largest game system left.
-- **Dependencies:** `CharData.Map`/`X`/`Y` schema extension. New raw-binary file format for maps (NOT the text `.are` format — fixed-size sector byte per tile). Compatibility with existing `db/maps/` data if present.
+- **Dependencies:** `CharData.Map`/`X`/`Y`/`Sector` schema fields are already present at `internal/types/character.go:226-229` (audit 2026-04-18). What's missing is the population layer: a new raw-binary file format for maps (NOT the text `.are` format — fixed-size sector byte per tile), `get_terrain`/`map_names`/sector-type lookup, and the set of `do_survey` / `do_coords` / etc. commands. Compatibility with existing `db/maps/` data if present.
 - **Ordering:** Late Phase-6. Blocks Dragonflight. Consider splitting into two plans (loader + display, then editor+reset).
 
 ### OLC / builder
@@ -190,7 +190,7 @@ Each entry: scope description + ordering rationale + dependencies + proposed pla
 #### Full `do_auction` state machine — `plan-phase6-auction.md`
 
 - **Scope:** `DoAuction <item>` start auction; `DoAuction bid <price>` / `stop` / `list`. Item escrow during auction. Gold transfer. Per-pulse tick in `update.go` to advance auction phases. `BroadcastAuction` helper already shipped (Tier 9).
-- **Key C sources:** `src/act_obj.c:3775+`, `src/update.c:2886-3286`.
+- **Key C sources:** `src/act_obj.c:3775+` (the `#else` branch `do_auction` — non-gold-silver-copper variant), `src/update.c:2927-3286` (`auction_update` at line 2927 under `#ifdef ENABLE_GOLD_SILVER_COPPER`; the non-GSC `auction_update` starts at line 3183). **Audit note (2026-04-18):** the earlier citation `update.c:2886-3286` was mid-function inside `reboot_update`; corrected to the actual `auction_update` start.
 - **Dependencies:** `BroadcastAuction` (shipped). `update.go` auction tick slot (new).
 - **Ordering:** After any of the big game systems land. Small-to-medium scope.
 
@@ -265,20 +265,22 @@ Rationale: Hotboot's design pass must start early (it influences every other sta
 
 Each wave's items are independent. Within a wave, assign one item per manager lineage; the orchestrator can fan out multiple managers in parallel.
 
+**Soft-shared footprint within Wave 1 (audit note 2026-04-18):** every Wave 1 plan registers new commands in `internal/boot/boot.go`. These are additive, one-line-per-command registrations, so N-way parallel merges converge cleanly in practice — but the orchestrator should sequence merges serially (not concurrent writes to the same file) to avoid conflict artifacts. Starmap is the only Wave 1 item that modifies an *existing* file beyond boot-registration (it adds a `sky` branch to `DoLook` in `internal/act/info.go`); no other Wave 1 item touches `info.go`, so this is safe.
+
 ---
 
 ## Gaps in the Existing Go Port Relevant to Phase 6
 
-1. **No `OwnedBy` room ownership model** — housing needs per-room "owner player name" or equivalent. Current `RoomIndexData` has no such field.
-2. **No `Morph` field on `CharData`** — `ch.Morph *MorphData` needs adding.
-3. **No `Map` / `X` / `Y` coordinate fields on `CharData`** — overland and dragonflight both need these. Currently `CharData` is strictly room-based.
-4. **No `Plane` back-reference on `RoomIndexData`** — planes needs this.
-5. **No `Spouse` field on `PCData`** — marriage needs this.
+1. **No `OwnedBy` room ownership model** — housing needs per-room "owner player name" or equivalent. Current `RoomIndexData` has no such field. (Confirmed 2026-04-18 audit.)
+2. ~~No `Morph` field on `CharData`~~ **Correction (2026-04-18 audit):** `Morph *CharMorph` is already present at `internal/types/character.go:66`. The `MorphData` struct (morph template) is defined at `character.go:306` with 30+ fields including Name, ShortDesc, LongDesc, Damroll, Hit, Hitroll, Mana, Move, AffectedBy, Class, Race, Obj[3], Vnum, etc. The schema scaffolding is in place; what's missing is the Morph-table loader/saver, the command set (`do_morph` / `do_unmorph` / `do_morphset` / etc.), the `affect_modify`-style stat application path, and the mudprog `mpmorph` / `mpunmorph` bodies.
+3. ~~No `Map` / `X` / `Y` coordinate fields on `CharData`~~ **Correction (2026-04-18 audit):** `CharData` already has `X`, `Y`, `Map`, `Sector int` fields at `internal/types/character.go:226-229` under the `// Overland` comment, plus `MapData *MapData` on `RoomIndexData` at `room.go:25`. The field schema is in place; what's missing is the overland loader, renderer, and command set.
+4. ~~No `Plane` back-reference on `RoomIndexData`~~ **Correction (2026-04-18 audit):** `Plane *PlaneData` is already present at `internal/types/room.go:26`, and `PlaneData` struct is defined at `room.go:112`. What's missing is the planes loader, the command set (`do_plist` / `do_pstat` / `do_pset`), and `check_planes` wiring.
+5. ~~No `Spouse` field on `PCData`~~ **Correction (2026-04-18 audit):** `PCData.Spouse string` is already present at `internal/types/pcdata.go:130`. What's missing is the command set (`do_marry` / `do_divorce` / `do_rings`), persistence emit/read for the field in `SavePlayer`/`LoadPlayer`, and the wedding-ring object vnum constants.
 6. **`act.WorldRef` singleton pattern** — works for the current scope but hotboot's world-save path must serialize through this or take the world explicitly. Some current callers would need a refactor. Auditable during hotboot design pass.
 7. **No `month_name[]` equivalent in Go** — holidays needs this (also nice-to-have for `DoTime`).
-8. **Nanny dispatch has no `CON_OEDIT` / `CON_MEDIT` / `CON_REDIT` branches** — `internal/game/loop.go:261` handles `CON_EDITING` only. Enum slots `CON_OEDIT` (80) / `CON_MEDIT` (91) / `CON_REDIT` (89) are DEFINED in `types/enums.go` but the switch never dispatches them.
-9. **No WEAR_MISSILE_WIELD / WEAR_LODGE_*** slots** — archery-only concern.
-10. **No new-item-type slots for quivers / projectiles** — archery-only concern.
+8. **Nanny dispatch has no `CON_OEDIT` / `CON_MEDIT` / `CON_REDIT` branches** — `internal/game/loop.go:261` is the `CON_EDITING` case; the dispatch-input switch only has `CON_PLAYING` and `CON_EDITING` arms with a `default: g.nanny(d, line)` fallthrough. The constants `CON_REDIT`, `CON_OEDIT`, `CON_MEDIT` are DEFINED in `types/enums.go:89-91` (iota-assigned values 21/22/23) but the input-dispatch switch has no cases for them, so menu-state input never reaches a dedicated handler.
+9. **No WEAR_LODGE_RIB / WEAR_LODGE_ARM / WEAR_LODGE_LEG slots in Go** — archery-only concern. Note: `WEAR_MISSILE_WIELD` (value 21) IS already defined at `types/enums.go:787`; only the three arrow-lodged-in-victim slots are missing. In C these three slots live behind `#ifdef ENABLE_ARCHERY` at `src/mud.h:2448-2450`.
+10. ~~No new-item-type slots for quivers / projectiles~~ **Correction (2026-04-18 audit):** `ITEM_PROJECTILE` and `ITEM_QUIVER` are already defined at `types/enums.go:629-630`. No new item-type constants are needed for archery — only the C-side behavior (ammunition tracking, quiver autoload) remains to port.
 11. **No raw-binary file format in `persist/`** — Scanner is line-oriented text. Overland maps are raw binary. Needs a new loader shape.
 12. **No hotboot-capable graceful shutdown path** — `net/server.go` tears down all connections on shutdown. Hotboot needs a different path that preserves sockets.
 
@@ -301,13 +303,13 @@ None of these gaps block Wave 0-1. Each is a per-feature prerequisite that the r
 - Combat stances OLC (needs `StanceInfo` extension)
 - Full auction state machine (needs `update.go` hook)
 - Interactive OLC substates (needs nanny dispatch; per-editor ~1k Go LOC)
-- Polymorph (needs `Morph` field + combat hook)
-- Archery (needs WEAR slots + item types + combat hook)
+- Polymorph (`Morph` field already present; needs Morph-table loader + combat stat-application hook + command set)
+- Archery (needs `WEAR_LODGE_*` slots; `WEAR_MISSILE_WIELD`, `ITEM_PROJECTILE`, `ITEM_QUIVER` already defined; needs combat ranged-attack hook)
 - Clan officer commands (needs SaveClan)
 
 **High risk (invasive / protocol-cross-cutting):**
 - **Hotboot** — C design not portable; requires fresh design pass. Risk: picking the wrong design wastes significant implementation work.
-- **Overland** — 3752 C LOC, new binary file format, new coordinate fields on CharData, plus sector-type cross-compatibility. Multiple plan docs may be required.
+- **Overland** — 3752 C LOC, new binary file format, plus sector-type cross-compatibility. (Coordinate fields `X`/`Y`/`Map`/`Sector` already defined on `CharData` — the large surface is the loader + renderer + command set + map editor, not the schema.) Multiple plan docs may be required.
 - **Housing** — 2853 C LOC, new persistence schema, interacts with every room-ownership path. Invasive.
 
 **Dragonflight** is medium-scope (945 LOC) but high-risk *because it blocks on Overland*. Slip in Overland slips Dragonflight.

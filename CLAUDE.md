@@ -52,9 +52,19 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 16 (Tranche B — stances loader + DoMset stance branch + TIMER_DO_FUN callback registry + 7 mudprog if-checks + wordlist match + Oprog/Rprog CMD port) | `plan-tranche-b.md` (plan + completion) | — |
 | 5 Tier 17 (Tranche C — quality/fidelity: `util.Act` per-call AType color + 33-site migration, `update_aris` audit correction, `PLR_BLANK` blank-line emission, XP-on-skill-gain + adept-cap message) | `plan-tranche-c.md` (plan + completion) | — |
 
-**Phase 5 is complete (2026-04-18).** All 17 tiers + Tranches A/B/C landed; last commit `26db5f9`. **Phase 6 planning begun 2026-04-18** — see `smaug-go/doc/phase6-roadmap.md` for the full candidate inventory, dependency graph, and recommended 6-wave execution order. First executable plan: `plan-phase6-arena.md` (Arena PvP, 7 task groups, 15 acceptance criteria).
+**Phase 5 is complete (2026-04-18).** All 17 tiers + Tranches A/B/C landed; last commit `26db5f9`. **Phase 6 planning underway** — see `smaug-go/doc/phase6-roadmap.md` for the full candidate inventory, dependency graph, and recommended 6-wave execution order. The roadmap was externally audited 2026-04-18; 21 factual corrections applied (several "missing schema" claims were wrong — `MorphData`, `CharData.X/Y/Map/Sector`, `RoomIndexData.Plane`, `WEAR_MISSILE_WIELD`, `ITEM_PROJECTILE/QUIVER` are already defined).
 
-**Remaining Phase-6 prerequisites:** none blocking Wave 1. Small follow-up items in `TODO.md` Active — deferred mudprog ifchecks (`isflagged`/`istagged`, pending variable subsystem), per-player color customization, `DoBlank` toggle, `DoConfig` surface.
+**Phase 6 plans authored (pending external adversary review before execution):**
+
+| Plan | Status | Scope |
+|---|---|---|
+| `plan-phase6-arena.md` | audited 2026-04-18 | Arena PvP — 7 groups, 15 criteria. Open Q6 (ROOM_ARENA area-data flag absent on vnums 10366-10382) is a confirmed prereq. |
+| `plan-phase6-hotboot.md` | design-exploration only | Wave 0 design doc (not executable). Two Go designs evaluated with PoCs in `/tmp/` (both PASS). Recommends Design A (`syscall.Exec` + FD inheritance, ~65ms pause, seamless). Executable rewrite follows after Open-Q1 (Windows support) resolves. |
+| `plan-phase6-starmap.md` | authored | `look sky` port — 3 groups, 13 criteria. Constellation table preserved verbatim from C. |
+| `plan-phase6-holidays.md` | authored | Holiday CRUD + persistence + `month_name[]` port — 4 groups, 13 criteria. Fixes 2 latent C bugs (day/month `<=1` rejection; 1-indexed file format). |
+| `plan-phase6-marriage.md` | authored | marry/divorce/rings — 7 groups, 12 criteria. Cleans up `PCData.Spouse` orphan; fixes `SavePlayer` Spouse asymmetry. 4 open questions pending human input. |
+
+**Remaining Phase-6 prerequisites:** none blocking Wave 1. All 5 authored plans lack independent-adversary passes (manager subagents in this environment have no `Agent` tool for dispatching adversaries — self-review substituted). Small follow-up items in `TODO.md` Active — deferred mudprog ifchecks (`isflagged`/`istagged`), per-player color customization, `DoBlank` toggle, `DoConfig` surface.
 
 **Reviews:**
 

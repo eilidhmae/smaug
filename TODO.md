@@ -140,6 +140,13 @@ Follow-ups queued from plan-dammessage-gaps.md:
 ### Documentation correction
 
 - [ ] Reconcile test-count methodology across tier docs (Tier 3 reports 2,205; Tier 4 reports 1,914; actual `func Test*` is 1,962). Pick one methodology, annotate.
+- [ ] Re-verify unclosed factual scope brackets in `phase6-roadmap.md`: the citations `src/overland.c:839-3363`, `src/stances.c:199-1022`, `src/house.c:60-2853` use a start-line that isn't always a function boundary. Low priority — these are "read this region" brackets, not precise entry points.
+- [ ] Cleanup: remove orphan `ObjData.ExtraDescr2 string` at `internal/types/object.go:62` (marked as "Marriage extra descr" in comment but Marriage plan uses `ExtraDescr []*ExtraDescrData` instead, matching C's linked-list shape).
+- [ ] Follow-up (deferred by plan-phase6-holidays.md): `DoTime` calendar styling upgrade — switch to `"the Month of %s"` with `types.MonthName(TimeInfo.Month)`. ~10-line change in `internal/act/info2.go:95-126`.
+- [ ] Follow-up (deferred): `DoLoad <subsystem>` umbrella admin command. C has it at `src/act_wiz.c`; Go port has no equivalent. Low priority — boot-time reload via restart covers most cases.
+- [ ] Follow-up (deferred): `DoCset` admin command to tune `SysData.MaxHoliday` / `DaysPerMonth` / `MonthsPerYear` at runtime. C has `src/act_wiz.c:8141-8146`. Holidays plan hard-codes `MaxHoliday=32` default; `DoCset` lands with a future sysdata-loader plan.
+- [ ] Follow-up (deferred): `LoadSysdata`/`SaveSysdata` — port `db/system/sysdata.dat` loader. Separate plan when pressure arrives.
+- [ ] Cleanup scheduled: `/tmp/hotboot-poc-a/` and `/tmp/hotboot-poc-b/` throwaway PoCs. Remove after the hotboot executable plan re-verifies PoC outcomes and its first integration test lands green.
 - [x] `game/prompt.go:63` — wire XP-to-next-level into `%x` / `%X` tokens. **LANDED 2026-04-18 (Tranche A item 3).** `%x` already printed current Exp; `%X` was the stubbed-zero — now returns `exp_level(ch, level+1) - ch.Exp` via a new `game.PromptExpBase` seam (wired in boot from `w.Classes[ch.Class].ExpBase`; NPCs use 1000 per C `handler.c:107-112`). Clamped non-negative. Seam + clamp + boot-wire tests in `internal/game/prompt_test.go` and `internal/boot/boot_test.go`.
 
 ---
@@ -148,31 +155,43 @@ Follow-ups queued from plan-dammessage-gaps.md:
 
 **Phase 6 planning begun 2026-04-18 — see `smaug-go/doc/phase6-roadmap.md`** for the full inventory, dependency graph, risk matrix, and recommended 6-wave execution order. First executable plan: `plan-phase6-arena.md`. All other systems below have proposed plan-doc filenames queued in the roadmap's § Cross-Plan Dependencies table.
 
-**Immediate adversary-review follow-ups:**
-- [ ] Dispatch external adversary review of `phase6-roadmap.md` — verify C-LOC counts, "unblocked by X" claims, dependency graph, ordering-rationale soundness, risk-tier assignments.
-- [ ] Dispatch external adversary review of `plan-phase6-arena.md` — verify C line citations, Go-current-state facts, seam feasibility (`combat.ArenaIsBusyFunc` / `DoLookFunc`), `gsnPoison`/`gsnBlindness`/`gsnSleep`/`gsnCurse` resolution plan, the 7 open questions, and `ROOM_ARENA` area-data-edit requirement (`db/area/newacad.are` vnums 10366-10382 may need `ROOM_ARENA` flag).
+**Status of authored Phase-6 plans (Wave A landed 2026-04-18):**
+- [x] Phase 6 roadmap — audited 2026-04-18 via `audit-roadmap` lineage; 21 factual corrections applied (several "missing schema" claims were wrong — `MorphData`/`CharData.X/Y/Map/Sector`/`RoomIndexData.Plane`/`PCData.Spouse`/`ITEM_PROJECTILE/QUIVER`/`WEAR_MISSILE_WIELD` are already defined).
+- [x] `plan-phase6-arena.md` — drafted + audited 2026-04-18 via `audit-arena` lineage; 6 fact corrections applied. Open Q6 (ROOM_ARENA flag absence on vnums 10366-10382) confirmed — prereq area-data edit required.
+- [x] `plan-phase6-hotboot.md` — drafted 2026-04-18 as DESIGN-EXPLORATION (not executable). Two PoCs in `/tmp/` both PASS; recommends Design A (syscall.Exec + FD inheritance, seamless ~65ms pause).
+- [x] `plan-phase6-starmap.md` — drafted 2026-04-18. 3 task groups, 13 acceptance criteria.
+- [x] `plan-phase6-holidays.md` — drafted 2026-04-18. 4 task groups, 13 acceptance criteria. Fixes 2 latent C bugs.
+- [x] `plan-phase6-marriage.md` — drafted 2026-04-18. 7 task groups, 12 acceptance criteria. Discovered `PCData.Spouse` orphan; `SavePlayer` Spouse asymmetry.
+
+**Open items blocking Wave-A plan execution:**
+- [ ] External adversary pass on each of the 5 authored plans. All Wave A managers lacked the `Agent` tool in their subagent harness — self-reviews substituted, but independent adversary verification hasn't happened. This is also a tooling-environment issue to investigate (see adversary-dispatch follow-up below).
+- [ ] Resolve `plan-phase6-hotboot.md` Open Question 1 (Windows support) — Design A is Linux/macOS only; a Windows build adds Design B fallback behind `//go:build windows` and roughly doubles implementation cost. Human decision needed before executable-hotboot rewrite.
+- [ ] Resolve `plan-phase6-marriage.md` Open Question 2 — ring prototypes (vnum 100 / 101) absent from shipped `.are` files. Option A: edit `db/area/Build.are`. Option B: Go-side fallback prototype in `DoRings`. Option C: error-only. Plan recommends A if area-data edits in scope.
+- [ ] Resolve `plan-phase6-marriage.md` Q3-Q5 (C-bug policy, one-ring anomaly, message-typo policy) — plan has recommendations; human confirmation preferred.
+- [ ] Resolve `plan-phase6-arena.md` Open Questions 1-7 — Q3 (arena-room selection filter), Q4 (challenge command level), Q6 (ROOM_ARENA flag) are the highest-priority before worker dispatch.
+- [ ] Investigate manager-harness `Agent` tool availability: the manager.md spec lists `Agent` in its `tools:` block, but every Wave A manager reported the tool was absent from its actual function set. Either (a) ensure `Agent` is always available to manager subagents, or (b) formalize "self-verification" as an acceptable fallback with explicit flag in the completion report.
 
 ### Infrastructure
 
-- [ ] **Hotboot / copyover** (854 C LOC) — design-pass plan required FIRST (`plan-phase6-hotboot.md` design variant); executable plan follows. Go design differs materially from C. C ref: `src/hotboot.c`.
+- [ ] **Hotboot / copyover** (854 C LOC) — design doc landed 2026-04-18 (`plan-phase6-hotboot.md`). Executable plan is a follow-up rewrite once adversary-reviewed and Open-Q1 resolves. C ref: `src/hotboot.c`.
 - [ ] DNS resolution — `net.LookupAddr` for host display (out of Phase 6)
 - [ ] Web status page — embedded HTTP server (out of Phase 6)
 - [ ] MXP protocol parsing — C `protocol.c` has it; Go has no equivalent (out of Phase 6)
 
 ### Game systems
 
-- [ ] **Arena PvP** (358 C LOC) — `plan-phase6-arena.md` drafted, awaiting external adversary pass. Challenge / accept / decline / withdraw + teleport + victory branch.
-- [ ] **Star maps** (226 C LOC) — `plan-phase6-starmap.md` to draft. Pure render over shared constellation data. Smallest unblocked item.
-- [ ] **Planes** (298 C LOC) — `plan-phase6-planes.md` to draft. Needs `RoomIndexData.Plane` back-ref.
-- [ ] **Holidays** (416 C LOC) — `plan-phase6-holidays.md` to draft. Bundles `month_name[]` util.
-- [ ] **Marriage** (362 C LOC) — `plan-phase6-marriage.md` to draft. Needs `PCData.Spouse`.
-- [ ] **Combat stances OLC** — `plan-phase6-stances-olc.md` to draft. Full `do_stset` + `StanceInfo` struct extension + persistence. Tranche B G1 loader already read-and-discards non-combat fields.
-- [ ] **Full `do_auction` state machine** — `plan-phase6-auction.md` to draft. Bounded scope; `BroadcastAuction` helper already shipped via Tier 9.
-- [ ] **Archery** (1362 C LOC) — `plan-phase6-archery.md` to draft. Needs `WEAR_MISSILE_WIELD` slot + quivers + arrow-lodge mechanic.
-- [ ] **Polymorph** (2753 C LOC) — `plan-phase6-polymorph.md` to draft. Needs `CharData.Morph` + combat hooks. MVP stub exists.
-- [ ] **Player housing** (2853 C LOC) — `plan-phase6-housing.md` to draft. New persistence schema + `RoomIndexData.OwnedBy`. Prefer after hotboot.
-- [ ] **Overland maps** (3752 C LOC) — `plan-phase6-overland.md` to draft (may split into loader/display + editor/reset). New binary file format + `CharData.Map/X/Y`. Prefer after hotboot.
-- [ ] **Dragon flight** (945 C LOC) — `plan-phase6-dragonflight.md` to draft. **Blocks on Overland shipping.**
+- [ ] **Arena PvP** (358 C LOC) — `plan-phase6-arena.md` drafted + audited 2026-04-18. Challenge / accept / decline / withdraw + teleport + victory branch. 7 task groups, 15 criteria. `TIMER_CHALLENGE=8` slot, AddTimer signature corrected, `ROOM_VNUM_ALTAR` already-exists confirmed.
+- [ ] **Star maps** (226 C LOC) — `plan-phase6-starmap.md` drafted 2026-04-18. 3 task groups, 13 criteria. Pure render over shared constellation data.
+- [ ] **Planes** (298 C LOC) — `plan-phase6-planes.md` to draft (Wave B). `RoomIndexData.Plane` field already exists; Go port is load/populate/command-surface only.
+- [ ] **Holidays** (416 C LOC) — `plan-phase6-holidays.md` drafted 2026-04-18. 4 task groups, 13 criteria. Bundles `month_name[]` port.
+- [ ] **Marriage** (362 C LOC) — `plan-phase6-marriage.md` drafted 2026-04-18. 7 task groups, 12 criteria. Canonicalises `CharData.Spouse` (removes `PCData.Spouse` orphan) and fixes `SavePlayer` Spouse asymmetry. Correct ring vnums are `OBJ_VNUM_DIAMOND_RING=100` / `OBJ_VNUM_WEDDING_BAND=101` (roadmap's prior `STEEL_RING` naming was wrong).
+- [ ] **Combat stances OLC** — `plan-phase6-stances-olc.md` to draft (Wave B). Full `do_stset` + `StanceInfo` struct extension + persistence. Tranche B G1 loader already read-and-discards non-combat fields.
+- [ ] **Full `do_auction` state machine** — `plan-phase6-auction.md` to draft (Wave B). Bounded scope; `BroadcastAuction` helper already shipped via Tier 9. C cite: `update.c:2927/3183` (GSC / non-GSC variants — roadmap previously cited `:2886` mid-function; corrected).
+- [ ] **Archery** (1362 C LOC) — `plan-phase6-archery.md` to draft (Wave B+). `WEAR_MISSILE_WIELD` + `ITEM_PROJECTILE` + `ITEM_QUIVER` already defined; Go port adds `WEAR_LODGE_RIB/ARM/LEG` slots + arrow-lodge mechanic + ranged combat hook.
+- [ ] **Polymorph** (2753 C LOC) — `plan-phase6-polymorph.md` to draft (Wave B+). `MorphData` struct + `CharData.Morph` already defined; port is loader + command surface + combat hooks.
+- [ ] **Player housing** (2853 C LOC) — `plan-phase6-housing.md` to draft (Wave B+). New persistence schema + `RoomIndexData.OwnedBy` field. Prefer after hotboot executable lands.
+- [ ] **Overland maps** (3752 C LOC) — `plan-phase6-overland.md` to draft (Wave B+). `CharData.X/Y/Map/Sector` already defined; Go port is map file format + loader + renderer + commands (`do_survey`/`coords`/`landmarks`/`setmark`/`setexit`/`mapresets`/`mreset`/`mapedit`). Split recommended.
+- [ ] **Dragon flight** (945 C LOC) — `plan-phase6-dragonflight.md` to draft. **Blocks on Overland shipping** (every command reads `ch.Map`/`X`/`Y`).
 
 ### OLC / builder
 
