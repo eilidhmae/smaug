@@ -88,10 +88,14 @@ func DoCircle(ch *types.CharData, argument string) {
 	gsn := lookupSkillSlot("circle")
 	if canUseSkill(ch, util.NumberPercent(), gsn) {
 		learnFromSuccess(ch, gsn)
-		// C does multi_hit; MVP: two OneHits for "multi" effect.
-		combat.OneHit(WorldRef, ch, victim, gsn)
+		// C fight.c:997-999: gsn_circle is one of the dt values that
+		// short-circuits MultiHit's cascade — circle is meant to be a
+		// single-hit skill. We preserve the historical Go MVP behavior of
+		// firing two OneHits for the "multi" feel here in DoCircle itself;
+		// MultiHit's cascade is explicitly suppressed for circle.
+		_ = combat.OneHit(WorldRef, ch, victim, gsn)
 		if victim.Position > types.POS_DEAD {
-			combat.OneHit(WorldRef, ch, victim, gsn)
+			_ = combat.OneHit(WorldRef, ch, victim, gsn)
 		}
 	} else {
 		learnFromFailure(ch, gsn)
@@ -292,7 +296,7 @@ func DoHitall(ch *types.CharData, argument string) {
 		}
 		nvict++
 		if canUseSkill(ch, util.NumberPercent(), gsn) {
-			combat.OneHit(WorldRef, ch, vch, types.TYPE_UNDEFINED)
+			_ = combat.OneHit(WorldRef, ch, vch, types.TYPE_UNDEFINED)
 		} else {
 			combat.Damage(WorldRef, ch, vch, 0, types.TYPE_UNDEFINED)
 		}

@@ -18,11 +18,19 @@ Four plans are adversary-verified and ready to execute (2026-04-17). Each has it
 
 ### High-impact combat gaps (from 2026-04-17 audit — P0)
 
-**→ See `smaug-go/doc/plan-combat-depth.md` for the full plan (9 task groups, adversary-verified).**
+**→ See `smaug-go/doc/plan-combat-depth.md` for the full plan (9 task groups, adversary-verified). LANDED 2026-04-17.**
 
-- [ ] Port PC multi-attack skills (second_attack … seventh_attack) into combat loop (plan G1–G4)
-- [ ] Port weapon proficiency bonus into `OneHit` (plan G6)
-- [ ] Apply `ch.Stance` in combat — currently stored/saved but unused (plan G7)
+- [x] Port PC multi-attack skills (second_attack … seventh_attack) into combat loop (plan G1–G5)
+- [x] Port weapon proficiency bonus into `OneHit` (plan G6)
+- [x] Apply `ch.Stance` in combat — NPC num_attacks stacking, PC GM bonus loop, dam_done/dam_taken multipliers (plan G7)
+
+Follow-ups queued from plan-combat-depth.md:
+- [ ] `handler.AddTimer` subsystem + `TIMER_RECENTFIGHT` wiring (deferred from G5)
+- [ ] Devoted-clan favor penalty in `WeaponProfBonusCheck` (C fight.c:1312-1313)
+- [ ] Per-round move-cost tracking (C fight.c:1149-1171)
+- [ ] `db/system/stances.dat` loader — currently `StanceIndex` is hard-coded in `combat/stance_index.go`
+- [ ] PC practice-stance flow — `PCData.Stances[]` counter never increments today, so GM-bonus path is unreachable for existing players
+- [ ] Review `DoCircle` (`act/skills3.go:88-99`) and `DoHitall` (`act/skills3.go:294`) for explicit retcode handling now that `OneHit` returns `int`
 
 ### Player-visible command gaps (P1)
 

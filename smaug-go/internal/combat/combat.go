@@ -103,26 +103,13 @@ func ViolenceUpdate(w *world.World) {
 			continue
 		}
 
-		// One attack per violence pulse
-		OneHit(w, ch, victim, types.TYPE_UNDEFINED)
+		// Dispatch the full attack group for this round. MultiHit handles the
+		// cascade, NPC NumAttacks, dual-wield, etc.
+		MultiHit(w, ch, victim, types.TYPE_UNDEFINED)
 
-		// Multi-attack for NPCs
-		if ch.Fighting != nil && ch.IsNPC() && ch.NumAttacks > 1 {
-			for i := 1; i < ch.NumAttacks; i++ {
-				if ch.Fighting == nil {
-					break
-				}
-				OneHit(w, ch, victim, types.TYPE_UNDEFINED)
-			}
-		}
-
-		// Dual wield extra attack
-		if ch.Fighting != nil && handler.GetEqChar(ch, types.WEAR_DUAL_WIELD) != nil {
-			OneHit(w, ch, victim, types.TYPE_UNDEFINED)
-		}
-
-		// Wimpy auto-flee check
-		if ch.Fighting != nil && !ch.IsNPC() && ch.Wimpy > 0 && ch.Hit <= ch.Wimpy {
+		// Wimpy auto-flee check (post-round; runs only if ch still alive and
+		// still fighting someone it can see leave from).
+		if ch.Fighting != nil && !ch.IsNPC() && ch.Wimpy > 0 && ch.Hit > 0 && ch.Hit <= ch.Wimpy {
 			ch.Send("You wimp out and attempt to flee!\n\r")
 			// Try each direction
 			for dir := 0; dir <= types.DIR_DOWN; dir++ {
@@ -142,6 +129,292 @@ func ViolenceUpdate(w *world.World) {
 	}
 }
 
+// numberPercent is an indirection over util.NumberPercent so tests can
+// replace it with a deterministic stub. Production reads the real RNG.
+// Mirrors the existing pattern in act/skills.go.
+var numberPercent = util.NumberPercent
+
+// oneHit is the indirection used by MultiHit so tests can install a spy
+// (e.g. to count calls or assert the exact arg tuple). Production reads
+// the real OneHit. Swap via the exported field in tests.
+var oneHit = func(w *world.World, ch, victim *types.CharData, dt int) int {
+	return OneHit(w, ch, victim, dt)
+}
+
+// oneHitOffhand is the same indirection but routes through the offhand
+// weapon (WEAR_DUAL_WIELD). Tests swap this alongside `oneHit` to verify
+// dual-wield alternation without touching real combat math.
+var oneHitOffhand = func(w *world.World, ch, victim *types.CharData, dt int) int {
+	wield := handler.GetEqChar(ch, types.WEAR_DUAL_WIELD)
+	return oneHitFull(w, ch, victim, dt, wield)
+}
+
+// IsAttackSuppressed reports whether ch has TIMER_ASUPRESSED active,
+// indicating they're in a temporary no-attack grace window. Mirrors C
+// fight.c:74-92 is_attack_supressed.
+//
+// TODO: when the timer subsystem is fleshed out (handler.AddTimer) this
+// should match C exactly. For now it's a best-effort read of ch.Timers.
+func IsAttackSuppressed(ch *types.CharData) bool {
+	if ch == nil {
+		return false
+	}
+	for _, t := range ch.Timers {
+		if t != nil && t.Type == types.TIMER_ASUPRESSED {
+			return true
+		}
+	}
+	return false
+}
+
+// MultiHit dispatches a full round of attacks from ch against victim.
+// Mirrors C fight.c:972 multi_hit. The order is:
+//
+//  1. PLR_NICE early-return for PC-vs-PC (C fight.c:982).
+//  2. Attack-suppress early-return (TIMER_ASUPRESSED).
+//  3. ACT_NOATTACK early-return for NPCs.
+//  4. Primary swing.
+//  5. Short-circuit on single-hit skills (backstab/circle/pounce) and on
+//     target change / retcode.
+//  6. AFF_BERSERK extra hit (C fight.c:1004-1008).
+//  7. Dual-wield learned roll with dual_bonus + low-move penalty.
+//  8. NPC path: NumAttacks loop (C fight.c:1034), returns.
+//  9. PC path: 6-tier cascade second..seventh_attack (C fight.c:1071-1141).
+//
+// Returns rNONE, rVICT_DIED, rCHAR_DIED, or rBOTH_DIED.
+func MultiHit(w *world.World, ch, victim *types.CharData, dt int) int {
+	// PLR_NICE on a PC attacker suppresses multi-hit entirely against
+	// another PC (C fight.c:982). TIMER_RECENTFIGHT is not set here
+	// because the timer subsystem is not yet ported — see TODO.md.
+	if !ch.IsNPC() && !victim.IsNPC() {
+		if ch.Act.IsSet(types.PLR_NICE) {
+			return rNONE
+		}
+	}
+
+	// Attack-suppressed — skip the round entirely (C fight.c:988).
+	if IsAttackSuppressed(ch) {
+		return rNONE
+	}
+
+	// ACT_NOATTACK mob — skip the round entirely (C fight.c:991).
+	if ch.IsNPC() && ch.Act.IsSet(types.ACT_NOATTACK) {
+		return rNONE
+	}
+
+	// Primary swing.
+	retcode := oneHit(w, ch, victim, dt)
+	if retcode != rNONE {
+		return retcode
+	}
+	if ch.Fighting == nil || ch.Fighting.Who != victim {
+		return rNONE
+	}
+
+	// Single-hit skills never cascade (C fight.c:997).
+	if (gsnBackstab != -1 && dt == gsnBackstab) ||
+		(gsnCircle != -1 && dt == gsnCircle) ||
+		(gsnPounce != -1 && dt == gsnPounce) {
+		return rNONE
+	}
+
+	// Berserk extra hit (C fight.c:1004-1008). NPCs get 100% chance; PCs
+	// roll against LEARNED(berserk) * 6 / 2. AFF_BERSERK must be set.
+	if ch.AffectedBy.IsSet(types.AFF_BERSERK) {
+		berserkChance := 100
+		if !ch.IsNPC() {
+			berserkChance = 0
+			if ch.PCData != nil && gsnBerserk != -1 && gsnBerserk < types.MAX_SKILL {
+				berserkChance = ch.PCData.Learned[gsnBerserk] * 6 / 2
+			}
+		}
+		if numberPercent() < berserkChance {
+			retcode = oneHit(w, ch, victim, dt)
+			if retcode != rNONE {
+				return retcode
+			}
+			if ch.Fighting == nil || ch.Fighting.Who != victim {
+				return rNONE
+			}
+		}
+	}
+
+	// Dual-wield learned roll (C fight.c:1010-1026). On success fire an
+	// extra OneHit (which will swing the offhand once G8's alternation
+	// lands) and compute dual_bonus for the G3 cascade tiers. NPCs use
+	// level directly; PCs use Learned[gsn_dual_wield].
+	dualBonus := 0
+	if handler.GetEqChar(ch, types.WEAR_DUAL_WIELD) != nil {
+		var chance int
+		if ch.IsNPC() {
+			dualBonus = ch.Level / 10
+			chance = ch.Level
+		} else if ch.PCData != nil && gsnDualWield != -1 && gsnDualWield < types.MAX_SKILL {
+			learned := ch.PCData.Learned[gsnDualWield]
+			dualBonus = learned / 10
+			chance = learned
+		}
+		if numberPercent() < chance {
+			learnFromSuccess(ch, gsnDualWield)
+			// G8: the dual-wield bonus swing uses the OFFHAND weapon
+			// (WEAR_DUAL_WIELD), not WEAR_WIELD. C achieves this via a
+			// static dual_flip bool; we pass the wield explicitly.
+			retcode = oneHitOffhand(w, ch, victim, dt)
+			if retcode != rNONE {
+				return retcode
+			}
+			if ch.Fighting == nil || ch.Fighting.Who != victim {
+				return rNONE
+			}
+		} else {
+			learnFromFailure(ch, gsnDualWield)
+		}
+	}
+
+	// Low-move penalty (C fight.c:1028-1029). Independent of whether the
+	// learned roll succeeded — any character below 10 move gets -20 to the
+	// cascade tier chance.
+	if ch.Move < 10 {
+		dualBonus = -20
+	}
+
+	// NPC predetermined number of attacks (C fight.c:1034). Primary swing
+	// already consumed one slot, so loop from 1..NumAttacks-1. NPCs do not
+	// run the PC cascade. Stance adds extra attacks unless either side is
+	// STANCE_MONKEY (C fight.c:1042-1044).
+	if ch.IsNPC() {
+		tempAttacks := ch.NumAttacks
+		if ch.Stance != types.STANCE_MONKEY && victim.Stance != types.STANCE_MONKEY &&
+			ch.Stance > types.STANCE_NONE && ch.Stance < types.MAX_STANCE {
+			tempAttacks += StanceIndex[ch.Stance].NumAttacks
+		}
+		if tempAttacks > 1 {
+			for i := 1; i < tempAttacks; i++ {
+				retcode = oneHit(w, ch, victim, dt)
+				if retcode != rNONE {
+					return retcode
+				}
+				if ch.Fighting == nil || ch.Fighting.Who != victim {
+					return rNONE
+				}
+			}
+		}
+		return rNONE
+	}
+
+	// PC GM bonus-attack loop (C fight.c:1058-1069). When the PC's stance
+	// mastery has reached grand-master (>= STANCE_GRAND_MASTER = 200) and
+	// neither side is STANCE_MONKEY, fire the stance's NumAttacks worth of
+	// extra OneHits before the cascade.
+	if ch.Stance != types.STANCE_MONKEY && victim.Stance != types.STANCE_MONKEY &&
+		ch.Stance > types.STANCE_NONE && ch.Stance < types.MAX_STANCE &&
+		ch.PCData != nil && ch.PCData.Stances[ch.Stance] >= types.STANCE_GRAND_MASTER {
+		for i := 0; i < StanceIndex[ch.Stance].NumAttacks; i++ {
+			retcode = oneHit(w, ch, victim, dt)
+			if retcode != rNONE {
+				return retcode
+			}
+			if ch.Fighting == nil || ch.Fighting.Who != victim {
+				return rNONE
+			}
+		}
+	}
+
+	// PC-only cascade. Each tier rolls numberPercent() against a
+	// learned-derived chance; on success fire an extra OneHit, propagate
+	// retcode, and learn-from-success. On failure, learn-from-failure.
+	// Mirrors C fight.c:1071-1141.
+	if retcode = cascadeTier(w, ch, victim, dt, gsnSecondAttack, dualBonus, tierSecond); retcode != rNONE {
+		return retcode
+	}
+	if ch.Fighting == nil || ch.Fighting.Who != victim {
+		return rNONE
+	}
+	if retcode = cascadeTier(w, ch, victim, dt, gsnThirdAttack, dualBonus, tierThird); retcode != rNONE {
+		return retcode
+	}
+	if ch.Fighting == nil || ch.Fighting.Who != victim {
+		return rNONE
+	}
+	if retcode = cascadeTier(w, ch, victim, dt, gsnFourthAttack, dualBonus, tierFourth); retcode != rNONE {
+		return retcode
+	}
+	if ch.Fighting == nil || ch.Fighting.Who != victim {
+		return rNONE
+	}
+	if retcode = cascadeTier(w, ch, victim, dt, gsnFifthAttack, dualBonus, tierFifth); retcode != rNONE {
+		return retcode
+	}
+	if ch.Fighting == nil || ch.Fighting.Who != victim {
+		return rNONE
+	}
+	if retcode = cascadeTier(w, ch, victim, dt, gsnSixthAttack, dualBonus, tierSixth); retcode != rNONE {
+		return retcode
+	}
+	if ch.Fighting == nil || ch.Fighting.Who != victim {
+		return rNONE
+	}
+	if retcode = cascadeTier(w, ch, victim, dt, gsnSeventhAttack, dualBonus, tierSeventh); retcode != rNONE {
+		return retcode
+	}
+
+	return rNONE
+}
+
+// cascadeTier runs one multi-attack tier. Uses tier-specific math that
+// matches the C expressions in fight.c:1071-1141 exactly:
+//
+//	second:  (LEARNED + dual_bonus) / 1.5
+//	third:   (LEARNED + dual_bonus * 1.5) / 2
+//	fourth:  (LEARNED + dual_bonus * 2) / 3
+//	fifth:   (LEARNED + dual_bonus * 3) / 4
+//	sixth:   (LEARNED + dual_bonus * 4) / 4
+//	seventh: (LEARNED + dual_bonus * 5) / 4
+//
+// NPCs would use ch.Level here, but NPCs never reach this path (the NPC
+// branch in MultiHit returns early). So we always compute PC chance.
+//
+// gsn == -1 means the skill is not in the table at all; treat the chance
+// as 0 (skill can never fire). Still call learnFromFailure so boot-time
+// mis-registration gets some signal — actually learnFromFailure no-ops
+// when gsn is -1 via act's own guard, so the call is harmless.
+func cascadeTier(w *world.World, ch, victim *types.CharData, dt int, gsn int, dualBonus int, tier tierSpec) int {
+	chance := 0
+	if gsn != -1 && ch.PCData != nil && gsn >= 0 && gsn < types.MAX_SKILL {
+		chance = tier.compute(ch.PCData.Learned[gsn], dualBonus)
+	}
+	if numberPercent() < chance {
+		learnFromSuccess(ch, gsn)
+		retcode := oneHit(w, ch, victim, dt)
+		if retcode != rNONE {
+			return retcode
+		}
+		if ch.Fighting == nil || ch.Fighting.Who != victim {
+			return rNONE
+		}
+	} else {
+		learnFromFailure(ch, gsn)
+	}
+	return rNONE
+}
+
+// tierSpec encapsulates the tier-specific arithmetic so each cascade
+// branch is a data-driven call rather than 6 copy-pasted blocks. All
+// expressions below use integer truncation to match C's `(int)((...)/K)`
+// behavior — SMAUG's C casts a double back to int.
+type tierSpec struct {
+	compute func(learned, dualBonus int) int
+}
+
+var (
+	tierSecond  = tierSpec{compute: func(l, b int) int { return (l + b) * 2 / 3 }} // /1.5 == *2/3
+	tierThird   = tierSpec{compute: func(l, b int) int { return (l + b*3/2) / 2 }}
+	tierFourth  = tierSpec{compute: func(l, b int) int { return (l + b*2) / 3 }}
+	tierFifth   = tierSpec{compute: func(l, b int) int { return (l + b*3) / 4 }}
+	tierSixth   = tierSpec{compute: func(l, b int) int { return (l + b*4) / 4 }}
+	tierSeventh = tierSpec{compute: func(l, b int) int { return (l + b*5) / 4 }}
+)
+
 // dirName returns the name of a direction.
 func dirName(dir int) string {
 	names := []string{"north", "east", "south", "west", "up", "down",
@@ -152,14 +425,33 @@ func dirName(dir int) string {
 	return "somewhere"
 }
 
-// OneHit resolves a single attack from ch against victim.
-func OneHit(w *world.World, ch *types.CharData, victim *types.CharData, dt int) {
+// OneHit resolves a single attack from ch against victim using the
+// primary wielded weapon (WEAR_WIELD). Returns a retcode: rNONE on
+// hit/miss, rVICT_DIED on kill or on an already-dead victim / out-of-
+// room mismatch (mirrors C fight.c:1394).
+//
+// The dual-wield alternation (C's `static bool dual_flip`) is handled by
+// MultiHit, which calls the package-private oneHitFull with the offhand
+// weapon for the bonus swing. This avoids the cross-fighter race bug
+// that C's static variable introduced.
+func OneHit(w *world.World, ch *types.CharData, victim *types.CharData, dt int) int {
+	wield := handler.GetEqChar(ch, types.WEAR_WIELD)
+	return oneHitFull(w, ch, victim, dt, wield)
+}
+
+// oneHitFull is the underlying implementation. Takes `wield` explicitly
+// so callers can select the primary or offhand weapon per C's dual-flip
+// semantics, without any process-global state.
+func oneHitFull(w *world.World, ch *types.CharData, victim *types.CharData, dt int, wield *types.ObjData) int {
 	if victim.Hit <= 0 || ch.InRoom != victim.InRoom {
-		return
+		return rVICT_DIED
 	}
 
-	// Find wielded weapon
-	wield := handler.GetEqChar(ch, types.WEAR_WIELD)
+	// Weapon proficiency bonus (G6). C fight.c:1418-1420 + 1533 + 1544-1545
+	// + 1566-1567. Applied to victim_ac before the hit roll, to dam on
+	// hit, and to learn_from_failure on miss. PC-only, level > 5, wield
+	// required — WeaponProfBonusCheck handles the gates.
+	profBonus, profGsn := WeaponProfBonusCheck(ch, wield)
 
 	// Calculate thac0
 	var thac0 int
@@ -172,17 +464,23 @@ func OneHit(w *world.World, ch *types.CharData, victim *types.CharData, dt int) 
 	thac0 -= ch.Hitroll
 	thac0 -= types.StrApp[ch.GetCurrStr()].ToHit
 
-	// Victim AC (capped at -19)
-	victimAC := util.UMAX(-19, victim.Armor/10)
+	// Victim AC (capped at -19). Prof bonus applies AFTER the cap to the
+	// running AC value — C fight.c:1533 adds prof_bonus directly to
+	// victim_ac without re-capping, so a high-prof PC can push victim_ac
+	// below -19. Match C exactly.
+	victimAC := util.UMAX(-19, victim.Armor/10) + profBonus
 
 	// Roll d20
 	diceroll := rollD20()
 
 	// Hit/miss check
 	if diceroll == 0 || (diceroll != 19 && diceroll < thac0-victimAC) {
-		// Miss
-		Damage(w, ch, victim, 0, dt)
-		return
+		// Miss — if we had a prof weapon, learn-from-failure on miss
+		// (C fight.c:1544-1545).
+		if profGsn != -1 {
+			learnFromFailure(ch, profGsn)
+		}
+		return Damage(w, ch, victim, 0, dt)
 	}
 
 	// Calculate damage
@@ -200,6 +498,11 @@ func OneHit(w *world.World, ch *types.CharData, victim *types.CharData, dt int) 
 	// Add damroll and str bonus
 	dam += ch.Damroll
 	dam += types.StrApp[ch.GetCurrStr()].ToDam
+	// Prof bonus damage on hit (C fight.c:1566-1567). Integer truncation
+	// matches C's (int)(prof_bonus/4) cast.
+	if profBonus != 0 {
+		dam += profBonus / 4
+	}
 
 	// Position multipliers (attacker)
 	switch ch.Position {
@@ -227,7 +530,79 @@ func OneHit(w *world.World, ch *types.CharData, victim *types.CharData, dt int) 
 		dam /= 2
 	}
 
-	damageWith(w, ch, victim, dam, dt, wield)
+	// Stance damage multipliers (C fight.c:2549-2594). Suppressed when
+	// either combatant is STANCE_MONKEY. Applied as: dam = dam * (dam_done
+	// / 100) * max(stances[stance]/200, 0.5), then dam /= (dam_taken / 100)
+	// * max(stances[stance]/200, 0.5) for the victim's side. We work in
+	// integer math — the C code casts to float, but the final dam is an
+	// int, so we integer-truncate at each step.
+	dam = applyStanceDamage(ch, victim, dam)
+
+	return damageWith(w, ch, victim, dam, dt, wield)
+}
+
+// applyStanceDamage applies the attacker/victim stance damage modifiers
+// from C fight.c:2549-2594. Pure function — no IO, only ch.Stance /
+// victim.Stance, .Stances[] mastery values, and StanceIndex data.
+//
+// Returns the modified dam. Guarantees: never returns <0; preserves the
+// original dam unchanged when either side is STANCE_MONKEY, when the
+// attacker's stance has dam_done == 0, or when the victim's stance has
+// dam_taken == 0.
+func applyStanceDamage(ch, victim *types.CharData, dam int) int {
+	if ch.Stance == types.STANCE_MONKEY || victim.Stance == types.STANCE_MONKEY {
+		return dam
+	}
+	// Attacker side.
+	if ch.Stance > types.STANCE_NONE && ch.Stance < types.MAX_STANCE &&
+		StanceIndex[ch.Stance].DamDone > 0 {
+		dam = dam * StanceIndex[ch.Stance].DamDone / 100
+		mastery := stanceMastery(ch, ch.Stance)
+		// temp_dam = mastery / 200.0, min 0.5. In integer terms we multiply
+		// by `max(mastery, 100)` and divide by 200.
+		eff := mastery
+		if eff < 100 {
+			eff = 100
+		}
+		dam = dam * eff / 200
+	}
+	// Victim side.
+	if victim.Stance > types.STANCE_NONE && victim.Stance < types.MAX_STANCE &&
+		StanceIndex[victim.Stance].DamTaken > 0 {
+		dam = dam * StanceIndex[victim.Stance].DamTaken / 100
+		mastery := stanceMastery(victim, victim.Stance)
+		eff := mastery
+		if eff < 100 {
+			eff = 100
+		}
+		// C does dam /= temp_dam, so we divide by eff/200 == dam * 200 / eff.
+		if eff > 0 {
+			dam = dam * 200 / eff
+		}
+	}
+	if dam < 0 {
+		dam = 0
+	}
+	return dam
+}
+
+// stanceMastery reads the per-character mastery level for a given stance.
+// PC reads ch.PCData.Stances[stance]; NPC reads ch.pIndexData.Stances[stance]
+// when the index is present. Returns 0 on a nil path.
+func stanceMastery(ch *types.CharData, stance int) int {
+	if stance <= types.STANCE_NONE || stance >= types.MAX_STANCE {
+		return 0
+	}
+	if ch.IsNPC() {
+		if ch.IndexData == nil {
+			return 0
+		}
+		return ch.IndexData.Stances[stance]
+	}
+	if ch.PCData == nil {
+		return 0
+	}
+	return ch.PCData.Stances[stance]
 }
 
 // Damage applies damage to a victim. Returns a retcode indicating if

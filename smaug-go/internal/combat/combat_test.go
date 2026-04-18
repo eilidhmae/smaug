@@ -1143,3 +1143,916 @@ func TestViolenceUpdate_WimpyClosedExit(t *testing.T) {
 		t.Error("character should not flee through closed exit")
 	}
 }
+
+// --- G1 — OneHit retcode + MultiHit extraction ---
+
+// OneHit now returns a retcode: rNONE on hit/miss, rVICT_DIED on kill.
+func TestOneHit_ReturnsRNoneOnHit(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 9100, Name: "Arena"}
+	w.Rooms[9100] = room
+
+	ch := newFighter("Attacker", 10)
+	ch.Hitroll = 50
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim := newFighter("Defender", 10)
+	victim.Hit = 500
+	victim.MaxHit = 500
+	victim.Armor = 200
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+
+	ret := OneHit(w, ch, victim, types.TYPE_UNDEFINED)
+	if ret != rNONE {
+		t.Errorf("OneHit on live victim returned %d, want rNONE", ret)
+	}
+}
+
+func TestOneHit_ReturnsRVictDiedOnKill(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 9101, Name: "Arena"}
+	w.Rooms[9101] = room
+
+	ch := newFighter("Attacker", 50)
+	// Huge hitroll saturates the 0..19 d20 cap, guaranteeing a hit
+	// (rollD20 < thac0 - victimAC always hits except on natural 0 which
+	// is 1/20 ≈ 5%). Run a tight loop to de-flake the natural-0 case.
+	ch.Hitroll = 9999
+	ch.Damroll = 9999
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	mobIdx := &types.MobIndexData{
+		Vnum: 9800, PlayerName: "lowlife", ShortDescr: "a lowlife",
+		Level: 1, Position: types.POS_STANDING, DefPosition: types.POS_STANDING,
+	}
+	w.MobIndex[9800] = mobIdx
+	victim := handler.CreateMobile(w, mobIdx)
+	victim.Hit = 1
+	victim.MaxHit = 10
+	victim.Armor = 9999 // very poor AC to further de-flake
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+
+	// Retry a handful of times — each OneHit has ≥19/20 hit chance, so
+	// 5 attempts keeps flake probability below 1e-6.
+	var ret int
+	for i := 0; i < 5; i++ {
+		victim.Hit = 1
+		victim.MaxHit = 10
+		victim.Position = types.POS_STANDING
+		ret = OneHit(w, ch, victim, types.TYPE_UNDEFINED)
+		if ret == rVICT_DIED {
+			return
+		}
+	}
+	t.Errorf("OneHit killing victim returned %d after 5 retries, want rVICT_DIED", ret)
+}
+
+// OneHit early-out on already-dead victim returns rVICT_DIED (mirrors C fight.c:1394).
+func TestOneHit_EarlyOutReturnsRVictDied(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 9102, Name: "Arena"}
+	w.Rooms[9102] = room
+
+	ch := newFighter("Attacker", 10)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	victim := newFighter("Defender", 10)
+	victim.Hit = 0
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+
+	if ret := OneHit(w, ch, victim, types.TYPE_UNDEFINED); ret != rVICT_DIED {
+		t.Errorf("OneHit on dead victim returned %d, want rVICT_DIED", ret)
+	}
+}
+
+// MultiHit exists and returns a retcode.
+func TestMultiHit_SingleHitReturnsRNone(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 9103, Name: "Arena"}
+	w.Rooms[9103] = room
+
+	ch := newFighter("Attacker", 10)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	victim := newFighter("Defender", 10)
+	victim.Hit = 500
+	victim.MaxHit = 500
+	victim.Armor = 200
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	ret := MultiHit(w, ch, victim, types.TYPE_UNDEFINED)
+	if ret != rNONE && ret != rVICT_DIED {
+		t.Errorf("MultiHit returned %d, want rNONE or rVICT_DIED", ret)
+	}
+}
+
+// MultiHit short-circuits on victim death.
+func TestMultiHit_ShortCircuitsOnDeath(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 9104, Name: "Arena"}
+	w.Rooms[9104] = room
+
+	ch := newFighter("Attacker", 50)
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.NumAttacks = 5 // would try 5 swings
+	ch.Hitroll = 100
+	ch.Damroll = 9999
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	mobIdx := &types.MobIndexData{
+		Vnum: 9801, PlayerName: "fragile", ShortDescr: "a fragile mob",
+		Level: 1, Position: types.POS_STANDING, DefPosition: types.POS_STANDING,
+	}
+	w.MobIndex[9801] = mobIdx
+	victim := handler.CreateMobile(w, mobIdx)
+	victim.Hit = 1
+	victim.MaxHit = 10
+	victim.Armor = 200
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	ret := MultiHit(w, ch, victim, types.TYPE_UNDEFINED)
+	if ret != rVICT_DIED {
+		t.Errorf("MultiHit returned %d when victim died on first swing, want rVICT_DIED", ret)
+	}
+	// Victim must be extracted (NPC died) — InRoom should be nil after ExtractChar.
+	if victim.InRoom != nil && victim.Hit > 0 {
+		t.Errorf("victim should be dead/extracted; has Hit=%d InRoom=%v", victim.Hit, victim.InRoom)
+	}
+}
+
+// --- G3 — PC multi-attack cascade ---
+
+// Helper: install a deterministic numberPercent stub and an OneHit spy
+// that counts BOTH primary and offhand calls without mutating the
+// victim. Returns the unified counter pointer and cleans up on test
+// end. Most cascade tests don't care whether a swing was primary or
+// offhand — they care about TOTAL OneHit invocations per round.
+func stubCascade(t *testing.T, pctFn func() int) *int {
+	t.Helper()
+	savedPct := numberPercent
+	savedOne := oneHit
+	savedOff := oneHitOffhand
+	t.Cleanup(func() {
+		numberPercent = savedPct
+		oneHit = savedOne
+		oneHitOffhand = savedOff
+	})
+	numberPercent = pctFn
+	calls := 0
+	oneHit = func(w *world.World, ch, victim *types.CharData, dt int) int {
+		calls++
+		return rNONE
+	}
+	oneHitOffhand = func(w *world.World, ch, victim *types.CharData, dt int) int {
+		calls++
+		return rNONE
+	}
+	return &calls
+}
+
+// Helper: populate the gsn cache with distinct, non-(-1) values so the
+// cascade path runs (no -1 early-outs). Restores on cleanup. The values
+// picked here don't need to correspond to a real skill table; only the
+// nonnegative check matters plus the less-than-MAX_SKILL bounds check.
+// We choose values well below MAX_SKILL=600.
+func stubGsnsForCascade(t *testing.T) {
+	t.Helper()
+	saved := struct {
+		s, th, f, fi, si, se int
+		bs, ci, po           int
+		dw, be               int
+	}{
+		gsnSecondAttack, gsnThirdAttack, gsnFourthAttack,
+		gsnFifthAttack, gsnSixthAttack, gsnSeventhAttack,
+		gsnBackstab, gsnCircle, gsnPounce, gsnDualWield, gsnBerserk,
+	}
+	t.Cleanup(func() {
+		gsnSecondAttack = saved.s
+		gsnThirdAttack = saved.th
+		gsnFourthAttack = saved.f
+		gsnFifthAttack = saved.fi
+		gsnSixthAttack = saved.si
+		gsnSeventhAttack = saved.se
+		gsnBackstab = saved.bs
+		gsnCircle = saved.ci
+		gsnPounce = saved.po
+		gsnDualWield = saved.dw
+		gsnBerserk = saved.be
+	})
+	gsnSecondAttack = 51
+	gsnThirdAttack = 52
+	gsnFourthAttack = 53
+	gsnFifthAttack = 54
+	gsnSixthAttack = 55
+	gsnSeventhAttack = 56
+	gsnBackstab = 60
+	gsnCircle = 61
+	gsnPounce = 62
+	gsnDualWield = 57
+	gsnBerserk = 58
+}
+
+// Helper: build a level-N PC fighter primed for the cascade. Sets all
+// Learned[] entries to 0 so subclasses can set only the ones they want.
+func newPCFighter(level int) *types.CharData {
+	ch := newFighter("PC", level)
+	ch.PCData = &types.PCData{}
+	return ch
+}
+
+// Helper: build a scratch room + primed combat state for cascade tests.
+// Returns (world, room, ch, victim); ch.Fighting is already set pointing
+// at victim. Victim is an NPC with huge HP so OneHit spy doesn't kill.
+func setupCascade(t *testing.T, level int) (*world.World, *types.RoomIndexData, *types.CharData, *types.CharData) {
+	t.Helper()
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10000, Name: "Cascade Arena"}
+	w.Rooms[10000] = room
+
+	ch := newPCFighter(level)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim := newFighter("Victim", 1)
+	victim.Act.Set(types.ACT_IS_NPC)
+	victim.Hit = 1_000_000
+	victim.MaxHit = 1_000_000
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+
+	StartFighting(ch, victim)
+	return w, room, ch, victim
+}
+
+// Level-30 warrior with Learned[second_attack]=100, stub pct=50.
+// chance = (100 + 0) * 2/3 = 66. 50 < 66 → second attack fires.
+// Expected OneHit calls: 2 (primary + second).
+func TestMultiHit_SecondAttackFires_Learned100(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 50 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnSecondAttack] = 100
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 2 {
+		t.Errorf("OneHit calls = %d, want 2 (primary + second)", *calls)
+	}
+}
+
+// Stub pct=50, Learned[third]=0 → chance for third is 0, no fire.
+// Learned[second]=0 → second chance 0 either. So only primary hits.
+func TestMultiHit_ThirdAttack_Learned0_DoesNotFire(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 50 })
+	_, _, ch, victim := setupCascade(t, 30)
+	// Don't set any Learned — all 0.
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 1 {
+		t.Errorf("OneHit calls = %d, want 1 (primary only)", *calls)
+	}
+}
+
+// Boundary check: Learned[second]=75, stub pct=40.
+// chance = 75 * 2/3 = 50. 40 < 50 → fires.
+// Then stub pct=80. 80 < 50 → false → no fire.
+func TestMultiHit_SecondAttack_Learned75_Boundary(t *testing.T) {
+	stubGsnsForCascade(t)
+
+	// First: pct=40, fires.
+	calls := stubCascade(t, func() int { return 40 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnSecondAttack] = 75
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+	if *calls != 2 {
+		t.Errorf("pct=40 Learned=75: calls = %d, want 2", *calls)
+	}
+
+	// Second: pct=80, no fire.
+	calls2 := stubCascade(t, func() int { return 80 })
+	_, _, ch2, victim2 := setupCascade(t, 30)
+	ch2.PCData.Learned[gsnSecondAttack] = 75
+	MultiHit(nil, ch2, victim2, types.TYPE_UNDEFINED)
+	if *calls2 != 1 {
+		t.Errorf("pct=80 Learned=75: calls = %d, want 1", *calls2)
+	}
+}
+
+// NPC with NumAttacks=1 uses level-driven path but the cascade is PC-only.
+// NPCs should not enter the cascade regardless of stub pct. So with NPC
+// stub, only primary fires.
+func TestMultiHit_NPCDoesNotCascade(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 0 }) // always true for PC
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10001, Name: "NPC Arena"}
+	w.Rooms[10001] = room
+
+	ch := newFighter("NpcFighter", 30)
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.NumAttacks = 1
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim := newFighter("Victim", 1)
+	victim.Act.Set(types.ACT_IS_NPC)
+	victim.Hit = 1_000_000
+	victim.MaxHit = 1_000_000
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	MultiHit(w, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 1 {
+		t.Errorf("NPC OneHit calls = %d, want 1 (no cascade)", *calls)
+	}
+}
+
+// LearnFromSuccessHook fires on a cascade success.
+func TestMultiHit_CascadeFiresLearnFromSuccess(t *testing.T) {
+	stubGsnsForCascade(t)
+	_ = stubCascade(t, func() int { return 10 })
+
+	savedS := LearnFromSuccessHook
+	savedF := LearnFromFailureHook
+	t.Cleanup(func() {
+		LearnFromSuccessHook = savedS
+		LearnFromFailureHook = savedF
+	})
+	var sHits []int
+	LearnFromSuccessHook = func(_ *types.CharData, gsn int) {
+		sHits = append(sHits, gsn)
+	}
+	LearnFromFailureHook = func(_ *types.CharData, _ int) {}
+
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnSecondAttack] = 100
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	found := false
+	for _, g := range sHits {
+		if g == gsnSecondAttack {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected learnFromSuccess(gsnSecondAttack); got calls %v", sHits)
+	}
+}
+
+// LearnFromFailureHook fires on a cascade miss.
+func TestMultiHit_CascadeFiresLearnFromFailure(t *testing.T) {
+	stubGsnsForCascade(t)
+	_ = stubCascade(t, func() int { return 99 })
+
+	savedS := LearnFromSuccessHook
+	savedF := LearnFromFailureHook
+	t.Cleanup(func() {
+		LearnFromSuccessHook = savedS
+		LearnFromFailureHook = savedF
+	})
+	var fHits []int
+	LearnFromSuccessHook = func(_ *types.CharData, _ int) {}
+	LearnFromFailureHook = func(_ *types.CharData, gsn int) {
+		fHits = append(fHits, gsn)
+	}
+
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnSecondAttack] = 50 // chance ~33, pct=99 → miss
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	found := false
+	for _, g := range fHits {
+		if g == gsnSecondAttack {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected learnFromFailure(gsnSecondAttack); got calls %v", fHits)
+	}
+}
+
+// Cascade short-circuits on victim death mid-cascade.
+func TestMultiHit_CascadeShortCircuitsOnVictimDeath(t *testing.T) {
+	stubGsnsForCascade(t)
+	savedPct := numberPercent
+	savedOne := oneHit
+	t.Cleanup(func() {
+		numberPercent = savedPct
+		oneHit = savedOne
+	})
+
+	calls := 0
+	// OneHit: first call alive, second call kills victim.
+	oneHit = func(w *world.World, ch, victim *types.CharData, dt int) int {
+		calls++
+		if calls == 2 {
+			return rVICT_DIED
+		}
+		return rNONE
+	}
+	numberPercent = func() int { return 0 } // always fires cascade tier
+
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnSecondAttack] = 100
+	ch.PCData.Learned[gsnThirdAttack] = 100
+
+	ret := MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+	if ret != rVICT_DIED {
+		t.Errorf("MultiHit returned %d, want rVICT_DIED", ret)
+	}
+	if calls != 2 {
+		t.Errorf("OneHit calls = %d, want 2 (primary + second; third never runs)", calls)
+	}
+}
+
+// dt == gsn_backstab short-circuits the cascade (single hit only).
+func TestMultiHit_BackstabSkipsCascade(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 0 })
+	_, _, ch, victim := setupCascade(t, 30)
+	// Even with 100% learned in everything, backstab dt suppresses the
+	// cascade entirely.
+	for i := range ch.PCData.Learned {
+		ch.PCData.Learned[i] = 100
+	}
+
+	MultiHit(nil, ch, victim, gsnBackstab)
+
+	if *calls != 1 {
+		t.Errorf("backstab OneHit calls = %d, want 1 (no cascade)", *calls)
+	}
+}
+
+// dt == gsn_circle short-circuits the cascade.
+func TestMultiHit_CircleSkipsCascade(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 0 })
+	_, _, ch, victim := setupCascade(t, 30)
+	for i := range ch.PCData.Learned {
+		ch.PCData.Learned[i] = 100
+	}
+
+	MultiHit(nil, ch, victim, gsnCircle)
+
+	if *calls != 1 {
+		t.Errorf("circle OneHit calls = %d, want 1 (no cascade)", *calls)
+	}
+}
+
+// Full cascade with Learned[2..7]=100 and pct=0 fires all 6 tiers.
+// Total OneHit calls = primary + 6 cascade = 7.
+func TestMultiHit_AllTiersFire_AllLearned100(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 0 })
+	_, _, ch, victim := setupCascade(t, 50)
+	ch.PCData.Learned[gsnSecondAttack] = 100
+	ch.PCData.Learned[gsnThirdAttack] = 100
+	ch.PCData.Learned[gsnFourthAttack] = 100
+	ch.PCData.Learned[gsnFifthAttack] = 100
+	ch.PCData.Learned[gsnSixthAttack] = 100
+	ch.PCData.Learned[gsnSeventhAttack] = 100
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 7 {
+		t.Errorf("AllLearned100 OneHit calls = %d, want 7 (primary + 6 tiers)", *calls)
+	}
+}
+
+// --- G4 — Dual-wield learned roll + dual_bonus threading ---
+
+// DualWield gated by learned roll: Learned[dual_wield]=100, pct=50 → fires.
+// Expect 2 OneHit calls (primary + dual-wield extra). Cascade Learned[2..7]=0
+// so those tiers don't contribute.
+func TestMultiHit_DualWield_LearnedGate_Fires(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 50 })
+	_, room, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnDualWield] = 100
+
+	// Put a dual-wield weapon on ch.
+	offhand := &types.ObjData{
+		Name:     "offhand dagger",
+		WearLoc:  types.WEAR_DUAL_WIELD,
+		ItemType: types.ITEM_WEAPON,
+	}
+	offhand.Value[1] = 1
+	offhand.Value[2] = 4
+	handler.ObjToChar(offhand, ch)
+	_ = room
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 2 {
+		t.Errorf("OneHit calls = %d, want 2 (primary + dual-wield extra)", *calls)
+	}
+}
+
+// DualWield gated: Learned=10, pct=50 → 50 < 10 is false → NO extra hit.
+// Only primary OneHit.
+func TestMultiHit_DualWield_LearnedGate_Fails(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 50 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnDualWield] = 10
+
+	offhand := &types.ObjData{
+		Name:     "offhand dagger",
+		WearLoc:  types.WEAR_DUAL_WIELD,
+		ItemType: types.ITEM_WEAPON,
+	}
+	offhand.Value[1] = 1
+	offhand.Value[2] = 4
+	handler.ObjToChar(offhand, ch)
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 1 {
+		t.Errorf("OneHit calls = %d, want 1 (dual-wield roll failed)", *calls)
+	}
+}
+
+// Low move (<10) sets dual_bonus to -20 even without dual wield.
+// With Learned[second]=100 and no dual-bonus, second chance = 100*2/3 = 66.
+// With dual_bonus=-20, second chance = (100-20)*2/3 = 53. pct=60 → 60<53 false.
+// (Without low-move, 60<66 → true.)
+// So Move<10 should suppress the second attack at pct=60 Learned=100.
+func TestMultiHit_LowMovePenalty_SuppressesCascade(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 60 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnSecondAttack] = 100
+	ch.Move = 5 // below 10 threshold
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 1 {
+		t.Errorf("Move<10 + pct=60: OneHit calls = %d, want 1 (second suppressed by -20 dual_bonus)", *calls)
+	}
+}
+
+// Sanity check: at normal Move, pct=60 Learned=100 → second DOES fire.
+// Primary + second = 2 calls.
+func TestMultiHit_LowMovePenalty_BaselineFiresAtPct60(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 60 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.PCData.Learned[gsnSecondAttack] = 100
+	ch.Move = 80 // normal
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 2 {
+		t.Errorf("Move=80 + pct=60 + Learned=100: calls = %d, want 2", *calls)
+	}
+}
+
+// NPC dual-wield: chance = ch.Level, dualBonus = ch.Level/10.
+func TestMultiHit_NPCDualWield_UsesLevel(t *testing.T) {
+	stubGsnsForCascade(t)
+	// Two separate scenarios in one test: level 100 (always fires) and
+	// level 0 (never fires). Use the same seed by calling stubCascade
+	// with a closure that returns 50.
+	calls := stubCascade(t, func() int { return 50 })
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10010, Name: "NPC Arena"}
+	w.Rooms[10010] = room
+
+	ch := newFighter("NpcDW", 100)
+	ch.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	offhand := &types.ObjData{
+		Name:    "offhand",
+		WearLoc: types.WEAR_DUAL_WIELD,
+	}
+	offhand.Value[1] = 1
+	offhand.Value[2] = 4
+	handler.ObjToChar(offhand, ch)
+
+	victim := newFighter("Victim", 1)
+	victim.Act.Set(types.ACT_IS_NPC)
+	victim.Hit = 1_000_000
+	victim.MaxHit = 1_000_000
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 2 {
+		t.Errorf("NPC level=100 dual-wield pct=50: calls = %d, want 2", *calls)
+	}
+}
+
+// --- G5 — Gates (NOATTACK, BERSERK, PLR_NICE, attack-suppress) ---
+
+// ACT_NOATTACK mob returns immediately, no OneHit fires.
+func TestMultiHit_NoAttackMobSkips(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 0 })
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10020, Name: "NoAttack Arena"}
+	w.Rooms[10020] = room
+
+	ch := newFighter("NoAttackMob", 30)
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.Act.Set(types.ACT_NOATTACK)
+	ch.NumAttacks = 3
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim := newFighter("Victim", 1)
+	victim.Act.Set(types.ACT_IS_NPC)
+	victim.Hit = 1_000_000
+	victim.MaxHit = 1_000_000
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	if ret := MultiHit(w, ch, victim, types.TYPE_UNDEFINED); ret != rNONE {
+		t.Errorf("NOATTACK mob returned %d, want rNONE", ret)
+	}
+	if *calls != 0 {
+		t.Errorf("NOATTACK mob OneHit calls = %d, want 0", *calls)
+	}
+}
+
+// PLR_NICE on PC attacker suppresses MultiHit against another PC.
+func TestMultiHit_PLRNiceSkipsPvP(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 0 })
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10021, Name: "PvP Arena"}
+	w.Rooms[10021] = room
+
+	ch := newPCFighter(30)
+	ch.Act.Set(types.PLR_NICE)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	victim := newPCFighter(30)
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	if ret := MultiHit(w, ch, victim, types.TYPE_UNDEFINED); ret != rNONE {
+		t.Errorf("PLR_NICE PC-vs-PC returned %d, want rNONE", ret)
+	}
+	if *calls != 0 {
+		t.Errorf("PLR_NICE OneHit calls = %d, want 0", *calls)
+	}
+}
+
+// PLR_NICE does NOT suppress MultiHit against an NPC (only PC-vs-PC).
+func TestMultiHit_PLRNiceDoesNotAffectPvNpc(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 100 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.Act.Set(types.PLR_NICE) // victim is already NPC
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls < 1 {
+		t.Errorf("PLR_NICE vs NPC: OneHit calls = %d, want >= 1", *calls)
+	}
+}
+
+// TIMER_ASUPRESSED active on ch skips the entire round.
+func TestMultiHit_AttackSuppressedSkips(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 0 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.Timers = append(ch.Timers, &types.TimerData{Type: types.TIMER_ASUPRESSED, Value: 5})
+
+	if ret := MultiHit(nil, ch, victim, types.TYPE_UNDEFINED); ret != rNONE {
+		t.Errorf("attack-suppressed returned %d, want rNONE", ret)
+	}
+	if *calls != 0 {
+		t.Errorf("attack-suppressed OneHit calls = %d, want 0", *calls)
+	}
+}
+
+// AFF_BERSERK with Learned[berserk]=33 → chance = 33*6/2 = 99. pct=50 → fires.
+// Primary + berserk = 2 calls (cascade tiers have Learned=0 → no fire).
+func TestMultiHit_BerserkExtraHit_Fires(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 50 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.AffectedBy.Set(types.AFF_BERSERK)
+	ch.PCData.Learned[gsnBerserk] = 33
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 2 {
+		t.Errorf("berserk Learned=33 pct=50: OneHit calls = %d, want 2 (primary + berserk)", *calls)
+	}
+}
+
+// AFF_BERSERK but Learned[berserk]=0 → chance=0 → pct=50 is not < 0 → no fire.
+func TestMultiHit_BerserkExtraHit_Learned0_NoFire(t *testing.T) {
+	stubGsnsForCascade(t)
+	calls := stubCascade(t, func() int { return 50 })
+	_, _, ch, victim := setupCascade(t, 30)
+	ch.AffectedBy.Set(types.AFF_BERSERK)
+	// Learned[berserk] = 0 (default)
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 1 {
+		t.Errorf("berserk Learned=0: OneHit calls = %d, want 1 (primary only)", *calls)
+	}
+}
+
+// NPC with AFF_BERSERK always rolls at 100%, so it always fires.
+func TestMultiHit_BerserkNPCAlwaysFires(t *testing.T) {
+	stubGsnsForCascade(t)
+	// pct=99 — even for NPC the chance is 100, so 99 < 100 → fires.
+	calls := stubCascade(t, func() int { return 99 })
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10022, Name: "Berserk Arena"}
+	w.Rooms[10022] = room
+
+	ch := newFighter("BerserkNPC", 30)
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.AffectedBy.Set(types.AFF_BERSERK)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim := newFighter("Victim", 1)
+	victim.Act.Set(types.ACT_IS_NPC)
+	victim.Hit = 1_000_000
+	victim.MaxHit = 1_000_000
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	MultiHit(w, ch, victim, types.TYPE_UNDEFINED)
+
+	if *calls != 2 {
+		t.Errorf("berserk NPC pct=99: calls = %d, want 2 (primary + berserk)", *calls)
+	}
+}
+
+// --- G8 — Dual-wield weapon alternation in OneHit ---
+
+// The dual-wield bonus swing uses the offhand weapon, not the primary.
+// We assert this by inspecting which object each oneHit/oneHitOffhand
+// call sees — the test replaces both seams with a spy that records the
+// wield handed to each.
+func TestOneHit_DualWieldAlternatesWeapons(t *testing.T) {
+	stubGsnsForCascade(t)
+
+	savedPct := numberPercent
+	savedPrimary := oneHit
+	savedOffhand := oneHitOffhand
+	t.Cleanup(func() {
+		numberPercent = savedPct
+		oneHit = savedPrimary
+		oneHitOffhand = savedOffhand
+	})
+	numberPercent = func() int { return 0 }
+
+	// Capture which weapon each seam saw.
+	var primaryWields []*types.ObjData
+	var offhandWields []*types.ObjData
+	oneHit = func(w *world.World, ch, victim *types.CharData, dt int) int {
+		primaryWields = append(primaryWields, handler.GetEqChar(ch, types.WEAR_WIELD))
+		return rNONE
+	}
+	oneHitOffhand = func(w *world.World, ch, victim *types.CharData, dt int) int {
+		offhandWields = append(offhandWields, handler.GetEqChar(ch, types.WEAR_DUAL_WIELD))
+		return rNONE
+	}
+
+	// Build a PC with both weapons.
+	_, _, ch, victim := setupCascade(t, 50)
+	ch.PCData.Learned[gsnDualWield] = 100
+
+	mainWeapon := &types.ObjData{
+		Name:     "mainhand sword",
+		WearLoc:  types.WEAR_WIELD,
+		ItemType: types.ITEM_WEAPON,
+	}
+	offhandWeapon := &types.ObjData{
+		Name:     "offhand dagger",
+		WearLoc:  types.WEAR_DUAL_WIELD,
+		ItemType: types.ITEM_WEAPON,
+	}
+	handler.ObjToChar(mainWeapon, ch)
+	handler.ObjToChar(offhandWeapon, ch)
+
+	MultiHit(nil, ch, victim, types.TYPE_UNDEFINED)
+
+	if len(primaryWields) == 0 {
+		t.Fatal("no primary oneHit call seen")
+	}
+	if primaryWields[0] != mainWeapon {
+		t.Errorf("primary wield = %v, want mainhand sword", primaryWields[0])
+	}
+	if len(offhandWields) != 1 {
+		t.Fatalf("offhand calls = %d, want 1 (dual-wield bonus swing)", len(offhandWields))
+	}
+	if offhandWields[0] != offhandWeapon {
+		t.Errorf("offhand wield = %v, want offhand dagger", offhandWields[0])
+	}
+}
+
+// oneHitFull called directly with a chosen wield uses that wield's
+// damage dice (not the primary).
+func TestOneHitFull_ExplicitWieldUsed(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 10300, Name: "Dual Arena"}
+	w.Rooms[10300] = room
+
+	ch := newFighter("DualWielder", 50)
+	ch.Hitroll = 999 // always hit
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	// Equip a primary sword with 1..1 dmg and an offhand dagger with 20..20.
+	primary := &types.ObjData{
+		Name: "sword", WearLoc: types.WEAR_WIELD, ItemType: types.ITEM_WEAPON,
+	}
+	primary.Value[1] = 1
+	primary.Value[2] = 1
+	offhand := &types.ObjData{
+		Name: "heavy dagger", WearLoc: types.WEAR_DUAL_WIELD, ItemType: types.ITEM_WEAPON,
+	}
+	offhand.Value[1] = 20
+	offhand.Value[2] = 20
+	handler.ObjToChar(primary, ch)
+	handler.ObjToChar(offhand, ch)
+
+	victim := newFighter("Victim", 1)
+	victim.Act.Set(types.ACT_IS_NPC)
+	victim.Hit = 1_000_000
+	victim.MaxHit = 1_000_000
+	victim.Armor = 9999 // poor AC
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	// Swinging with the offhand directly should deal damage in the 20..20
+	// range, not 1..1. We track the HP delta for one explicit-offhand
+	// call vs one primary call.
+	startHP := victim.Hit
+	oneHitFull(w, ch, victim, types.TYPE_UNDEFINED, offhand)
+	offhandDam := startHP - victim.Hit
+
+	startHP = victim.Hit
+	oneHitFull(w, ch, victim, types.TYPE_UNDEFINED, primary)
+	primaryDam := startHP - victim.Hit
+
+	// Damroll/str bonuses are identical, but weapon dice differ by ~19.
+	if offhandDam <= primaryDam {
+		t.Errorf("offhand dam=%d should exceed primary dam=%d (20-dice vs 1-dice)", offhandDam, primaryDam)
+	}
+}
+
+// NPC NumAttacks multi-attack now lives inside MultiHit.
+func TestMultiHit_NPCNumAttacks(t *testing.T) {
+	w := newCombatWorld()
+	room := &types.RoomIndexData{Vnum: 9105, Name: "Arena"}
+	w.Rooms[9105] = room
+
+	ch := newFighter("MultiMob", 50)
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.MobThac0 = 0
+	ch.Hitroll = 50
+	ch.NumAttacks = 3
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	victim := newFighter("Tank", 1)
+	victim.Act.Set(types.ACT_IS_NPC)
+	victim.Hit = 50000
+	victim.MaxHit = 50000
+	victim.Armor = 200
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+	StartFighting(ch, victim)
+
+	MultiHit(w, ch, victim, types.TYPE_UNDEFINED)
+	if victim.Hit >= 50000 {
+		t.Error("NPC with NumAttacks=3 should deal damage via MultiHit")
+	}
+}

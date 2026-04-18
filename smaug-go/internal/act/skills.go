@@ -7,6 +7,23 @@ import (
 	"github.com/eilidhmae/smaug/internal/util"
 )
 
+// CanUseSkill is the exported seam for combat.CanUseSkillHook. Thin
+// wrapper so the combat package (which cannot import act) can still
+// consult the same skill-check logic used by act commands.
+func CanUseSkill(ch *types.CharData, percent int, gsn int) bool {
+	return canUseSkill(ch, percent, gsn)
+}
+
+// LearnFromSuccess is the exported seam for combat.LearnFromSuccessHook.
+func LearnFromSuccess(ch *types.CharData, gsn int) {
+	learnFromSuccess(ch, gsn)
+}
+
+// LearnFromFailure is the exported seam for combat.LearnFromFailureHook.
+func LearnFromFailure(ch *types.CharData, gsn int) {
+	learnFromFailure(ch, gsn)
+}
+
 // canUseSkill checks if ch can use a skill at the given percent roll.
 // For NPCs, 85% base success. For PCs, compares against learned skill %.
 func canUseSkill(ch *types.CharData, percent int, gsn int) bool {

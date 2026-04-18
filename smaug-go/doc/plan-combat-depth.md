@@ -190,3 +190,79 @@ Update `phases.md`, `audit-2026-04-17.md`, uncheck the P0 items in `TODO.md`. Ap
 - Wiring: `/home/eilidh/src/smaug/smaug-go/internal/boot/boot.go`
 - Tests: `/home/eilidh/src/smaug/smaug-go/internal/combat/combat_test.go` (11-35, 73-104, 899-966)
 - Data: `/home/eilidh/src/smaug/db/system/en/skills.dat:5233-5294`, `/home/eilidh/src/smaug/db/system/stances.dat`
+
+---
+
+## Completion (2026-04-17)
+
+All 9 task groups landed in a single session. `go test -count=3 ./...` green across all 15 packages. 12 of 12 acceptance criteria verified mechanically — see test mapping below.
+
+### Groups landed
+
+- **G1 — MultiHit extracted, OneHit returns retcode.** `combat.OneHit` now returns `int` (rNONE / rVICT_DIED). New `combat.MultiHit(w, ch, victim, dt) int` dispatches the full attack group for one violence pulse. `ViolenceUpdate` reduces to `MultiHit(...)` plus the post-round wimpy-flee block. Two `act/skills3.go` call sites (`DoCircle` at :88-99 and `DoHitall` at :294) updated with `_ =` retcode-ignore and a comment explaining why `DoCircle` keeps its historical "two OneHits" pattern (circle is a single-hit skill in C; the cascade short-circuits on `dt == gsnCircle` anyway). Tests: `TestOneHit_ReturnsRNoneOnHit`, `TestOneHit_ReturnsRVictDiedOnKill` (retry-guarded against natural-0 dice flake), `TestOneHit_EarlyOutReturnsRVictDied`, `TestMultiHit_SingleHitReturnsRNone`, `TestMultiHit_ShortCircuitsOnDeath`, `TestMultiHit_NPCNumAttacks`.
+
+- **G2 — Skill-check hooks bridge `combat` ↔ `act`.** `combat/skillcheck.go` publishes 4 nil-safe hooks (`CanUseSkillHook`, `LearnFromSuccessHook`, `LearnFromFailureHook`, `LookupSkillSlotHook`) + a `ResolveGSNs()` boot-time resolver that caches 18 gsn ints (6 multi-attack, dual_wield, berserk, backstab, circle, pounce, 7 weapon-prof). `act` exports thin `CanUseSkill` / `LearnFromSuccess` / `LearnFromFailure` / `LookupSkillSlot` wrappers so the package-boundary rename does not churn existing call sites. Boot wires all four hooks then calls `combat.ResolveGSNs()`. Skill names use the data-file's space-separated form ("second attack", "long blades", "dual wield") matching `db/system/en/skills.dat`. Tests: `TestCanUseSkillHook_NilFallthrough/Installed`, `TestLearnHooks_NilSafe/Installed`, `TestLookupSkillSlotHook_NilSafe/Installed`, `TestResolveGSNs_CallsHookForAllExpectedNames`, `TestResolveGSNs_CachesReturnedGsns`, `TestResolveGSNs_NilHookSafe`, plus `TestBoot_WiresCallbacks` extended.
+
+- **G3 — PC multi-attack cascade.** The 6 tiers (`second`..`seventh_attack`) land as a `cascadeTier(w, ch, victim, dt, gsn, dualBonus, tier)` helper driven by a `tierSpec` table. Tier math matches C fight.c:1071-1141 exactly with integer truncation (e.g. `/1.5` → `*2/3`). RNG-stubbed tests pin exact call counts; no loose statistical checks. Tests: `TestMultiHit_SecondAttackFires_Learned100`, `_ThirdAttack_Learned0_DoesNotFire`, `_SecondAttack_Learned75_Boundary`, `_NPCDoesNotCascade`, `_CascadeFiresLearnFromSuccess`, `_CascadeFiresLearnFromFailure`, `_CascadeShortCircuitsOnVictimDeath`, `_BackstabSkipsCascade`, `_CircleSkipsCascade`, `_AllTiersFire_AllLearned100`. Mutation-verified by flipping `<` to `>=` in cascadeTier.
+
+- **G4 — Dual-wield learned-roll + `dual_bonus` threading.** Dual-wield extra swing gated on `Learned[gsn_dual_wield]` (NPCs use level). `dual_bonus = learned / 10`. Low-move (`Move < 10`) overrides `dual_bonus` to `-20`. Threaded into each cascade tier's chance. Tests: `TestMultiHit_DualWield_LearnedGate_Fires/Fails`, `_LowMovePenalty_SuppressesCascade`, `_LowMovePenalty_BaselineFiresAtPct60`, `_NPCDualWield_UsesLevel`.
+
+- **G5 — Front-of-round gates.** PLR_NICE PC-vs-PC early-return, `IsAttackSuppressed(ch)` reading `ch.Timers` for `TIMER_ASUPRESSED`, `ACT_NOATTACK` NPC early-return, `AFF_BERSERK` extra hit at `LEARNED(berserk) * 6 / 2` for PCs or 100% for NPCs. Tests: `TestMultiHit_NoAttackMobSkips`, `_PLRNiceSkipsPvP`, `_PLRNiceDoesNotAffectPvNpc`, `_AttackSuppressedSkips`, `_BerserkExtraHit_Fires`, `_BerserkExtraHit_Learned0_NoFire`, `_BerserkNPCAlwaysFires`.
+
+- **G6 — Weapon proficiency bonus.** New `combat/profbonus.go`: `WeaponProfBonusCheck(ch, wield) (bonus, profGsn)` ports the non-`ENABLE_WEAPONPROF` branch of C fight.c:1256-1317 exactly. Switch on `wield.Value[3]` (DAM_* type) across all 17 damage types → 7 prof gsns. Bonus = `(Learned - 50) / 10` (negative when unlearned — matches C's deliberate penalty). PC-only, level > 5 gate. Applied in `oneHitFull`: `victimAC += profBonus` pre-roll, `dam += profBonus / 4` on hit, `learnFromFailure(ch, profGsn)` on miss. Tests: `TestWeaponProfBonus_Slashing_Learned100`, `_ShortBlades_Learned50_Zero`, `_Unlearned_IsNegative`, `_BelowLevel6_NoBonus`, `_Level6_IsEligible`, `_NPC_NoBonus`, `_NoWield_NoBonus`, `_AllDamTypesMap` (17 sub-cases), `_UnresolvedGsn_NoBonus`, `TestOneHit_ProfBonus_HigherLearnedDealsMoreDamage` (2000-round baseline vs +100 learned), `TestOneHit_ProfMissCallsLearnFailure`.
+
+- **G7 — Stance application.** New `combat/stance_index.go` hard-codes SMAUG-2.0-style `StanceInfo{NumAttacks, DamDone, DamTaken}` defaults for all 12 stances since `db/system/stances.dat` is a stub. `MultiHit` stacks `StanceIndex[ch.Stance].NumAttacks` into the NPC loop (suppressed by STANCE_MONKEY) and runs the PC GM bonus-attack loop when `Stances[stance] >= STANCE_GRAND_MASTER`. New `applyStanceDamage(ch, victim, dam)` multiplies damage by the attacker's `dam_done/100 × max(mastery/200, 0.5)` and divides by the victim's `dam_taken/100 × max(mastery/200, 0.5)`, mirroring C fight.c:2549-2594 exactly. NPC paths read `ch.IndexData.Stances[]`; PC paths read `ch.PCData.Stances[]`. Tests: `TestMultiHit_StanceGM_BonusAttacks`, `_StanceNonGM_NoBonus`, `_MonkeyStanceSuppressesGMBonus`, `_NPCStanceAddsNumAttacks`, `TestApplyStanceDamage_MonkeyNoOp`, `_DamDoneAmplifies`, `_MasteryClampedAtHalf`, `_DamTakenReducesDamage`, `_NPCReadsIndexData`, `TestStanceMastery_NilPaths`.
+
+- **G8 — Dual-wield weapon alternation.** C uses a `static bool dual_flip` inside `one_hit` — a cross-fighter race bug because the static is process-global, not per-character. Go port sidesteps this entirely: `oneHitFull(w, ch, victim, dt, wield *ObjData) int` takes the weapon explicitly, so `MultiHit`'s dual-wield bonus swing calls it with `GetEqChar(ch, WEAR_DUAL_WIELD)` while the primary `OneHit` entry point resolves `WEAR_WIELD`. No shared state. Tests: `TestOneHit_DualWieldAlternatesWeapons` (asserts the offhand object identity via spy on both seams), `TestOneHitFull_ExplicitWieldUsed` (20-dice offhand beats 1-dice primary over many rounds).
+
+- **G9 — Docs.** `CHANGELOG.md` entry appended. `TODO.md` P0 combat items checked off, with 6 explicit follow-ups queued (AddTimer subsystem for TIMER_RECENTFIGHT, devoted-clan favor penalty, per-round move-cost tracking, stances.dat loader, PC practice-stance flow, DoCircle/DoHitall retcode review). `phases.md` Tier 6 entry added. `audit-2026-04-17.md` C1/C2/C3 marked RESOLVED with resolution paragraphs. `CLAUDE.md` phase-records table extended; Next-work table marks the P0 plan complete.
+
+### Acceptance criteria — mapping
+
+| # | Criterion | Test |
+|---|-----------|------|
+| 1 | Level-30 PC `Learned[second_attack]=100` + stub 50 → 2 OneHit calls; `Learned[third_attack]=75` + stub 40 → 3 calls; stub 80 → 2 calls (boundary) | `TestMultiHit_SecondAttackFires_Learned100`, `_SecondAttack_Learned75_Boundary` |
+| 2 | Level-30 PC with no multi-attack skills → exactly 1 attack/round | `TestMultiHit_ThirdAttack_Learned0_DoesNotFire` |
+| 3 | Level-50 NPC `NumAttacks=4` → 4 attacks/round | `TestMultiHit_NPCNumAttacks` + `TestViolenceUpdate_NPCMultiAttack` (pre-existing, still green) |
+| 4 | Dual-wield offhand identity on bonus swing | `TestOneHit_DualWieldAlternatesWeapons` |
+| 5 | `Move<10` dual-wielding → `dual_bonus = -20`, cascade chance drops | `TestMultiHit_LowMovePenalty_SuppressesCascade` paired with `_BaselineFiresAtPct60` |
+| 6 | Level-10 PC DAM_SLASH + `Learned[long_blades]=100` → `bonus=5`; miss triggers `learnFromFailure(gsn_long_blades)` | `TestWeaponProfBonus_Slashing_Learned100`, `TestOneHit_ProfMissCallsLearnFailure` |
+| 7 | STANCE_DRAGON GM mastery + `NumAttacks=1` → extra attack before cascade | `TestMultiHit_StanceGM_BonusAttacks` |
+| 8 | STANCE_MONKEY on either side suppresses stance bonus + damage multipliers | `TestMultiHit_MonkeyStanceSuppressesGMBonus`, `TestApplyStanceDamage_MonkeyNoOp` |
+| 9 | AFF_BERSERK + `Learned[berserk]=33` → ~99% extra hit chance | `TestMultiHit_BerserkExtraHit_Fires` (Learned=33, pct=50 → fires); `_Learned0_NoFire` (Learned=0 → no fire) |
+| 10 | `dt == gsn_backstab` / `gsn_circle` → cascade never runs | `TestMultiHit_BackstabSkipsCascade`, `TestMultiHit_CircleSkipsCascade` |
+| 11 | Victim death mid-cascade → retcode propagates, no subsequent OneHit | `TestMultiHit_CascadeShortCircuitsOnVictimDeath` |
+| 12 | `ACT_NOATTACK` mob → never calls OneHit | `TestMultiHit_NoAttackMobSkips` |
+
+### Ambiguities resolved (not escalated)
+
+- **`stance_index` data source.** `db/system/stances.dat` is empty in this tree. Hard-coded `StanceInfo{NumAttacks, DamDone, DamTaken}` defaults land in `combat/stance_index.go` with comments flagging the intent. A future `load_stances` port can override.
+- **`MobIndexData.Stances`.** The field already exists at `types/mob_index.go:81` as `[MAX_STANCE]int`. No types extension needed; NPC stance mastery reads from `ch.IndexData.Stances[stance]` directly.
+- **`handler.AddTimer`** is not implemented. TIMER_RECENTFIGHT deferral is explicit in TODO.md. `IsAttackSuppressed(ch)` reads `ch.Timers` directly (scan for `Type == TIMER_ASUPRESSED`) — correct even without a dedicated timer subsystem, just unused until some code populates those timers.
+- **`DoCircle`'s two-OneHit historical behavior.** Preserved verbatim with an explicit comment referring to C fight.c:997 where `dt == gsn_circle` short-circuits MultiHit's cascade. So calling `combat.OneHit(...)` twice is semantically correct: each call runs its own hit/miss roll; neither cascades. `DoHitall` similarly ignored retcodes in the old code — `_ =` made that explicit with no behavior change.
+
+### Deferrals / follow-ups (also tracked in TODO.md)
+
+1. `handler.AddTimer` subsystem → `TIMER_RECENTFIGHT` wiring in MultiHit's PC-vs-PC block.
+2. Devoted-clan favor penalty in `WeaponProfBonusCheck` (C fight.c:1312-1313, gated on `pcdata.Favor`).
+3. Per-round move-cost tracking (C fight.c:1149-1171) — out-of-scope for combat-depth, separate follow-up.
+4. `db/system/stances.dat` loader → override the hard-coded `StanceIndex` at boot.
+5. PC practice-stance flow → actually increment `PCData.Stances[]` so the GM bonus path is reachable for non-admin players. Admins can cheat today via `stset` but that's not shipped.
+6. `DoCircle` / `DoHitall` / future `DoPounce` — audit their retcode propagation once a scenario demands it. Not load-bearing today.
+
+### Pre-existing issues surfaced (not introduced by this work)
+
+- **`TestScenario_MobCreateAndKill` verb whitelist was incomplete.** Tier 5 added this scenario with ~10 verbs; combat's `dammessage.go` tables emit ~40 distinct verbs. Under enough iterations the RNG picks a verb outside the whitelist. Fixed in G1 by expanding the whitelist to the full union from `sBladeMessages` / `sBluntMessages` / `sBodyMessages(|Vict)`. Not a regression; a latent flake.
+
+### Test count delta
+
+`grep -c '^func Test' internal/combat/*_test.go` after this session:
+
+- `combat_test.go`: 69 test functions (includes the original ~30 plus G1/G3/G4/G5/G8 additions)
+- `dammessage_test.go`: 11 (unchanged from tip)
+- `profbonus_test.go`: 11 (new — G6)
+- `scenario_test.go`: 1 (verb list expanded, not a new function)
+- `skillcheck_test.go`: 9 (new — G2)
+- `stance_test.go`: 10 (new — G7)
+
+Total: **111 test functions in 6 files**. New source files: `skillcheck.go`, `profbonus.go`, `stance_index.go`. Three test files added (`skillcheck_test.go`, `profbonus_test.go`, `stance_test.go`).

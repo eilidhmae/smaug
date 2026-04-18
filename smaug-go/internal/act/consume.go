@@ -8,6 +8,13 @@ import (
 	"github.com/eilidhmae/smaug/internal/util"
 )
 
+// LookupSkillSlot is the exported seam for combat.LookupSkillSlotHook.
+// Combat cannot import act, so this lets boot wire combat's seam into the
+// shared skill table.
+func LookupSkillSlot(name string) int {
+	return lookupSkillSlot(name)
+}
+
 // lookupSkillSlot finds a skill/spell slot number by name from the world skill table.
 // Returns -1 if not found.
 func lookupSkillSlot(name string) int {

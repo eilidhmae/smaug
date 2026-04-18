@@ -112,6 +112,17 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	cmdReg.ObjCommandHook = mudprog.OprogCommandTrigger
 	cmdReg.RoomCommandHook = mudprog.RprogCommandTrigger
 
+	// Combat → act skill-check hooks. Same cycle-break pattern: combat
+	// cannot import act, so act's canUseSkill / learnFromSuccess /
+	// learnFromFailure / lookupSkillSlot are exposed through these seams.
+	// Used by MultiHit's cascade (second_attack … seventh_attack, berserk,
+	// dual_wield) and by the weapon-proficiency bonus in OneHit.
+	combat.CanUseSkillHook = act.CanUseSkill
+	combat.LearnFromSuccessHook = act.LearnFromSuccess
+	combat.LearnFromFailureHook = act.LearnFromFailure
+	combat.LookupSkillSlotHook = act.LookupSkillSlot
+	combat.ResolveGSNs()
+
 	// OLC editor entry point (act.DoRedit et al. call this to start editing).
 	act.StartEditingFunc = game.StartEditing
 

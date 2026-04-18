@@ -105,6 +105,10 @@ func TestBoot_WiresCallbacks(t *testing.T) {
 	combat.ObjDamageHook = nil
 	combat.RfightHook = nil
 	combat.DeathRoomHook = nil
+	combat.CanUseSkillHook = nil
+	combat.LearnFromSuccessHook = nil
+	combat.LearnFromFailureHook = nil
+	combat.LookupSkillSlotHook = nil
 	persist.SkillNameLookup = nil
 	persist.SkillGetter = nil
 
@@ -170,6 +174,18 @@ func TestBoot_WiresCallbacks(t *testing.T) {
 	}
 	if combat.DeathRoomHook == nil {
 		t.Error("combat.DeathRoomHook not wired")
+	}
+	if combat.CanUseSkillHook == nil {
+		t.Error("combat.CanUseSkillHook not wired")
+	}
+	if combat.LearnFromSuccessHook == nil {
+		t.Error("combat.LearnFromSuccessHook not wired")
+	}
+	if combat.LearnFromFailureHook == nil {
+		t.Error("combat.LearnFromFailureHook not wired")
+	}
+	if combat.LookupSkillSlotHook == nil {
+		t.Error("combat.LookupSkillSlotHook not wired")
 	}
 	if persist.SkillNameLookup == nil {
 		t.Error("persist.SkillNameLookup not wired")

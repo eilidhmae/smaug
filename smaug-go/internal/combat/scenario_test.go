@@ -44,12 +44,24 @@ func TestScenario_MobCreateAndKill(t *testing.T) {
 	c.Send("kill rat")
 	out := c.ReadFor(5 * time.Second)
 
-	// Damage-message verbs from combat/dammessage.go. Any of these
-	// (or the kill-ack "receive" or "DEAD") proves the combat pipeline
-	// reached the client.
+	// Damage-message verbs from combat/dammessage.go (see sBladeMessages,
+	// sBluntMessages, sBodyMessages, sBodyMessagesVict). Any of these,
+	// or the kill-ack "receive"/"DEAD", proves the combat pipeline reached
+	// the client. The lists in dammessage.go are wide — cover the union
+	// so RNG verb-choice doesn't flake the test.
 	verbs := []string{
-		"miss", "hit", "pound", "slash", "crush", "punch",
-		"bruise", "strike", "thrash", "scratch",
+		// s_blade_messages
+		"miss", "barely scratch", "scratch", "nick", "cut", "hit", "tear",
+		"rip", "gash", "lacerate", "hack", "maul", "rend", "decimate",
+		"mangle", "devastate", "cleave", "butcher", "disembowel",
+		"disfigure", "gut", "eviscerate", "slaughter", "annihilate",
+		// s_blunt_messages
+		"bruise", "whack", "jar", "hit", "sock", "clout", "smack", "pound",
+		"batter", "flog", "pummel", "smash", "bludgeon", "shatter", "maim",
+		"demolish", "obliterate", "pulverize",
+		// s_body_messages / _vict
+		"injure", "thrash", "traumatize", "mutilate", "massacre",
+		"wounds", "brushes", "grazes", "jolts",
 		"receive", // "You receive N experience points." on kill
 		"DEAD",
 	}
