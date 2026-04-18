@@ -44,15 +44,15 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 8 (player-config commands — save / afk / title / password + pagelen) | `plan-player-config.md` (plan + completion) | — |
 | 5 Tier 9 (communication channels — immtalk / gtell / auction stub) | `plan-channels.md` (plan + completion) | — |
 | 5 Tier 10 (Deaf persistence fix + DoChannels toggle command) | `plan-do-channels.md` (plan + completion) | — |
+| 5 Tier 11 (Timer subsystem + IsAttackSuppressed wiring + TIMER_RECENTFIGHT + DoQuit gate) | `plan-timer-subsystem.md` (plan + completion) | — |
 
-**Next work:** four remaining polish plans from the 2026-04-17 wave-2 audit. Ordered in `TODO.md` "Recommended next steps":
+**Next work:** three remaining polish plans from the 2026-04-17 wave-2 audit. Ordered in `TODO.md` "Recommended next steps":
 
-1. `plan-timer-subsystem.md` (P1) — `handler.AddTimer` + `TIMER_RECENTFIGHT` wiring + activate `IsAttackSuppressed`.
-2. `plan-editor-save.md` (P2) — `/s` stuck-state fix; unblocks `bio`/`description` and Phase-6 OLC substates.
-3. `plan-do-gag.md` (P2) — standalone `DoGag` toggle.
-4. `plan-rollD20-seam.md` (P2) — function-variable seam eliminates ~5% combat-test flake.
+1. `plan-editor-save.md` (P2) — `/s` stuck-state fix; unblocks `bio`/`description` and Phase-6 OLC substates.
+2. `plan-do-gag.md` (P2) — standalone `DoGag` toggle.
+3. `plan-rollD20-seam.md` (P2) — function-variable seam eliminates ~5% combat-test flake.
 
-All four P1 plans from the 2026-04-17 wave-1 audit and the top wave-2 P1 plan (do-channels) have landed (see Done section of `TODO.md`). Phase-6-sized optional systems, polish items, and follow-up queues remain tracked in `TODO.md` Active.
+Both wave-2 P1 plans (do-channels, timer-subsystem) have landed (see Done section of `TODO.md`). Phase-6-sized optional systems, polish items, and follow-up queues remain tracked in `TODO.md` Active.
 
 **Reviews:**
 

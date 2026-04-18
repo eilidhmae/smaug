@@ -885,7 +885,7 @@ func DoIfCheck(check string, mob *types.CharData, actor *types.CharData,
 	// TODO(tier3): timeskilled — needs MobIndexData.Killed counter
 	// TODO(tier3): leverpos — needs lever/switch trigger data on ObjData (Value[0] bitflag TRIG_UP)
 	// TODO(tier3): isflagged / istagged — needs VariableData get_tag implementation
-	// TODO(tier3): pkadrenalized / asupressed — require TimerData lookup by TIMER_*; skipping because Timers storage and TIMER_* resolution helpers are not yet ported
+	// TODO(tier3): pkadrenalized / asupressed — handler.GetTimer(TIMER_PKADRENALINE / TIMER_ASUPRESSED) > 0 / timer.Value == -1; subsystem now present (handler/timer.go), callers to be wired in a follow-up
 	// TODO(tier3): areamulti / multi — require host-descriptor matching across all chars (host comparison is implemented but requires every PC to have a descriptor; untested without integration fixture)
 	// TODO(tier3): objtype — duplicate of obj type check; rarely used in stock areas
 

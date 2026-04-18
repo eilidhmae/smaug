@@ -7,7 +7,7 @@ The four 2026-04-17 audit plans (`plan-combat-depth.md`, `plan-dammessage-gaps.m
 **Five new plans adversary-verified (2026-04-17 wave 2), ready to execute.** Each has its own doc under `smaug-go/doc/` with gap inventory, task groups, acceptance criteria, and resolved adversary concerns.
 
 1. ~~**`plan-do-channels.md`** (P1) — LANDED 2026-04-17. G1 `Deaf` persistence fix + G2-G5 `DoChannels` command (30-entry toggle table, grouped display, `+all`/`-all`, end-to-end save/load round-trip). See Done below + CHANGELOG entries.~~
-2. **`plan-timer-subsystem.md`** (P1) — Ship generic `handler.AddTimer`/`GetTimer`/`RemoveTimer`, wire decrement in `violenceUpdate` (NOT `charUpdate` — adversary caught 23x cadence bug), activate `IsAttackSuppressed` (currently dead-in-production), set `TIMER_RECENTFIGHT` on PC-vs-PC combat, gate `DoQuit`.
+2. ~~**`plan-timer-subsystem.md`** (P1) — LANDED 2026-04-18. Generic `handler.AddTimer` / `GetTimer` / `GetTimerPtr` / `RemoveTimer` / `ExtractTimer` / `DecrementTimers` subsystem + wiring into `ViolenceUpdate` (per-char decrement at 3s PULSE_VIOLENCE cadence), `IsAttackSuppressed` refactor, `MultiHit` `TIMER_RECENTFIGHT` set, `DoQuit` gate. Two commits: `8d5675b` (G1) + `062f4a7` (G2-G5).~~
 3. **`plan-editor-save.md`** (P2) — Fix `/s` stuck-state bug (blocks `bio`/`description` and Phase-6 OLC substates). Option-C design: call-site assignment of `ch.EditorSave`, no signature churn.
 4. **`plan-do-gag.md`** (P2) — Ship `DoGag` standalone toggle mirroring `DoAfk` (conditional pattern, directional messages). ~10 LOC.
 5. **`plan-rollD20-seam.md`** (P2) — Convert `rollD20` to function-variable seam; fix ~5% flake in `TestOneHitFull_ExplicitWieldUsed`.
@@ -31,7 +31,16 @@ The four 2026-04-17 audit plans (`plan-combat-depth.md`, `plan-dammessage-gaps.m
 - [x] Apply `ch.Stance` in combat — NPC num_attacks stacking, PC GM bonus loop, dam_done/dam_taken multipliers (plan G7)
 
 Follow-ups queued from plan-combat-depth.md:
-- [ ] `handler.AddTimer` subsystem + `TIMER_RECENTFIGHT` wiring (deferred from G5)
+- [x] `handler.AddTimer` subsystem + `TIMER_RECENTFIGHT` wiring (LANDED 2026-04-18 via plan-timer-subsystem.md)
+
+Follow-ups queued from plan-timer-subsystem.md:
+- [ ] `TIMER_DO_FUN` callback dispatch — `AddTimer` accepts a `doFun string` parameter and stores it, but `DecrementTimers` drops the timer silently on expiry without dispatching. Needs a string-to-function registry (analogous to the spell registry) and a hook in the expiry branch.
+- [ ] `TIMER_PKILLED` persistence via `PTimer` line in `SavePlayer` (C `save.c:546` load + `save.c:1863` read — plan v1 adversary corrected the file citation from `db.c` to `save.c`). No Go code currently sets `TIMER_PKILLED` so nothing persists; add alongside PKilled mechanics port.
+- [ ] `TIMER_NUISANCE` / `TIMER_SHOVEDRAG` wiring — these timer types are defined but no setter or consumer exists (the underlying commands are not ported).
+- [ ] Mudprog `timerskilled` / `asupressed` / `pkadrenalized` if-check wiring (`internal/mudprog/ifcheck.go:888`) — subsystem is ready; consumer glue is trivial once the if-check bodies are written.
+- [ ] Deity prayer gate on `TIMER_RECENTFIGHT` — C `src/deity.c:1498` blocks prayer when a player recently PK-fought; Go deity system has the hook point but no timer check yet.
+- [ ] Wiz-stat display of remaining timer counts (C `src/act_wiz.c:2552-2554`) — useful for immortals debugging timer state.
+- [ ] Manager process note: two separate workers inadvertently ran `git checkout -- combat.go` during mutation verification and destroyed uncommitted work. Ban `git checkout` / `git reset --hard` / `git stash` in future worker and adversary prompts; use `Edit` round-trips for mutation verification instead.
 - [ ] Devoted-clan favor penalty in `WeaponProfBonusCheck` (C fight.c:1312-1313)
 - [ ] Per-round move-cost tracking (C fight.c:1149-1171)
 - [ ] `db/system/stances.dat` loader — currently `StanceIndex` is hard-coded in `combat/stance_index.go`
@@ -176,6 +185,10 @@ Roughly ordered by player-visibility/impact:
 ---
 
 ## Done
+
+### 2026-04-18
+
+- [x] **Timer subsystem — landed (plan-timer-subsystem.md G1-G7).** Generic `handler.AddTimer` / `GetTimer` / `GetTimerPtr` / `RemoveTimer` / `ExtractTimer` / `DecrementTimers` in `internal/handler/timer.go` (G1, commit `8d5675b`, ~140 LOC + 20 tests). Consumer wiring (G2-G5, commit `062f4a7`): per-char decrement pass at top of `combat.ViolenceUpdate` (ALL chars, not just fighters — matches C `fight.c:382-430` at PULSE_VIOLENCE 3s cadence, NOT PULSE_TICK 70s — plan adversary caught the 23x cadence bug); `IsAttackSuppressed` refactored to `handler.GetTimerPtr` with `Value == -1` OR `Count >= 1` semantics (previously functionally dead — type existed, read path existed, nothing ever wrote); `MultiHit` sets `TIMER_RECENTFIGHT` Count=11 on both PCs in the PC-vs-PC block AFTER the `PLR_NICE` early-return; `DoQuit` gates on the timer with `"Your adrenaline is pumping too hard to quit now!"`. 8 G2-G5 tests + `TestIsAttackSuppressed_CountOneBoundary` to close the `>= 1` boundary gap caught by first adversary. `DecrementTimers` exported (not lowercase per plan prose — caller is `combat` package). `Value == -1` treated as universal permanent-timer sentinel, matches C `fight.c:74-98` generalized. G6 updated `mudprog/ifcheck.go:888` comment to reference the new handler path for future `pkadrenalized`/`asupressed` wiring. `go test -count=3 ./...` green. See plan completion record at the bottom of `smaug-go/doc/plan-timer-subsystem.md`.
 
 ### 2026-04-17
 

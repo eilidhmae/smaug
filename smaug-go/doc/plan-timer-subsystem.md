@@ -228,3 +228,53 @@ A9. `IsAttackSuppressed` verified live (not just test-only) via a combat integra
 4. **`doFun string` stored-but-not-dispatched** — explicit in Open Question 4; stub until string registry exists.
 5. **`DoQuit` location** verified at `internal/act/info.go:337`; line-ending fixed to `\n\r`.
 6. **Import cycle check** — `combat` already imports `handler`; no new cycle.
+
+---
+
+## Completion record (2026-04-18)
+
+Landed in two commits per the plan's implicit phasing. First adversary caught one coverage gap (Count=1 boundary); fix landed in the same G2-G5 commit.
+
+### Commit `8d5675b` — G1 timer subsystem (standalone)
+
+- New file `smaug-go/internal/handler/timer.go` with five C-faithful handler functions (`AddTimer` / `GetTimer` / `GetTimerPtr` / `RemoveTimer` / `ExtractTimer`) + `DecrementTimers` helper.
+- `AddTimer` upsert-by-type: scan `ch.Timers`, match on `Type`, overwrite in place. Else append.
+- `DecrementTimers` uses the compact-in-place filter (`kept := ch.Timers[:0]`) — safe because the `range` header is captured at loop entry. `Value == -1` is the universal permanent-timer sentinel (generalizes C `fight.c:74-98` for `TIMER_ASUPRESSED` to all timer types per plan). Expired timers drop from the slice without dispatch; `TIMER_DO_FUN` callback dispatch is a scope-cut follow-up pending a function-name registry.
+- All functions nil-safe on `ch`.
+- 20 tests cover upsert / get / get-ptr / remove / extract / decrement including nil-char paths, permanent-value-minus-1, mixed permanent-and-normal, and count-boundary.
+- **Divergence from plan prose**: `DecrementTimers` is exported (capital D) because the caller is `combat.ViolenceUpdate` in a different package. A lowercase name would not be reachable. Documented in the Go doc comment.
+- 5 worker mutations applied + 6th adversary mutation (`t.Count > 0` → `t.Count >= 0`) — all caught.
+
+### Commit `062f4a7` — G2/G3/G4/G5 consumer wiring
+
+- **G2 (`combat.ViolenceUpdate`)**: prepend a per-char decrement pass iterating ALL of `w.Characters` (not just fighters). Runs at PULSE_VIOLENCE (3s) cadence matching C `fight.c:382-430`. NOT in `charUpdate` (70s PULSE_TICK) — plan adversary caught v1's 23x cadence bug; unit test `TestViolenceUpdate_DecrementsEveryChar` pins behavior on non-fighting chars specifically.
+- **G3 (`IsAttackSuppressed`)**: replace manual `range ch.Timers` scan with `handler.GetTimerPtr(TIMER_ASUPRESSED)`. New semantics: `Value == -1` permanent OR `Count >= 1` active. Previously: any `TIMER_ASUPRESSED` entry with any Count/Value suppressed — but since nothing in production ever wrote to `ch.Timers`, the function was functionally dead. Pre-existing `TestMultiHit_AttackSuppressedSkips` fixture had used `{Type: TIMER_ASUPRESSED, Value: 5}` with implicit `Count=0`; under the new contract `Count=0` does NOT suppress, so the fixture was switched to `handler.AddTimer(ch, TIMER_ASUPRESSED, 5, "", 0)` (Count=5) to preserve test intent. `TestIsAttackSuppressed_CountOneBoundary` added to close the `>= 1` vs `> 1` coverage gap the first adversary caught.
+- **G4 (`MultiHit`)**: set `TIMER_RECENTFIGHT` Count=11 on BOTH attacker and victim inside the existing PC-vs-PC block, AFTER the `PLR_NICE` early-return. Matches C `fight.c:982-986`. Set before any damage resolution so the victim is guaranteed alive. PLR_NICE path emits no timer on either side.
+- **G5 (`DoQuit`)**: gate on `!ch.IsNPC() && handler.GetTimer(ch, TIMER_RECENTFIGHT) > 0` with the C-faithful message `"Your adrenaline is pumping too hard to quit now!"` (C `act_comm.c:2875`). `\n\r` line ending consistent with rest of `info.go`. NPCs don't hit the gate.
+- 8 new tests + `TestIsAttackSuppressed_CountOneBoundary`. 4 worker mutations + 1 adversary mutation + 1 boundary mutation — all caught.
+- **G6** updated `mudprog/ifcheck.go:888` `pkadrenalized / asupressed` deferral comment to reference the new `handler.GetTimer` / `GetTimerPtr` path for the follow-up wiring.
+
+### Process note — `git checkout` hazard
+
+Two separate workers (the G2-G5 worker's own mutation-verification step, and an adversary running independent mutations) inadvertently ran `git checkout -- combat.go` during mutation verification and destroyed uncommitted G2/G3/G4 edits. The restore-G2-G3-G4 task had to run twice. **Lesson for future plans**: worker/adversary prompts must explicitly ban `git checkout`, `git reset --hard`, `git stash` as mutation-revert mechanisms. Use `Edit` round-trips for mutation verification (apply the mutation with `Edit`, run tests, revert via `Edit` with the opposite change). Added this note to `TODO.md` under the timer-plan follow-ups.
+
+### Acceptance criteria status
+
+- A1 ✅ Five handler functions + `DecrementTimers` in `internal/handler/timer.go`, tested.
+- A2 ✅ `AddTimer` upsert (same type twice → len stays 1).
+- A3 ✅ `ViolenceUpdate` decrement at PULSE_VIOLENCE for ALL chars.
+- A4 ✅ `Value == -1` never decrements.
+- A5 ✅ `IsAttackSuppressed` uses `GetTimerPtr` + `Value == -1` branch + `Count >= 1` boundary.
+- A6 ✅ `MultiHit` sets `TIMER_RECENTFIGHT` on both PCs; `PLR_NICE` gates.
+- A7 ✅ `DoQuit` blocks with C-exact message when timer > 0.
+- A8 ✅ `go test -count=3 ./...` green across all 15 packages.
+- A9 ✅ `IsAttackSuppressed` verified live via `TestMultiHit_AttackSuppressedSkips` (not just the unit-test-only path).
+
+### Scope cuts (tracked in `TODO.md`)
+
+- `TIMER_DO_FUN` callback dispatch — needs function-name registry.
+- `TIMER_PKILLED` persistence via `PTimer` line in `SavePlayer` (C `save.c:546` — plan v1 incorrectly cited `db.c`).
+- `TIMER_NUISANCE` / `TIMER_SHOVEDRAG` wiring — commands not ported.
+- Mudprog `timerskilled` / `asupressed` / `pkadrenalized` if-check wiring — subsystem ready.
+- Deity prayer gate on `TIMER_RECENTFIGHT` — C `deity.c:1498`.
+- Wiz-stat display of timer remaining — C `act_wiz.c:2552-2554`.
