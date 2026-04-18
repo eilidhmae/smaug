@@ -204,3 +204,41 @@ Insert a new branch in `DamMessage`'s format switch between `TYPE_HIT` and the s
 - Go: `/home/eilidh/src/smaug/smaug-go/internal/combat/dammessage.go` (150-157, 232, 297-305), `…/internal/combat/dammessage_test.go`
 - Seams: `/home/eilidh/src/smaug/smaug-go/internal/handler/handler.go` (`CharFromRoom`, `CharToRoom`, `GetEqChar`), `/home/eilidh/src/smaug/smaug-go/internal/util/act.go:283-318` (broadcast target), `/home/eilidh/src/smaug/smaug-go/internal/types/pcdata.go` (`PCData.Flags`), `/home/eilidh/src/smaug/smaug-go/internal/types/constants.go:652` (`PCFLAG_GAG`), `/home/eilidh/src/smaug/smaug-go/internal/types/enums.go:674,782-784` (`ITEM_POISONED`, `WEAR_WIELD`, `WEAR_DUAL_WIELD`)
 - Reference: `/home/eilidh/src/smaug/smaug-go/internal/act/skills4.go:326` (where `ITEM_POISONED` is set)
+
+---
+
+## Completion record (2026-04-17)
+
+All three task groups landed in one pass against `combat/dammessage.go`.
+
+### G1 — `was_in_room` swap
+- Added an unconditional cross-room swap at the top of `DamMessage`: if `ch.InRoom != victim.InRoom && victim.InRoom != nil`, `handler.CharFromRoom(ch)` + `CharToRoom(ch, victim.InRoom)`, and a `defer` that restores `ch` to the original room. The restore is panic-safe via `defer`.
+- Removed the `crossRoom` short-circuit at the former `:297-301` and the stale local. The unified broadcast at the bottom now handles both same-room and cross-room callers.
+- Deleted `TestDamMessageDifferentRoomsEmitsToVictOnly` and replaced it with two new tests: `TestDamMessage_DifferentRooms_SwapsAttackerIntoVictimRoom` (bystander in victim room sees buf1; ch restored to room A; room-membership invariants) and `TestDamMessage_DifferentRooms_BystanderInOriginalRoomSeesNothing` (cross-room confirmation — bystander in attacker's original room stays silent).
+- **Defer-restore-on-panic test deferred (flagged in task).** `util.Act` never panics through the current descriptor path (`CharData.Send` → `WriteToBuffer` is pure buffer append; `FlushOutput` returns `error`, not `panic`). Constructing a reliable panic surface would require injecting a panicking `net.Conn` AND a flush — but `Act` never flushes, only buffers. The `defer` is retained as correctness insurance, verified by the two landed G1 tests covering normal restore.
+
+### G2 — `PCFLAG_GAG` self-suppress
+- Computed `gcflag` / `gvflag` exactly per C: `dam == 0 && !IsNPC && PCData != nil && PCData.Flags & int(PCFLAG_GAG) != 0`.
+- At the broadcast site, `TO_NOTVICT` is always emitted; `TO_CHAR` is gated on `!gcflag`; `TO_VICT` is gated on `!gvflag`.
+- 5 new tests: `TestDamMessage_GaggedAttacker_ZeroDam_NoToChar`, `TestDamMessage_GaggedVictim_ZeroDam_NoToVict`, `TestDamMessage_BothGagged_OnlyBystanderSees`, `TestDamMessage_GaggedAttacker_PositiveDam_AllDeliver`, `TestDamMessage_NPCAttackerVictimNoGagCrash`. The NPC crash-guard test confirms `PCData == nil` never panics; per the plan this also covers the `DoGag` follow-up since tests set `PCData.Flags` directly.
+
+### G3 — Poisoned-weapon prefix
+- Added package-private `isWieldingPoisoned(ch, obj)` at the top of `dammessage.go`, implementing option (a) from the plan: obj is pointer-identical to `handler.GetEqChar(ch, WEAR_WIELD)` or `handler.GetEqChar(ch, WEAR_DUAL_WIELD)` AND `obj.ExtraFlags.IsSet(ITEM_POISONED)`. This matches C `fight.c:104-119` exactly and tolerates the combat-depth G8 dual-wield alternation that threads offhand `obj` through `oneHitFull`.
+- Inserted an `else if dt > types.TYPE_HIT && isWieldingPoisoned(ch, obj)` branch BEFORE the existing weapon-damage-type branch. When active, buf1/buf2/buf3 become `"$n's poisoned <attack> <verb> ..."` etc. Per C (`fight.c:4496-4511`) the attack word is taken from `attackTable[dt - TYPE_HIT]`, NOT from `obj.ShortDescr` — C's poisoned branch deliberately uses the generic noun.
+- 7 new tests: `TestDamMessage_PoisonedWield_PrimarySlot`, `TestDamMessage_PoisonedWield_DualSlot`, `TestDamMessage_PoisonedButNotEquipped_NoPrefix` (identity check), `TestDamMessage_WieldWithoutPoisonFlag_NoPrefix`, `TestDamMessage_BareHands_PoisonedObjIgnored` (`dt == TYPE_HIT` gate), `TestDamMessage_SkillPathPoisonedBranchSkipped` (sn path unaffected), `TestDamMessage_PoisonedNilObj_NoPrefix`.
+
+### Test delta
+- Added `"github.com/eilidhmae/smaug/internal/handler"` import to `combat/dammessage.go`; no new import cycle (`combat/combat.go` already imports `handler`).
+- `internal/combat/dammessage_test.go`: deleted 1, added 14 (2 G1 + 5 G2 + 7 G3). 10 pre-existing tests untouched + 13 renamed-style new tests = 23 distinct dam-message test functions now, all PASS under `go test -v -run TestDamMessage`.
+- Full package: `go test -count=1 ./internal/combat/...` green (all 82 tests pass). Full project: `go test -count=3 ./...` green across 15 packages.
+
+### Acceptance criteria coverage
+1. **G1:** covered by `TestDamMessage_DifferentRooms_SwapsAttackerIntoVictimRoom` (buf1 to bystander in victim's room; `ch.InRoom == roomA` after call; room membership invariants on both rooms) and `TestDamMessage_DifferentRooms_BystanderInOriginalRoomSeesNothing` (no leak to attacker's original-room bystanders).
+2. **G2:** all three assertions covered by `TestDamMessage_GaggedAttacker_ZeroDam_NoToChar` (i), `TestDamMessage_GaggedVictim_ZeroDam_NoToVict` (ii), and `TestDamMessage_GaggedAttacker_PositiveDam_AllDeliver` (iii).
+3. **G3:** covered by `TestDamMessage_PoisonedWield_PrimarySlot` (primary slot, flag set → "poisoned slice"), `TestDamMessage_WieldWithoutPoisonFlag_NoPrefix` (without flag), `TestDamMessage_BareHands_PoisonedObjIgnored` (`dt == TYPE_HIT` gate), `TestDamMessage_PoisonedNilObj_NoPrefix` (nil obj).
+4. **Regression:** 10 unchanged pre-existing dam-message tests still green; 1 intentionally replaced (`TestDamMessageDifferentRoomsEmitsToVictOnly` → `TestDamMessage_DifferentRooms_SwapsAttackerIntoVictimRoom`).
+
+### Deferrals / follow-ups
+- `DoGag` player command still not ported (out of scope per plan; can be a trivial follow-up — gag flag is already player-mutable via tests).
+- Defer-restore-on-panic test skipped per task allowance — no reachable panic surface in the current `util.Act` → `Send` → buffer path. The `defer` remains as correctness insurance.
+- Color-code loss (`AT_ACTION` / `AT_HIT` / `AT_HITME` per-recipient coloring) still flattened by `util.Act` — noted in audit; out of scope.

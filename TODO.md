@@ -74,11 +74,16 @@ From `phase5-tier3-completed.md` known deferrals + code-level TODOs:
 
 ### Combat / damage-message gaps
 
-**→ See `smaug-go/doc/plan-dammessage-gaps.md` for the full plan (3 task groups, adversary-verified). Pairs with combat-depth.**
+**→ See `smaug-go/doc/plan-dammessage-gaps.md` for the full plan (3 task groups, adversary-verified). LANDED 2026-04-17.**
 
-- [ ] Port `was_in_room` swap (plan G1)
-- [ ] Port `PCFLAG_GAG` self-suppress (plan G2)
-- [ ] Port `is_wielding_poisoned` prefix (plan G3) — must check both `WEAR_WIELD` and `WEAR_DUAL_WIELD` for obj identity
+- [x] Port `was_in_room` swap (plan G1)
+- [x] Port `PCFLAG_GAG` self-suppress (plan G2)
+- [x] Port `is_wielding_poisoned` prefix (plan G3) — must check both `WEAR_WIELD` and `WEAR_DUAL_WIELD` for obj identity
+
+Follow-ups queued from plan-dammessage-gaps.md:
+- [ ] Port `DoGag` player command (`act_info.c:5795` — ~15 LOC; gag flag is currently test-only)
+- [ ] Per-recipient color code preservation (`AT_ACTION` / `AT_HIT` / `AT_HITME`) in `util.Act` — audit-flagged, out of scope of the dam-message gaps but tracked here
+- [ ] Fix pre-existing flake in `TestOneHitFull_ExplicitWieldUsed` (`combat_test.go:1981`): `rollD20` has 1/20 chance to roll 0 which always misses regardless of bonuses, causing a 1-in-10 single-call full-suite failure. Not introduced by dam-message gaps (reproduced at HEAD 273039e). Fix by stubbing `rollD20` via the existing `numberPercent` pattern, or by looping until a non-zero roll in the test.
 
 ### Usability polish (from audit U1–U3 + phase notes)
 

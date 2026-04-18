@@ -1,6 +1,7 @@
 package combat
 
 import (
+	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 	"github.com/eilidhmae/smaug/internal/world"
@@ -133,6 +134,23 @@ func lookupSkill(sn int) *types.SkillType {
 	return WorldRef.Skills[sn]
 }
 
+// isWieldingPoisoned returns true iff obj is the actively-wielded poisoned
+// weapon for ch. Matches C fight.c:104-119: requires obj to be non-nil,
+// ITEM_POISONED set, and pointer-identical to the character's primary wield
+// (WEAR_WIELD) OR dual-wield (WEAR_DUAL_WIELD) slot. The identity check is
+// load-bearing — an ad-hoc poisoned obj that is not currently equipped must
+// not trigger the prefix.
+func isWieldingPoisoned(ch *types.CharData, obj *types.ObjData) bool {
+	if ch == nil || obj == nil {
+		return false
+	}
+	if !obj.ExtraFlags.IsSet(types.ITEM_POISONED) {
+		return false
+	}
+	return obj == handler.GetEqChar(ch, types.WEAR_WIELD) ||
+		obj == handler.GetEqChar(ch, types.WEAR_DUAL_WIELD)
+}
+
 // DamMessage emits damage messages to ch, victim, and room based on the
 // weapon type (dt) and the damage as a percentage of the victim's max HP.
 // Ported from C src/fight.c:4410 (new_dam_message).
@@ -145,19 +163,38 @@ func lookupSkill(sn int) *types.SkillType {
 //     ShortDescr (if obj != nil).
 //
 // obj (when non-nil and dt > TYPE_HIT) is substituted as the attack word
-// in place of attackTable[dt-TYPE_HIT].
+// in place of attackTable[dt-TYPE_HIT]. When obj is also the active poisoned
+// wield (primary or dual), the attack word is prefixed with "poisoned "
+// (C fight.c:4496-4512).
 //
-// TODO(phase5-tier4): Port the was_in_room swap in fight.c:4432-4438 so a
-// cross-room attacker appears to the victim's room while messages fire.
-// For now, if the attacker is in a different room we emit only to the victim.
+// Cross-room attacker: if ch.InRoom != victim.InRoom, the attacker is
+// temporarily moved into the victim's room so TO_NOTVICT bystanders there
+// see the broadcast, and restored afterwards via defer (C fight.c:4432-4438
+// and 4590-4594).
 //
-// TODO(phase5-tier4): Port PCFLAG_GAG handling in fight.c:4481-4486 so gagged
-// players can suppress their own miss messages.
-//
-// TODO(phase5-tier4): Port is_wielding_poisoned prefix in fight.c:4496-4512.
+// PCFLAG_GAG: a zero-damage miss is suppressed for gagged PCs on their own
+// side (attacker-gag silences TO_CHAR, victim-gag silences TO_VICT); the
+// bystander broadcast (TO_NOTVICT) is never gated. Positive damage is never
+// silenced. Mirrors C fight.c:4481-4488.
 func DamMessage(ch, victim *types.CharData, dam, dt int, obj *types.ObjData) {
 	if ch == nil || victim == nil {
 		return
+	}
+
+	// Cross-room swap (C fight.c:4432-4439). Temporarily move the attacker
+	// into the victim's room so the TO_NOTVICT broadcast reaches bystanders
+	// there. Wrapped in defer so the restore runs even if util.Act panics.
+	if ch.InRoom != victim.InRoom && victim.InRoom != nil {
+		wasInRoom := ch.InRoom
+		handler.CharFromRoom(ch)
+		handler.CharToRoom(ch, victim.InRoom)
+		defer func() {
+			if wasInRoom == nil {
+				return
+			}
+			handler.CharFromRoom(ch)
+			handler.CharToRoom(ch, wasInRoom)
+		}()
 	}
 
 	// Compute damage percentage (fight.c:4426-4430).
@@ -225,12 +262,6 @@ func DamMessage(ch, victim *types.CharData, dam, dt int, obj *types.ObjData) {
 
 	var buf1, buf2, buf3 string
 
-	// Cross-room guard. C's version does a char_from_room/char_to_room swap
-	// so the attacker is temporarily placed with the victim for message
-	// routing. We skip that dance and emit only to the victim. This keeps
-	// the TO_NOTVICT broadcast in the victim's room, and skips TO_CHAR.
-	crossRoom := ch.InRoom != victim.InRoom
-
 	if dt == types.TYPE_HIT {
 		buf1 = "$n " + vp + " $N" + string(punct)
 		buf2 = "You " + vs + " $N" + string(punct)
@@ -278,6 +309,20 @@ func DamMessage(ch, victim *types.CharData, dam, dt int, obj *types.ObjData) {
 		buf1 = "$n's " + attack + " " + vp + " $N" + string(punct)
 		buf2 = "Your " + attack + " " + vs + " $N" + string(punct)
 		buf3 = "$n's " + attack + " " + vp + " you" + string(punct)
+	} else if dt > types.TYPE_HIT && isWieldingPoisoned(ch, obj) {
+		// Poisoned wielded weapon (C fight.c:4496-4512). C uses the
+		// attack_table entry — NOT the obj's short_descr — when emitting
+		// this variant, so we do the same. The prefix is literal "poisoned"
+		// and the buffers become "$n's poisoned <attack> ...".
+		var attack string
+		if dt >= types.TYPE_HIT && dt < types.TYPE_HIT+len(attackTable) {
+			attack = attackTable[dt-types.TYPE_HIT]
+		} else {
+			attack = attackTable[0]
+		}
+		buf1 = "$n's poisoned " + attack + " " + vp + " $N" + string(punct)
+		buf2 = "Your poisoned " + attack + " " + vs + " $N" + string(punct)
+		buf3 = "$n's poisoned " + attack + " " + vp + " you" + string(punct)
 	} else {
 		// dt > TYPE_HIT (weapon damage type). Attack word is obj's
 		// ShortDescr when present, else the generic attack table entry.
@@ -294,13 +339,20 @@ func DamMessage(ch, victim *types.CharData, dam, dt int, obj *types.ObjData) {
 		buf3 = "$n's " + attack + " " + vp + " you" + string(punct)
 	}
 
-	if crossRoom {
-		// TODO: port was_in_room swap. For now, emit only to victim.
-		util.Act(buf3, ch, victim, nil, nil, types.TO_VICT)
-		return
-	}
+	// PCFLAG_GAG self-suppress (C fight.c:4481-4488). Only a zero-damage
+	// miss is silenced, and only on the gagged recipient's own side. NPCs
+	// (and PCs with PCData == nil) are never gagged. TO_NOTVICT is always
+	// delivered.
+	gcflag := dam == 0 && !ch.IsNPC() && ch.PCData != nil &&
+		(ch.PCData.Flags&int(types.PCFLAG_GAG)) != 0
+	gvflag := dam == 0 && !victim.IsNPC() && victim.PCData != nil &&
+		(victim.PCData.Flags&int(types.PCFLAG_GAG)) != 0
 
 	util.Act(buf1, ch, victim, nil, nil, types.TO_NOTVICT)
-	util.Act(buf2, ch, victim, nil, nil, types.TO_CHAR)
-	util.Act(buf3, ch, victim, nil, nil, types.TO_VICT)
+	if !gcflag {
+		util.Act(buf2, ch, victim, nil, nil, types.TO_CHAR)
+	}
+	if !gvflag {
+		util.Act(buf3, ch, victim, nil, nil, types.TO_VICT)
+	}
 }
