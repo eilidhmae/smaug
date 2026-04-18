@@ -485,6 +485,9 @@ func SavePlayer(w io.Writer, ch *types.CharData) error {
 	if !ch.AffectedBy.IsEmpty() {
 		fmt.Fprintf(w, "AffectedBy %s\n", ch.AffectedBy.String())
 	}
+	if !ch.Deaf.IsEmpty() {
+		fmt.Fprintf(w, "Deaf       %s\n", ch.Deaf.String())
+	}
 	fmt.Fprintf(w, "Position   %d\n", ch.Position+100)
 	fmt.Fprintf(w, "Style      %d\n", ch.Style)
 	fmt.Fprintf(w, "Practice   %d\n", ch.Practice)

@@ -269,6 +269,87 @@ func TestSaveLoadAffects(t *testing.T) {
 	}
 }
 
+// TestSaveLoadPlayer_DeafRoundTrip verifies that Deaf bitvector channels
+// round-trip through SavePlayer/LoadPlayer.
+func TestSaveLoadPlayer_DeafRoundTrip(t *testing.T) {
+	ch := &types.CharData{
+		Name:     "Channeltest",
+		Level:    5,
+		Hit:      50,
+		MaxHit:   50,
+		Mana:     10,
+		MaxMana:  10,
+		Move:     40,
+		MaxMove:  40,
+		Position: types.POS_STANDING,
+		PermStr:  13, PermInt: 13, PermWis: 13, PermDex: 13,
+		PermCon: 13, PermCha: 13, PermLck: 13,
+		PCData: &types.PCData{Pwd: "pw", PagerLen: 24},
+	}
+	ch.Deaf.Set(types.CHANNEL_CHAT)
+	ch.Deaf.Set(types.CHANNEL_AUCTION)
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+
+	if !bytes.Contains(buf.Bytes(), []byte("Deaf")) {
+		t.Errorf("saved file missing Deaf line:\n%s", buf.String())
+	}
+
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Channeltest")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if !loaded.Deaf.IsSet(types.CHANNEL_CHAT) {
+		t.Error("loaded Deaf should have CHANNEL_CHAT set")
+	}
+	if !loaded.Deaf.IsSet(types.CHANNEL_AUCTION) {
+		t.Error("loaded Deaf should have CHANNEL_AUCTION set")
+	}
+	if !loaded.Deaf.Equal(ch.Deaf) {
+		t.Errorf("loaded Deaf not byte-exact: got %s, want %s",
+			loaded.Deaf.String(), ch.Deaf.String())
+	}
+}
+
+// TestSaveLoadPlayer_EmptyDeafNotEmitted verifies that an empty Deaf
+// bitvector is not serialized to the save file.
+func TestSaveLoadPlayer_EmptyDeafNotEmitted(t *testing.T) {
+	ch := &types.CharData{
+		Name:     "Nochanneltest",
+		Level:    5,
+		Hit:      50,
+		MaxHit:   50,
+		Mana:     10,
+		MaxMana:  10,
+		Move:     40,
+		MaxMove:  40,
+		Position: types.POS_STANDING,
+		PermStr:  13, PermInt: 13, PermWis: 13, PermDex: 13,
+		PermCon: 13, PermCha: 13, PermLck: 13,
+		PCData: &types.PCData{Pwd: "pw", PagerLen: 24},
+	}
+
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+
+	if bytes.Contains(buf.Bytes(), []byte("Deaf")) {
+		t.Errorf("saved file should not contain Deaf line for empty bitvector:\n%s", buf.String())
+	}
+
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Nochanneltest")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if !loaded.Deaf.IsEmpty() {
+		t.Errorf("loaded Deaf should be empty, got %s", loaded.Deaf.String())
+	}
+}
+
 func TestSaveLoadObjects(t *testing.T) {
 	ch := &types.CharData{
 		Name:    "Objtest",
