@@ -52,7 +52,9 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 16 (Tranche B — stances loader + DoMset stance branch + TIMER_DO_FUN callback registry + 7 mudprog if-checks + wordlist match + Oprog/Rprog CMD port) | `plan-tranche-b.md` (plan + completion) | — |
 | 5 Tier 17 (Tranche C — quality/fidelity: `util.Act` per-call AType color + 33-site migration, `update_aris` audit correction, `PLR_BLANK` blank-line emission, XP-on-skill-gain + adept-cap message) | `plan-tranche-c.md` (plan + completion) | — |
 
-**Remaining work before Phase 6:** none blocking. `TODO.md` Active tracks persistence gaps, `isflagged` / `istagged` mudprog ifchecks (pending variable-subsystem port), per-player color customization (Phase 6 scope), and Phase-6 candidates (hotboot/copyover, overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps, interactive OLC `CON_OEDITING` / `CON_MEDITING` substates).
+**Phase 5 is complete (2026-04-18).** All 17 tiers + Tranches A/B/C landed; last commit `26db5f9`. **Phase 6 planning begun 2026-04-18** — see `smaug-go/doc/phase6-roadmap.md` for the full candidate inventory, dependency graph, and recommended 6-wave execution order. First executable plan: `plan-phase6-arena.md` (Arena PvP, 7 task groups, 15 acceptance criteria).
+
+**Remaining Phase-6 prerequisites:** none blocking Wave 1. Small follow-up items in `TODO.md` Active — deferred mudprog ifchecks (`isflagged`/`istagged`, pending variable subsystem), per-player color customization, `DoBlank` toggle, `DoConfig` surface.
 
 **Reviews:**
 

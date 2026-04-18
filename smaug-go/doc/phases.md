@@ -206,6 +206,8 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 ## Phase 5: Optional Systems (candidates)
 
+**Status:** **Complete (2026-04-18).** All 17 tiers landed (Tiers 1-15 + Tranches A, B, C). Last-landed: Tranche C at commit `26db5f9` (`util.Act` per-call AType color + 33-site migration + `update_aris` audit correction + `PLR_BLANK` blank-line emission + XP-on-skill-gain + adept-cap "fully learned" message). Earlier Phase-5 tier records linked from `CLAUDE.md`'s documentation index.
+
 **Goal:** Large, self-contained optional systems and infrastructure improvements.
 
 **Candidates (~19,000+ lines of C total):**
@@ -239,3 +241,13 @@ This document defines all phases of the SMAUG C-to-Go port.
 - **Tier 14: `rollD20` function-variable seam — Complete (2026-04-18).** `TestOneHitFull_ExplicitWieldUsed` was flaking ~5% of full-suite runs because `rollD20() ∈ [0, 19]` with `0 = auto-miss` (C-faithful — `src/fight.c:1538/1541`) and the test asserted exact damage without a stub. Not a production bug — just a non-deterministic test. Fix from `plan-rollD20-seam.md`: `combat.go:784` converted from `func rollD20() int` to `var rollD20 = func() int { ... }` — identical body, joining three existing seams in the file (`numberPercent`, `oneHit`, `oneHitOffhand`). Zero production behavior change. Seam doc comment records the no-`t.Parallel()` constraint. The flaky test now saves `rollD20`, stubs it to return `10` (normal hit band — non-zero auto-miss, non-19 crit-hit; at level 50 with `Hitroll=999`, roll ≥ 1 hits), and restores via `t.Cleanup`. `TestRollD20_IsSeam` pins the save/restore pattern for future authors. `profbonus_test.go:255` gained a documenting comment explaining why `TestOneHit_ProfBonus_HigherLearnedDealsMoreDamage` is deliberately unstubbed (2000-round statistical test — stubbing would defeat its purpose). Mutation verified: changing stub from `10` to `0` via `Edit` → test fails with `offhand dam=0 should exceed primary dam=0`; `Edit` back to `10` → `go test -count=100` 100/100 green. Plan bumped mutation-verify cadence from `-count=30` (21% false-pass at 5% flake) to `-count=100` (0.6% false-pass) per adversary feedback. Adversary PASS. `go test -count=3 ./...` green across all 15 packages. See `plan-rollD20-seam.md` (completion appended at end) for the full record.
 - Performance profiling and optimization
 - Stress testing (100+ concurrent connections)
+
+---
+
+## Phase 6: Large Optional Systems + Infrastructure Polish
+
+**Status:** Planning begun 2026-04-18 — see `phase6-roadmap.md` for the meta-plan, candidate inventory, dependencies, and recommended execution order. First-cut plan: `plan-phase6-arena.md` (Arena PvP, smallest surface, all primitives shipped). Further per-system plan docs land as future manager lineages execute them one at a time.
+
+**Goal:** Ship the large self-contained systems deferred from Phase 5 (hotboot, overland, housing, polymorph, archery, dragon flight, arena, stances OLC, planes, holidays, star maps, marriage), plus interactive OLC substates (`CON_OEDIT` / `CON_MEDIT` / `CON_REDIT`), plus remaining Phase-5 content follow-ups (full auction state machine, extra communication channels, clan officer commands, missing skills, deity prayer).
+
+See `phase6-roadmap.md` for the full inventory with per-system C LOC, dependencies, proposed plan filenames, and wave-based execution ordering.

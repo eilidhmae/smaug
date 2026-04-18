@@ -146,41 +146,49 @@ Follow-ups queued from plan-dammessage-gaps.md:
 
 ## Phase 6 candidates (large, self-contained)
 
-Roughly ordered by player-visibility/impact:
+**Phase 6 planning begun 2026-04-18 — see `smaug-go/doc/phase6-roadmap.md`** for the full inventory, dependency graph, risk matrix, and recommended 6-wave execution order. First executable plan: `plan-phase6-arena.md`. All other systems below have proposed plan-doc filenames queued in the roadmap's § Cross-Plan Dependencies table.
+
+**Immediate adversary-review follow-ups:**
+- [ ] Dispatch external adversary review of `phase6-roadmap.md` — verify C-LOC counts, "unblocked by X" claims, dependency graph, ordering-rationale soundness, risk-tier assignments.
+- [ ] Dispatch external adversary review of `plan-phase6-arena.md` — verify C line citations, Go-current-state facts, seam feasibility (`combat.ArenaIsBusyFunc` / `DoLookFunc`), `gsnPoison`/`gsnBlindness`/`gsnSleep`/`gsnCurse` resolution plan, the 7 open questions, and `ROOM_ARENA` area-data-edit requirement (`db/area/newacad.are` vnums 10366-10382 may need `ROOM_ARENA` flag).
 
 ### Infrastructure
 
-- [ ] **Hotboot / copyover** — seamless server restart. C uses `exec()` + fd inheritance; Go needs a different design (save state + graceful restart + auto-reconnect handshake). C ref: `src/hotboot.c`.
-- [ ] DNS resolution — `net.LookupAddr` for host display
-- [ ] Web status page — embedded HTTP server (stdlib)
-- [ ] MXP protocol parsing — C `protocol.c` has it; Go has no equivalent
+- [ ] **Hotboot / copyover** (854 C LOC) — design-pass plan required FIRST (`plan-phase6-hotboot.md` design variant); executable plan follows. Go design differs materially from C. C ref: `src/hotboot.c`.
+- [ ] DNS resolution — `net.LookupAddr` for host display (out of Phase 6)
+- [ ] Web status page — embedded HTTP server (out of Phase 6)
+- [ ] MXP protocol parsing — C `protocol.c` has it; Go has no equivalent (out of Phase 6)
 
 ### Game systems
 
-- [ ] **Overland maps** (~3,752 C LOC) — 1000×1000 tile maps, ANSI rendering, landmarks. C: `overland.c`
-- [ ] **Player housing** (~2,853 C LOC) — apartments, room customization, guests. C: `house.c`
-- [ ] **Polymorph** (~2,753 C LOC) — form shifting with stat mods. MVP stub exists; full system needed. C: `polymorph.c`
-- [ ] **Archery** (~1,362 C LOC) — ranged combat, arrow lodging. `DoFire` currently aliases `DoThrow`. C: `archery.c`
-- [ ] **Combat stances** (~1,022 C LOC) — 10 fighting postures. Skill stub exists; stance not applied in combat (see P0 above). C: `stances.c`
-- [ ] **Dragon flight** (~945 C LOC) — coordinate-based flying. C: `dragonflight.c`
-- [ ] **Arena PvP** (~358 C LOC) — challenge/accept isolated combat. C: `arena.c`
-- [ ] **Planes** (~298 C LOC) — multi-planar system. C: `planes.c`
-- [ ] **Holidays** (~416 C LOC) — calendar events. C: `holidays.c`
-- [ ] **Star maps** (~226 C LOC) — celestial display. C: `starmap.c`
-- [ ] **Marriage** — C: `marry.c`
+- [ ] **Arena PvP** (358 C LOC) — `plan-phase6-arena.md` drafted, awaiting external adversary pass. Challenge / accept / decline / withdraw + teleport + victory branch.
+- [ ] **Star maps** (226 C LOC) — `plan-phase6-starmap.md` to draft. Pure render over shared constellation data. Smallest unblocked item.
+- [ ] **Planes** (298 C LOC) — `plan-phase6-planes.md` to draft. Needs `RoomIndexData.Plane` back-ref.
+- [ ] **Holidays** (416 C LOC) — `plan-phase6-holidays.md` to draft. Bundles `month_name[]` util.
+- [ ] **Marriage** (362 C LOC) — `plan-phase6-marriage.md` to draft. Needs `PCData.Spouse`.
+- [ ] **Combat stances OLC** — `plan-phase6-stances-olc.md` to draft. Full `do_stset` + `StanceInfo` struct extension + persistence. Tranche B G1 loader already read-and-discards non-combat fields.
+- [ ] **Full `do_auction` state machine** — `plan-phase6-auction.md` to draft. Bounded scope; `BroadcastAuction` helper already shipped via Tier 9.
+- [ ] **Archery** (1362 C LOC) — `plan-phase6-archery.md` to draft. Needs `WEAR_MISSILE_WIELD` slot + quivers + arrow-lodge mechanic.
+- [ ] **Polymorph** (2753 C LOC) — `plan-phase6-polymorph.md` to draft. Needs `CharData.Morph` + combat hooks. MVP stub exists.
+- [ ] **Player housing** (2853 C LOC) — `plan-phase6-housing.md` to draft. New persistence schema + `RoomIndexData.OwnedBy`. Prefer after hotboot.
+- [ ] **Overland maps** (3752 C LOC) — `plan-phase6-overland.md` to draft (may split into loader/display + editor/reset). New binary file format + `CharData.Map/X/Y`. Prefer after hotboot.
+- [ ] **Dragon flight** (945 C LOC) — `plan-phase6-dragonflight.md` to draft. **Blocks on Overland shipping.**
 
 ### OLC / builder
 
-- [ ] Interactive `CON_OEDITING` / `CON_MEDITING` substates (deferred Tier 4 → Tier 5 → Phase 6)
-- [ ] Editable mudprog editors (currently inspector-only)
-- [ ] `foldarea` — area vnum repack (low-reward, high-risk — Phase-6 builder tooling)
+- [ ] **Interactive `CON_REDIT` substate** — `plan-phase6-olc-redit.md` to draft. Ship first of the three (smallest); unblocks the pattern for `oedit` / `medit`. Unblocked by Tier 12 `EditorSave` callback.
+- [ ] **Interactive `CON_OEDITING` substate** — `plan-phase6-olc-oedit.md` to draft. Depends on redit nanny-dispatch pattern.
+- [ ] **Interactive `CON_MEDITING` substate** — `plan-phase6-olc-medit.md` to draft. Depends on redit pattern.
+- [ ] **Editable mudprog editors** (currently inspector-only) — `plan-phase6-olc-mpedit.md` to draft. Depends on interactive OLC substates.
+- [ ] `foldarea` — area vnum repack (low-reward, high-risk; defer pending explicit builder demand).
 
 ### Content
 
-- [ ] Skills not yet ported: `bloodlet`, `pounce`, `broach`
-- [ ] Clan commands: `promote`, `demote`, `induct`, `outcast`, `bestow`
-- [ ] Councils: all commands (not implemented as player-facing yet)
-- [ ] Deities: full prayer, favor beyond `mpFavor`, deity-specific effects
+- [ ] **Skills not yet ported** (`bloodlet`, `pounce`, `broach`) — `plan-phase6-skills.md` to draft. ~200 C LOC total.
+- [ ] **Clan officer commands** (`promote`, `demote`, `induct`, `outcast`, `bestow`) — `plan-phase6-clan-officer.md` to draft. Blocks on `SaveClan` port.
+- [ ] **Extra channels** (`music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk`) — `plan-phase6-channels-extra.md` to draft. Template exists from Tier 9.
+- [ ] Councils: all commands (not implemented as player-facing yet).
+- [ ] **Deities: full prayer, favor beyond `mpFavor`, deity-specific effects** — `plan-phase6-deity-prayer.md` to draft. ~400 C LOC.
 
 ### Test infrastructure (nice-to-have)
 
