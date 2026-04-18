@@ -113,9 +113,9 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Goal:** Feature parity with C version for world interaction and building.
 
-**Status:** Complete. All 12 task groups done. See `phase3-completed.md` for full record.
+**Status:** Complete. All 12 task groups done. **`phase3-completed.md` is authoritative** — this section summarizes what actually shipped; the original plan was broader. Additional spell/skill coverage and some subsystem commands (e.g. full deity prayer, clan promote/demote, councils) continued to land in Phases 4 and 5.
 
-**Deliverables:**
+**Deliverables as shipped:**
 
 ### Protocol Support (`net/`)
 - `mccp.go` — MCCP2 compression via `compress/zlib` (stdlib)
@@ -124,50 +124,56 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 ### MUD Programs (`mudprog/`)
 - `driver.go` — mprog_driver interpreter with if/else/endif, nested ifs
-- `triggers.go` — All trigger types: act, greet, all_greet, speech, random, fight, death, hitprcnt, entry, give, bribe, hour, time, wear, remove, sac, look, exa, zap, get, drop, damage, repair, randiw, speechiw, pull, push, sleep, rest, leave, script, use
+- `triggers.go` — mob-prog triggers (act, greet, all_greet, speech, random, fight, death, hitprcnt, entry, give, bribe); deeper trigger coverage (obj/room progs, hour/time, void, sell, login, tell) landed in Phase 5 Tier 3
 - Variable substitution ($n, $N, $t, $T, $i, $I, $e, $E, $j, $J, $k, $K, $o, $O, $p, $P, $r, $R)
-- If-checks: level, hp, mana, goldamt, class, race, etc.
-- Sleeping programs (delayed execution)
-- Object progs and room progs (not just mob progs)
+- If-checks: ~25 in Phase 3; ~77 additional if-checks landed in Phase 5 Tier 3
+- Object progs and room progs (Phase 5 Tier 3); sleeping programs (Phase 5 Tier 3)
 
 ### Immortal Commands (`act/wiz.go`)
 - goto, transfer, at, bamfin, bamfout
 - slay, purge, advance, restore
-- mset, oset, rset (set mob/obj/room attributes)
 - mstat, ostat, rstat (stat mob/obj/room)
-- force, snoop, switch, return
-- peace, wizlock, shutdown, reboot
-- log, freeze, silence, hell
-- invis, holylight
-- mfind, ofind, rfind (find by name)
-- mwhere, owhere (find in world)
+- force, peace
+- mfind, ofind, mwhere, owhere
+- invis, holylight, freeze, silence, snoop, echo, recho
 
-### OLC — Online Creation (`olc/` or `act/`)
-- redit — room editor (name, desc, flags, sector, exits, extra descs, progs)
-- oedit — object editor (type, flags, values, affects, extra descs, progs)
-- medit — mob editor (stats, flags, attacks, defenses, progs)
-- Port from `build.c`, `oredit.c`, `omedit.c`, `ooedit.c`
-- Area save (write modified areas back to `.are` files)
+  (`switch`/`return`, `wizlock`, `shutdown`, `reboot`, `wizhelp`, `aecho`, `hell`, `log`, `mpstat`/`opstat`/`rpstat`, `deny`, `pardon`, `disconnect`, `mortalize` all landed in Phase 5 Tier 4. `mset`/`oset`/`rset`/`aset`/`astat` landed in Phase 4b. `rfind` is not implemented.)
 
-### Remaining Spells/Skills (~100+)
-- All spell functions from `magic.c`
-- All skill functions from `skills.c`
-- Weapon proficiency checks
-- Skill improvement on use
+### OLC — Online Creation (`act/olc*.go`)
+- redit — room editor (core subcommands in Phase 3; ~10 additional in Phase 5 Tier 4)
+- Flat `mset`/`oset`/`rset` attribute setters (Phase 4b)
+- Interactive `oedit`/`medit` flat-dispatch form (Phase 5 Tier 4)
+- `mpedit`/`opedit`/`rpedit` as read-only inspectors (Phase 5 Tier 4)
+- `rdelete`/`odelete`/`mdelete` with confirmation (Phase 5 Tier 4)
+- Area save (write modified areas back to `.are` files) via `persist/area_write.go`
+
+  (Interactive `CON_OEDITING`/`CON_MEDITING` substates and editable prog editors remain deferred to Phase 6.)
+
+### Spells/Skills
+- ~20 spells in Phase 3 (cure light/serious/critical, magic missile, fireball, sanctuary, bless, curse, poison, blindness, armor, shield, dispel magic, plus detect family, sleep, charm, identify, etc.)
+- 12 combat/utility skills in Phase 3 (backstab, bash, kick, disarm, rescue, sneak, hide, steal, pick, scan, aid, recall)
+- ~80 additional spells via Phase 5 Tiers 1/2/3/4 (`spell_smaug` data-driven dispatcher + breath/teleport/unique direct ports)
+- ~27 additional skills in Phase 5 Tier 4 (unarmed, circle/gouge/stun/grapple/cleave/hitall/berserk, meditate/trance/search/detrap/dig, crafting, admin)
+- Skill improvement on use (correct C-parity formula in Phase 5 Tier 1)
+- **Not yet ported:** weapon proficiency bonus in `OneHit` (tracked in `TODO.md`)
 
 ### Subsystems
-- Clans: join, leave, promote, demote, clan talk, clan storeroom, all commands
-- Councils: similar to clans
-- Deities: prayer, favor tracking, deity-specific effects
+- Clans: list, info, clantalk, join, leave, deposit/withdraw (Phase 3 + Tier 2)
+  (`promote`/`demote`/`induct`/`outcast`/`bestow` not implemented; tracked for Phase 6)
+- Deities: list, devote (Phase 3)
+  (Full prayer, favor tracking beyond mudprog `mpFavor`, deity-specific effects not implemented)
+- Councils: not implemented as player-facing commands
 - Shops: buy, sell, list, value — NPC shop interaction
-- Repair shops: repair, estimate
-- Quest system: quest request, complete, buy rewards
-- Boards and notes: read, write, remove, post, mail
+- Repair shops: repair, estimate, appraise (Phase 5 Tier 2)
+- Quest system: request, complete, list, buy, info, time, points (Phase 4b)
+- Boards and notes: list, read, write, post, remove, mail targeting (Phase 3 + Tier 2)
 - Pager: page long output with --more-- prompts
 - String editor: for building descriptions in OLC
-- Languages: speak, learn, language scrambling
+- Languages: speak, learn, language scrambling (Phase 5 Tier 2)
+- Banking: deposit, withdraw, balance (Phase 4b)
+- Bans: site, class, race (Phase 4b + Tier 2)
 
-**Verification:** Builder can log in, create areas with OLC, add mob progs, test them. Players can use shops, join clans, interact with all game systems.
+**Verification:** Builder can log in, create areas with OLC, add mob progs, test them. Players can use shops, join clans, interact with shipped game systems.
 
 ---
 

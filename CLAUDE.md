@@ -46,6 +46,7 @@ Read foundation docs every session; fetch phase records only when touching that 
 |---|---|
 | `security-review.md` | 16 findings, 14 fixed |
 | `go-idiom-review.md` | Go idiom audit: 10 findings, all resolved |
+| `audit-2026-04-17.md` | Post-Phase-5 4-adversary audit: phase completeness, idiom, security/usability, C↔Go capability — verdict CONCERNS |
 
 ## Build and run
 
