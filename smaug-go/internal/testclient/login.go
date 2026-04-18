@@ -170,3 +170,27 @@ func canonicalName(s string) string {
 	}
 	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
 }
+
+// QuickLoginTwo logs in two characters concurrently into the same harness
+// and returns both clients. The flow:
+//
+//  1. Log in `nameA` via QuickLogin (create or returning-player, per on-disk).
+//  2. With `nameA` still connected, log in `nameB` via QuickLogin.
+//  3. Return both clients positioned at the in-game prompt.
+//
+// Plan-channels.md G3 cites this as the first scenario with two
+// simultaneously-logged-in players. QuickLogin relies on Dial, which is
+// safe to call repeatedly — Harness does NOT serialize clients within a
+// single test, only Harness instances across tests. Names are
+// canonicalized via QuickLogin so either casing works.
+//
+// Failure modes are propagated via t.Fatalf from the underlying
+// QuickLogin / NewCharacter / Login helpers. On success, both returned
+// clients must be Close()d by the test (or their t.Cleanup from Dial will
+// handle it at teardown, but explicit Close is clearer).
+func (h *Harness) QuickLoginTwo(t *testing.T, nameA, nameB string) (*Client, *Client) {
+	t.Helper()
+	a := h.QuickLogin(t, nameA)
+	b := h.QuickLogin(t, nameB)
+	return a, b
+}

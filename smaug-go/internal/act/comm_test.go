@@ -162,6 +162,155 @@ func TestDoYell(t *testing.T) {
 	}
 }
 
+// --- PLR_SILENCE opportunistic sender-gate tests (plan-channels.md G1) ---
+//
+// C `talk_channel` (act_comm.c:500-504) blocks PLR_SILENCE'd senders from
+// yell/shout/gossip with "You can't <verb>." C `do_tell` (act_comm.c:1804)
+// blocks with "You can't do that." The Go port previously defined
+// PLR_SILENCE (set/cleared by DoSilence) but never consulted it in these
+// commands. These tests pin the newly-added sender gate.
+
+func TestDoShout_PLRSilence_BlocksSender(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6201, Name: "Room"}
+	w.Rooms[6201] = room
+
+	ch, chClient := makeTestChar("Silenced")
+	defer chClient.Close()
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	ch.Act.Set(types.PLR_SILENCE)
+
+	listener, listenerClient := makeTestChar("Listener")
+	defer listenerClient.Close()
+	handler.CharToRoom(listener, room)
+	w.AddChar(listener)
+
+	DoShout(ch, "hello")
+
+	chOut := readOutput(ch, chClient)
+	if !strings.Contains(chOut, "You can't shout") {
+		t.Errorf("silenced sender should see \"You can't shout\", got: %q", chOut)
+	}
+	if strings.Contains(chOut, "You shout") {
+		t.Errorf("silenced sender must not see self-echo; got: %q", chOut)
+	}
+	listenerOut := readOutput(listener, listenerClient)
+	if strings.Contains(listenerOut, "hello") {
+		t.Errorf("listener must NOT receive the silenced shout; got: %q", listenerOut)
+	}
+}
+
+func TestDoGossip_PLRSilence_BlocksSender(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6202, Name: "Room"}
+	w.Rooms[6202] = room
+
+	ch, chClient := makeTestChar("Silenced")
+	defer chClient.Close()
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	ch.Act.Set(types.PLR_SILENCE)
+
+	listener, listenerClient := makeTestChar("Listener")
+	defer listenerClient.Close()
+	handler.CharToRoom(listener, room)
+	w.AddChar(listener)
+
+	DoGossip(ch, "hello")
+
+	chOut := readOutput(ch, chClient)
+	if !strings.Contains(chOut, "You can't gossip") {
+		t.Errorf("silenced sender should see \"You can't gossip\", got: %q", chOut)
+	}
+	listenerOut := readOutput(listener, listenerClient)
+	if strings.Contains(listenerOut, "hello") {
+		t.Errorf("listener must NOT receive the silenced gossip; got: %q", listenerOut)
+	}
+}
+
+func TestDoYell_PLRSilence_BlocksSender(t *testing.T) {
+	w := setupCommWorld()
+	area := &types.AreaData{Name: "Test Area"}
+	room := &types.RoomIndexData{Vnum: 6203, Name: "Room", Area: area}
+	w.Rooms[6203] = room
+
+	ch, chClient := makeTestChar("Silenced")
+	defer chClient.Close()
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	ch.Act.Set(types.PLR_SILENCE)
+
+	listener, listenerClient := makeTestChar("Listener")
+	defer listenerClient.Close()
+	handler.CharToRoom(listener, room)
+	w.AddChar(listener)
+
+	DoYell(ch, "help me")
+
+	chOut := readOutput(ch, chClient)
+	if !strings.Contains(chOut, "You can't yell") {
+		t.Errorf("silenced sender should see \"You can't yell\", got: %q", chOut)
+	}
+	listenerOut := readOutput(listener, listenerClient)
+	if strings.Contains(listenerOut, "help me") {
+		t.Errorf("listener must NOT receive the silenced yell; got: %q", listenerOut)
+	}
+}
+
+func TestDoTell_PLRSilence_BlocksSender(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6204, Name: "Room"}
+	w.Rooms[6204] = room
+
+	ch, chClient := makeTestChar("Silenced")
+	defer chClient.Close()
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	ch.Act.Set(types.PLR_SILENCE)
+
+	victim, victimClient := makeTestChar("Target")
+	defer victimClient.Close()
+	handler.CharToRoom(victim, room)
+	w.AddChar(victim)
+
+	DoTell(ch, "Target secret plan")
+
+	chOut := readOutput(ch, chClient)
+	if !strings.Contains(chOut, "You can't do that") {
+		t.Errorf("silenced sender should see \"You can't do that\", got: %q", chOut)
+	}
+	victimOut := readOutput(victim, victimClient)
+	if strings.Contains(victimOut, "secret plan") {
+		t.Errorf("target must NOT receive the silenced tell; got: %q", victimOut)
+	}
+}
+
+// Sanity-check the complement: an NPC "silenced" flag on an NPC (same bit
+// position is ACT_IS_NPC-inclusive; PLR_* flags only meaningful for PCs)
+// must not accidentally fire the gate. IsNPC() short-circuits.
+func TestDoShout_NPCNotGatedBySilence(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 6205, Name: "Room"}
+	w.Rooms[6205] = room
+
+	ch, chClient := makeTestChar("Mob")
+	defer chClient.Close()
+	ch.Act.Set(types.ACT_IS_NPC) // NPC; PLR_SILENCE should not apply
+	ch.Act.Set(types.PLR_SILENCE)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+
+	DoShout(ch, "roar")
+	chOut := readOutput(ch, chClient)
+	if strings.Contains(chOut, "You can't shout") {
+		t.Errorf("NPC flagged with PLR_SILENCE-bit must not trigger the sender gate; got: %q", chOut)
+	}
+	if !strings.Contains(chOut, "You shout 'roar'") {
+		t.Errorf("NPC shout should self-echo; got: %q", chOut)
+	}
+}
+
 // Suppress unused import
 func init() {
 	_ = net.Pipe

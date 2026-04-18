@@ -350,6 +350,18 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "speak", DoFun: act.DoSpeak, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "learn", DoFun: act.DoLearn, Position: types.POS_RESTING, Level: 0})
 
+	// Phase 5 Tier 9 channels (plan-channels.md): immtalk (alias `:`),
+	// gtell (alias `;`), auction (broadcast stub). Aliases share the
+	// underlying handler per the same-name-second-entry pattern used for
+	// `pager`/`pagelen`. Command parsing requires a space after the alias
+	// (`: hi`) — prefix matching within the token is not supported; the
+	// plan notes this as a deliberate limitation.
+	reg.Register(&command.Command{Name: "immtalk", DoFun: act.DoImmtalk, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: ":", DoFun: act.DoImmtalk, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "gtell", DoFun: act.DoGtell, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: ";", DoFun: act.DoGtell, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "auction", DoFun: act.DoAuction, Position: types.POS_SLEEPING, Level: 0})
+
 	// Object commands
 	reg.Register(&command.Command{Name: "get", DoFun: act.DoGet, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "drop", DoFun: act.DoDrop, Position: types.POS_RESTING, Level: 0})

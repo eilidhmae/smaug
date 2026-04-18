@@ -139,3 +139,55 @@ G1+G2+G3+G4 ≈ half a day with tests. G5 is a whole day minimum and is out of s
 - Go new: `/home/eilidh/src/smaug/smaug-go/internal/handler/group.go` (or extension), `…/internal/act/auction.go`, corresponding `_test.go` siblings
 - Go modified: `/home/eilidh/src/smaug/smaug-go/internal/act/comm.go` (add `DoImmtalk`, `DoGtell`; add `PLR_SILENCE` check to existing commands), `/home/eilidh/src/smaug/smaug-go/internal/boot/boot.go` (register five entries: `immtalk`, `:`, `gtell`, `;`, `auction`)
 - Seams: `…/internal/types/enums.go:910-943` (channel bits), `…/internal/types/character.go:164,384,395` (`Deaf`, `GetTrust`, `Send`), `…/internal/types/misc.go:93` (BitVector), `…/internal/world/world.go:19,23` (Characters, Descriptors), `…/internal/testclient/login_test.go:118-134` (two-client test pattern)
+
+---
+
+## Completion record (2026-04-17)
+
+All four in-scope groups landed. 15 acceptance criteria verified. `go test -count=3 ./...` green across all 15 packages.
+
+### Delivered
+
+- **G1 shared infra.** `handler.IsSameGroup(a, b *CharData) bool` in new `internal/handler/group.go` matching C `act_comm.c:4293-4301` exactly — normalizes each arg to its group leader (itself if `Leader == nil`) and compares by pointer identity. Nil-safe. A dedicated `TestIsSameGroup_TransitiveViaChain` pins the flat-graph semantic (A leads B, C follows B; IsSameGroup(A, C) is false because C normalizes to B, not to A — C doesn't recurse either). 6 tests total.
+- **G1 opportunistic PLR_SILENCE.** Added sender-gate to `DoTell` (`"You can't do that."` per C `act_comm.c:1804`), `DoYell` / `DoShout` / `DoGossip` (`"You can't <verb>."` per C `act_comm.c:500-504`). Latent-bug fix documented in CHANGELOG and in the commit message: `PLR_SILENCE` was defined and set by `DoSilence` (`wiz.go:896-901`) but no communication command consulted it. NPC safety preserved — `ch.IsNPC()` short-circuits. 5 new tests (4 gate, 1 NPC complement).
+- **G2 DoImmtalk.** In new `internal/act/channels.go`. Mortal → `"Huh?"`. Empty-arg → `"Immtalk what?"`. `PLR_SILENCE` sender gate → `"You can't immtalk."`. Deaf-sender block with the exact C diagnostic, and the deaf bit is NOT cleared (matches C — `xREMOVE_BIT` at `act_comm.c:514` is unreachable after the `:511` return). Self-echo and broadcast use `DoClantalk`-style `&Y`/`&G`/`&D` color. Broadcast filter walks `WorldRef.Descriptors` on `CON_PLAYING && Character != nil && Character != ch && Trust >= LEVEL_IMMORTAL && !Deaf[IMMTALK]`. 7 tests.
+- **G3 DoGtell.** Same file. Empty-arg → `"Tell your group what?"`. `PLR_NO_TELL` sender gate → `"Your message didn't get through!"`. Iterates `WorldRef.Characters` and delivers to every `gch` where `handler.IsSameGroup(gch, ch)`. Safe against `Desc == nil` (char.Send is already nil-safe). The `QuickLoginTwo` helper added to `internal/testclient/login.go` is the first test utility in the suite to drive two concurrent clients — `TestGtell_TwoClients_Concurrent` in `internal/testclient/channels_test.go` uses it to form a group via `follow` and assert the follower receives the gtell line through the real network path. 6 unit tests + 2 alias-dispatch tests (`: hi`, `; hi`) + 1 integration test.
+- **G4 auction helper + stub.** `internal/act/auction.go`. `BroadcastAuction(message string)` exported with the full C `talk_auction` filter (`CON_PLAYING && Trust >= 5 && !Deaf[AUCTION] && !InRoom.RoomFlags[ROOM_SILENCE]`). `DoAuction` emits `"The auction house is currently closed. (See the Phase-6 roadmap.)"` — no broadcast. NPC guard on `DoAuction`. `auctionMinTrust = 5` named constant for the trust threshold. 8 tests covering happy path + 4 filter predicates + nil-world safety + stub message + NPC guard.
+- **Boot.** 5 new entries in `internal/boot/boot.go`: `immtalk` and `:` (both POS_DEAD, LEVEL_IMMORTAL, DoImmtalk); `gtell` and `;` (both POS_SLEEPING, Level 0, DoGtell); `auction` (POS_SLEEPING, Level 0, DoAuction).
+
+### Acceptance criteria verdict
+
+- **AC 1-6 (`immtalk`).** PASS. `TestDoImmtalk_MortalDenied` covers 1 and 3; `TestDoImmtalk_ImmortalToImmortal` covers 2; `TestInterpret_ImmtalkAlias_Colon` covers 4; `TestDoImmtalk_DeafSender_Blocked_NotCleared` covers 5 (both "blocked" and "not cleared" assertions); `TestDoImmtalk_PLRSilence_BlocksSender` covers 6.
+- **AC 7-11 (`gtell`).** PASS. `TestDoGtell_Solo` covers 7; `TestDoGtell_DeliveresToGroupOnly` covers 8; `TestDoGtell_PLRNoTell_BlocksSender` covers 9; `TestDoGtell_NilDescNoPanic` covers 10; `TestInterpret_GtellAlias_Semicolon` covers 11. `TestDoGtell_NPCLeaderFollowerHears` adds a bonus NPC-leader-follower scenario.
+- **AC 12-13 (`auction`).** PASS. `TestDoAuction_Stub_ClosedMessage` covers 12; `TestBroadcastAuction_{HappyPath,TrustGate,DeafFilter,RoomSilence,OnlyPlaying,NilWorldNoPanic}` covers 13 across six filter predicates.
+- **AC 14 (regression).** PASS. `go test -count=3 ./...` green — cached package hits on the first pass, freshly-run on the mutation-verify iterations of each gate.
+- **AC 15 (existing tests).** PASS. `TestDoTell` / `TestDoTell_NoArg` / `TestDoReply` / `TestDoGossip` / `TestDoEmote` / `TestDoYell` unchanged and still green. AFK prefix in `DoTell` untouched.
+
+### Mutation verification summary
+
+| Gate | Mutation | Expected fail | Result |
+|---|---|---|---|
+| `IsSameGroup` leader-normalization | Strip `if Leader != nil { ... }` branches | LeaderAndFollower + TwoFollowersOfSameLeader + TransitiveViaChain | FAIL as expected, revert restores green |
+| `DoImmtalk` mortal block | `!ch.IsImmortal()` → `ch.IsImmortal()` | ImmortalToImmortal + PLRSilence + DeafSender all fail with `"Huh?"` | FAIL as expected |
+| `DoImmtalk` receiver trust gate | `< LEVEL_IMMORTAL` → `< LEVEL_IMMORTAL+1` | MortalDoesNotReceive — mortal starts receiving immtalk | FAIL as expected |
+| `DoGtell` same-group filter | `!IsSameGroup(...)` → `IsSameGroup(...)` | Solo + DeliveresToGroupOnly + NilDescNoPanic + NPCLeaderFollowerHears | FAIL as expected |
+| `BroadcastAuction` trust gate | `< auctionMinTrust` → `< 0` | TrustGate — low-trust listener receives auction | FAIL as expected |
+
+### Deliberate divergences from C
+
+- **Prefix-within-token aliases.** `util.OneArgument` splits on whitespace, so `":hi"` parses to cmdWord `":hi"` and does not match the `:` registration. `": hi"` works. Plan-documented; fix is a separate interpreter change.
+- **Gtell sleeper scope.** C's `first_char` retains loaded-but-disconnected characters until explicit extract. `WorldRef.Characters` drops chars on disconnect (`game/loop.go:875`). Net effect: disconnected "sleepers" don't receive group tells in Go, whereas C would enqueue to their descriptor. Non-blocking — disconnected players can't receive messages either way. Asleep-but-connected players still receive via their live `Desc`.
+- **Deaf-not-cleared in DoImmtalk.** Matches C behavior exactly (the `xREMOVE_BIT` at `act_comm.c:514` is unreachable when the sender is deaf). Documented in both code comment and commit message. Requires a future `DoChannels` toggle command to re-enable — follow-up queued in TODO.md.
+
+### Deferrals → Phase 6 (tracked in TODO.md)
+
+- Full `do_auction` state machine (list / bid / stop / noauction / escrow / gold / tick).
+- `music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk` channels. Revisit factor-out-of-`talk_channel` question once 5+ channels land.
+- Per-AT_ color preservation (`AT_IMMORT` / `AT_GTELL` / `AT_GOSSIP`) — pairs with the existing `util.Act` audit finding.
+- Alias prefix-matching (`":hi"` with no space) — requires interpreter change.
+- `DoChannels` toggle command — required so a player who deafens `immtalk` has a way to re-enable it in the Go port.
+
+### Files touched
+
+- New: `internal/handler/group.go`, `internal/handler/group_test.go`, `internal/act/channels.go`, `internal/act/channels_test.go`, `internal/act/auction.go`, `internal/act/auction_test.go`, `internal/testclient/channels_test.go`.
+- Modified: `internal/act/comm.go` (PLR_SILENCE gates in DoTell/DoYell/DoShout/DoGossip), `internal/act/comm_test.go` (+5 PLR_SILENCE tests), `internal/boot/boot.go` (+5 registrations), `internal/testclient/login.go` (+`QuickLoginTwo`), `smaug-go/doc/phases.md` (Tier 9 entry), `CHANGELOG.md`, `TODO.md`.

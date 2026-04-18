@@ -42,17 +42,9 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 6 (combat depth — multi-attack + prof bonus + stance) | `plan-combat-depth.md` (plan + completion) | — |
 | 5 Tier 7 (dammessage gaps — was_in_room + PCFLAG_GAG + poison prefix) | `plan-dammessage-gaps.md` (plan + completion) | — |
 | 5 Tier 8 (player-config commands — save / afk / title / password + pagelen) | `plan-player-config.md` (plan + completion) | — |
+| 5 Tier 9 (communication channels — immtalk / gtell / auction stub) | `plan-channels.md` (plan + completion) | — |
 
-**Next work (plans ready, adversary-verified 2026-04-17):**
-
-| Priority | File | Scope |
-|---|---|---|
-| ~~P0~~ Done | `plan-combat-depth.md` | Multi-attack cascade + weapon proficiency + stance (landed 2026-04-17 as Tier 6 — see completion record) |
-| ~~P1~~ Done | `plan-dammessage-gaps.md` | `was_in_room` swap, `PCFLAG_GAG` self-suppress, poisoned-weapon prefix (landed 2026-04-17 as Tier 7) |
-| ~~P1~~ Done | `plan-player-config.md` | `save` / `afk` / `title` / `password` + `pagelen` alias (landed 2026-04-17 as Tier 8) |
-| P1 | `plan-channels.md` | `immtalk` / `gtell` / `auction`-helper (5 groups; full auction system deferred to Phase 6) |
-
-Execute in priority order. Start with the top remaining P1 plan (`plan-channels.md`). Each plan carries its own gap inventory, task groups, acceptance criteria, and open questions.
+**Next work:** all four P1 plans from the 2026-04-17 audit have landed. Remaining work tracked in `TODO.md` under *Active* (Phase-6-sized optional systems, polish items, follow-up queues from each plan).
 
 **Reviews:**
 

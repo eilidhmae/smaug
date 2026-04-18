@@ -47,6 +47,14 @@ func DoTell(ch *types.CharData, argument string) {
 		return
 	}
 
+	// C act_comm.c:1804 gates the sender on PLR_SILENCE (a latent bug in
+	// the Go port; DoSilence could set the flag but nothing consulted it).
+	// Opportunistic fix from plan-channels.md G1.
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_SILENCE) {
+		ch.Send("You can't do that.\n\r")
+		return
+	}
+
 	if !victim.IsNPC() && victim.Act.IsSet(types.PLR_NO_TELL) {
 		ch.Send("They are refusing tells.\n\r")
 		return
@@ -104,6 +112,11 @@ func DoYell(ch *types.CharData, argument string) {
 		ch.Send("You can't do that here.\n\r")
 		return
 	}
+	// Sender-gate for PLR_SILENCE (see DoTell comment; C act_comm.c:500).
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_SILENCE) {
+		ch.Send("You can't yell.\n\r")
+		return
+	}
 
 	ch.Sendf("You yell '%s'\n\r", argument)
 
@@ -130,6 +143,11 @@ func DoGossip(ch *types.CharData, argument string) {
 		ch.Send("You can't do that here.\n\r")
 		return
 	}
+	// Sender-gate for PLR_SILENCE (see DoTell comment; C act_comm.c:500).
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_SILENCE) {
+		ch.Send("You can't gossip.\n\r")
+		return
+	}
 
 	ch.Sendf("You gossip '%s'\n\r", argument)
 
@@ -151,6 +169,11 @@ func DoShout(ch *types.CharData, argument string) {
 	}
 	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) {
 		ch.Send("You can't do that here.\n\r")
+		return
+	}
+	// Sender-gate for PLR_SILENCE (see DoTell comment; C act_comm.c:500).
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_SILENCE) {
+		ch.Send("You can't shout.\n\r")
 		return
 	}
 
