@@ -50,14 +50,9 @@ Read foundation docs every session; fetch phase records only when touching that 
 | 5 Tier 14 (`rollD20` function-variable seam — eliminates combat test flake) | `plan-rollD20-seam.md` (plan + completion) | — |
 | 5 Tier 15 (Tranche A quick wins — `DoBio`/`DoDescription`, `[AFK]` on who, `%X` prompt, retcode guards, testclient idiom polish, publicAll derivation) | — (ran without dedicated plan doc) | CHANGELOG.md 2026-04-18 entry |
 | 5 Tier 16 (Tranche B — stances loader + DoMset stance branch + TIMER_DO_FUN callback registry + 7 mudprog if-checks + wordlist match + Oprog/Rprog CMD port) | `plan-tranche-b.md` (plan + completion) | — |
+| 5 Tier 17 (Tranche C — quality/fidelity: `util.Act` per-call AType color + 33-site migration, `update_aris` audit correction, `PLR_BLANK` blank-line emission, XP-on-skill-gain + adept-cap message) | `plan-tranche-c.md` (plan + completion) | — |
 
-**Planned next work (adversary-verified, ready to execute):**
-
-| Plan | Scope |
-|---|---|
-| `plan-tranche-c.md` | `util.Act` per-call AType color parameter + 33-site migration (G1-G3, G8), `update_aris` audit correction + regression test (G5), `PLR_BLANK` blank-line emission (G6), `XP-on-skill-gain` + adept-cap "fully learned" message (G7). 8 task groups, 10 acceptance criteria. External-adversary-verified 2026-04-18. |
-
-Remaining work in `TODO.md` Active: persistence gaps, deferred mudprog depth items (isflagged/istagged pending variable subsystem), per-AT color customization (Phase 6), Phase-6 candidates (hotboot/copyover, overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps, interactive OLC `CON_OEDITING` / `CON_MEDITING` substates).
+**Remaining work before Phase 6:** none blocking. `TODO.md` Active tracks persistence gaps, `isflagged` / `istagged` mudprog ifchecks (pending variable-subsystem port), per-player color customization (Phase 6 scope), and Phase-6 candidates (hotboot/copyover, overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps, interactive OLC `CON_OEDITING` / `CON_MEDITING` substates).
 
 **Reviews:**
 

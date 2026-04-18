@@ -128,6 +128,10 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	combat.LearnFromFailureHook = act.LearnFromFailure
 	combat.LookupSkillSlotHook = act.LookupSkillSlot
 	combat.ResolveGSNs()
+	// Act-side GSN resolution — gsnHide / gsnSneak used by
+	// learnFromSuccess to silence the XP-on-gain message for stealth
+	// skills (matches C src/skills.c:1661).
+	act.ResolveGSNs()
 
 	// OLC editor entry point (act.DoRedit et al. call this to start editing).
 	// CopyBufferFunc / StopEditingFunc are the companion seams used by

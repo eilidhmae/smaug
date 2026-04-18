@@ -255,7 +255,7 @@ func (g *GameLoop) processInput() {
 					g.cmdReg.Interpret(d.Character, line)
 					// Send prompt after command output
 					if d.Connected == types.CON_PLAYING {
-						d.WriteToBuffer(FormatPrompt(d.Character))
+						writePromptWithBlank(d)
 					}
 				}
 			case types.CON_EDITING:
@@ -269,6 +269,23 @@ func (g *GameLoop) processInput() {
 			// No input waiting
 		}
 	}
+}
+
+// writePromptWithBlank writes d's prompt, prefixed by "\n\r" when the
+// character has PLR_BLANK set. Mirrors C src/smaug.c:1359-1361 inside
+// the display_prompt flush path — PLR_BLANK is an emit-a-blank-line
+// preference (NOT suppression of the prompt). The prefix visually
+// separates trailing output from the prompt line for players who prefer
+// that rendering. Nil-safe on both descriptor and character so it is
+// safe to call from enterGame before initial state is fully wired.
+func writePromptWithBlank(d *types.DescriptorData) {
+	if d == nil || d.Character == nil {
+		return
+	}
+	if d.Character.Act.IsSet(types.PLR_BLANK) {
+		d.WriteToBuffer("\n\r")
+	}
+	d.WriteToBuffer(FormatPrompt(d.Character))
 }
 
 // nanny handles the login state machine for descriptors not yet playing.
@@ -763,8 +780,8 @@ func (g *GameLoop) enterGame(d *types.DescriptorData) {
 	// mprog_login_trigger call after room placement in smaug.c.
 	mudprog.TrigLogin(ch)
 
-	// Send initial prompt
-	d.WriteToBuffer(FormatPrompt(ch))
+	// Send initial prompt (honors PLR_BLANK if set on the loaded char).
+	writePromptWithBlank(d)
 }
 
 // SavePlayer saves a character's data to disk.

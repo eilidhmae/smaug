@@ -10,9 +10,9 @@ import (
 // Act pronoun tables, indexed by Sex (SEX_NEUTRAL=0, SEX_MALE=1, SEX_FEMALE=2).
 // Mirrors the static tables in C src/smaug.c act_string (line 3174).
 var (
-	actHeShe   = [3]string{"it", "he", "she"}
-	actHimHer  = [3]string{"it", "him", "her"}
-	actHisHer  = [3]string{"its", "his", "her"}
+	actHeShe  = [3]string{"it", "he", "she"}
+	actHimHer = [3]string{"it", "him", "her"}
+	actHisHer = [3]string{"its", "his", "her"}
 )
 
 // actName returns the name/short-descr to use for a character token.
@@ -271,16 +271,57 @@ func ActFormat(format string, to, ch, vch *types.CharData, arg1, arg2 any) strin
 	return out
 }
 
+// atColorCode maps AT_* color-type constants to the project's `&X`
+// color tokens (expanded to ANSI by net/color.go). Empty string means
+// "no color prefix / suffix". Only entries used by current Go callers
+// are populated; unknown AT values produce no color.
+//
+// Default values below are Go conventions that match existing hardcoded
+// `&-codes` in the current Go callers (DoImmtalk uses &Y, poisoned-weapon
+// prefix uses &G, etc.). They deliberately diverge from C's
+// src/color.c:at_color_table default_set[] where those differ — a
+// future plan can revisit the mapping if a Colorize[] port ships. See
+// smaug-go/doc/plan-tranche-c.md § Design for rationale.
+var atColorCode = map[int]string{
+	types.AT_PLAIN:   "",   // no color — preserves current behavior
+	types.AT_ACTION:  "&G", // green (Go convention; C default is AT_BLOOD)
+	types.AT_HIT:     "&R", // bright red (Go convention; C default is AT_GREY)
+	types.AT_HITME:   "&r", // dark red (Go convention; C default is AT_DGREY)
+	types.AT_IMMORT:  "&Y", // yellow (matches DoImmtalk; C default is AT_RED)
+	types.AT_GTELL:   "&P", // magenta (group tell)
+	types.AT_GOSSIP:  "&P", // magenta (gossip channel)
+	types.AT_SAY:     "&G", // green (say)
+	types.AT_TELL:    "&G", // green (tell)
+	types.AT_WHISPER: "&G", // green (whisper)
+	types.AT_YELL:    "&Y", // yellow (yell)
+	types.AT_SHOUT:   "&y", // dark yellow (shout)
+	types.AT_MAGIC:   "&C", // cyan (magic effects)
+	types.AT_POISON:  "&g", // dark green (poison)
+	types.AT_SKILL:   "&C", // cyan (skill success)
+	types.AT_SOCIAL:  "&P", // magenta (social commands)
+	types.AT_REPORT:  "&C", // cyan (status reports)
+	types.AT_QUEST:   "&Y", // yellow (quest hints)
+}
+
 // Act dispatches a formatted message to recipients per the `to` routing.
-// to is one of types.TO_CHAR, TO_VICT, TO_NOTVICT, TO_ROOM (TO_CANSEE treated
-// like TO_ROOM minus the actor).
+// aType is one of the AT_* color-type constants (see types/enums.go and
+// C src/mud.h:1107-1166). It applies uniformly to every recipient of
+// this call — callers that want different colors for TO_CHAR vs TO_VICT
+// make two Act() calls with different aType values.
+// to is one of types.TO_CHAR, TO_VICT, TO_NOTVICT, TO_ROOM (TO_CANSEE
+// treated like TO_ROOM minus the actor).
 // ch is the actor (required).
 // vch may be nil when not applicable.
 // arg1/arg2 fill $p/$P (object) and $t/$T/$d (string) tokens.
 // Messages are written to each recipient's descriptor via CharData.Send; NPCs
 // without descriptors are silently skipped.
+//
+// Migration note: this signature was changed from (format, ch, vch, a1, a2, to)
+// to (aType, format, ch, vch, a1, a2, to) in 2026-04-18 as part of
+// plan-tranche-c.md G2. The 6-arg form is gone; all callers pass aType.
+//
 // See C src/smaug.c act (line 3404) for the reference implementation.
-func Act(format string, ch, vch *types.CharData, arg1, arg2 any, to int) {
+func Act(aType int, format string, ch, vch *types.CharData, arg1, arg2 any, to int) {
 	if format == "" {
 		return
 	}
@@ -291,14 +332,14 @@ func Act(format string, ch, vch *types.CharData, arg1, arg2 any, to int) {
 
 	switch to {
 	case types.TO_CHAR:
-		sendActTo(ch, format, ch, vch, arg1, arg2)
+		sendActTo(aType, ch, format, ch, vch, arg1, arg2)
 	case types.TO_VICT:
 		if vch == nil {
 			// Match C: log and drop.
 			Bug("Act: null vch with TO_VICT. %s (%s)", ch.Name, format)
 			return
 		}
-		sendActTo(vch, format, ch, vch, arg1, arg2)
+		sendActTo(aType, vch, format, ch, vch, arg1, arg2)
 	case types.TO_ROOM, types.TO_NOTVICT, types.TO_CANSEE:
 		if ch.InRoom == nil {
 			return
@@ -310,22 +351,33 @@ func Act(format string, ch, vch *types.CharData, arg1, arg2 any, to int) {
 			if to == types.TO_NOTVICT && p == vch {
 				continue
 			}
-			sendActTo(p, format, ch, vch, arg1, arg2)
+			sendActTo(aType, p, format, ch, vch, arg1, arg2)
 		}
 	default:
 		Bug("Act: bad `to` value %d in format %s", to, format)
 	}
 }
 
-// sendActTo formats and writes the message to one recipient.
-// CharData.Send is a no-op when Desc is nil, so NPCs are handled safely.
-// This lets future mudprog ACT_PROG triggers observe the formatted message
-// even for NPC recipients (C src/smaug.c:3556 keeps NPCs-with-progs in the
-// loop for this reason).
-func sendActTo(recipient *types.CharData, format string, ch, vch *types.CharData, arg1, arg2 any) {
+// sendActTo formats and writes the message to one recipient, prepending
+// the color code for aType (if any) and appending a reset (&D) so the
+// next line is not tinted. CharData.Send is a no-op when Desc is nil,
+// so NPCs are handled safely. This lets future mudprog ACT_PROG triggers
+// observe the formatted message even for NPC recipients (C
+// src/smaug.c:3556 keeps NPCs-with-progs in the loop for this reason).
+func sendActTo(aType int, recipient *types.CharData, format string, ch, vch *types.CharData, arg1, arg2 any) {
 	if recipient == nil {
 		return
 	}
 	msg := ActFormat(format, recipient, ch, vch, arg1, arg2)
+	if code := atColorCode[aType]; code != "" {
+		// ActFormat appends "\n\r"; splice the reset just before it so
+		// the trailing newline stays at the end of the line where the
+		// net/color pipeline expects it.
+		if len(msg) >= 2 && msg[len(msg)-2:] == "\n\r" {
+			msg = code + msg[:len(msg)-2] + "&D" + "\n\r"
+		} else {
+			msg = code + msg + "&D"
+		}
+	}
 	recipient.Send(msg)
 }

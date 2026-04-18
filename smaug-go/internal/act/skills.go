@@ -7,6 +7,32 @@ import (
 	"github.com/eilidhmae/smaug/internal/util"
 )
 
+// gsnHide / gsnSneak are resolved once at boot via ResolveGSNs so the
+// XP-on-skill-gain hot path in learnFromSuccess can silence the
+// "You gain N experience points" message for stealth skills by an
+// integer compare. C src/skills.c:1661 uses gsn_hide / gsn_sneak for
+// the same suppression (the player would otherwise reveal their hide
+// attempts to themselves even when Fighting is false). Left at -1 in
+// unit tests where ResolveGSNs has not been called — the silentSkill
+// branch simply never fires, which matches C on a fresh boot.
+var (
+	gsnHide  = -1
+	gsnSneak = -1
+)
+
+// ResolveGSNs caches the gsn slot numbers act cares about for hot-path
+// integer compares. Called once from boot.Boot after the skill table is
+// loaded and persist.SkillNameLookup is wired. Safe to call multiple
+// times (idempotent). Missing skills leave the cached slot at -1 so
+// the suppression check silently fails safe.
+func ResolveGSNs() {
+	if combat.LookupSkillSlotHook == nil {
+		return
+	}
+	gsnHide = combat.LookupSkillSlotHook("hide")
+	gsnSneak = combat.LookupSkillSlotHook("sneak")
+}
+
 // CanUseSkill is the exported seam for combat.CanUseSkillHook. Thin
 // wrapper so the combat package (which cannot import act) can still
 // consult the same skill-check logic used by act commands.
@@ -78,7 +104,46 @@ func learnFromSuccess(ch *types.CharData, gsn int) {
 	if gain > 0 {
 		ch.PCData.Learned[gsn] = util.UMIN(learned+gain, adept)
 		ch.Sendf("You have become better at %s! (%d%%)\n\r", skill.Name, ch.PCData.Learned[gsn])
-		// Note: XP-on-gain and "fully learned" message deferred to Tier 4.
+
+		// XP-on-gain — mirrors C src/skills.c:1641-1669.
+		skLvl := skill.SkillLevel[ch.Class]
+		if skLvl == 0 {
+			skLvl = ch.Level
+		}
+		var xpGain int
+		if ch.PCData.Learned[gsn] == adept {
+			// Adept-cap branch (C src/skills.c:1644-1652) — player has
+			// just fully learned the skill. Larger XP grant + a special
+			// "now an adept" message in AT_WHITE.
+			xpGain = 1000 * skLvl
+			switch ch.Class {
+			case types.CLASS_MAGE:
+				xpGain *= 5
+			case types.CLASS_CLERIC:
+				xpGain *= 2
+			}
+			ch.Sendf("&WYou are now an adept of %s!  You gain %d bonus experience!\n\r&D",
+				skill.Name, xpGain)
+		} else {
+			// Normal-gain branch (C src/skills.c:1654-1667). Silent
+			// during combat and for hide/sneak (C :1661 guard — the
+			// player would otherwise reveal their attempts to
+			// themselves).
+			xpGain = 20 * skLvl
+			switch ch.Class {
+			case types.CLASS_MAGE:
+				xpGain *= 6
+			case types.CLASS_CLERIC:
+				xpGain *= 3
+			}
+			fighting := ch.Fighting != nil
+			silentSkill := (gsnHide >= 0 && gsn == gsnHide) ||
+				(gsnSneak >= 0 && gsn == gsnSneak)
+			if !fighting && !silentSkill {
+				ch.Sendf("You gain %d experience points from your success!\n\r", xpGain)
+			}
+		}
+		ch.Exp += xpGain
 	}
 }
 

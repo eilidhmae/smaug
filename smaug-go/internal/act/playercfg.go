@@ -44,12 +44,12 @@ func DoAfk(ch *types.CharData, argument string) {
 	if ch.Act.IsSet(types.PLR_AFK) {
 		ch.Act.Remove(types.PLR_AFK)
 		ch.Send("You are no longer afk.\n\r")
-		util.Act("$n is no longer afk.", ch, nil, nil, nil, types.TO_CANSEE)
+		util.Act(types.AT_ACTION, "$n is no longer afk.", ch, nil, nil, nil, types.TO_CANSEE)
 		return
 	}
 	ch.Act.Set(types.PLR_AFK)
 	ch.Send("You are now afk.\n\r")
-	util.Act("$n is now afk.", ch, nil, nil, nil, types.TO_CANSEE)
+	util.Act(types.AT_ACTION, "$n is now afk.", ch, nil, nil, nil, types.TO_CANSEE)
 }
 
 // DoGag implements the 'gag' command — a standalone no-arg toggle for

@@ -328,7 +328,7 @@ func setupRouting(t *testing.T) *routingFixture {
 
 func TestAct_TO_CHAR_OnlyChReceives(t *testing.T) {
 	f := setupRouting(t)
-	Act("$n tests", f.ch, f.vch, nil, nil, types.TO_CHAR)
+	Act(types.AT_PLAIN, "$n tests", f.ch, f.vch, nil, nil, types.TO_CHAR)
 
 	if got := readOutput(t, f.ch, f.chClient); !strings.Contains(got, "Alice tests") {
 		t.Errorf("TO_CHAR: ch should receive, got %q", got)
@@ -346,7 +346,7 @@ func TestAct_TO_CHAR_OnlyChReceives(t *testing.T) {
 
 func TestAct_TO_VICT_OnlyVchReceives(t *testing.T) {
 	f := setupRouting(t)
-	Act("$n tests", f.ch, f.vch, nil, nil, types.TO_VICT)
+	Act(types.AT_PLAIN, "$n tests", f.ch, f.vch, nil, nil, types.TO_VICT)
 
 	if got := readOutput(t, f.ch, f.chClient); got != "" {
 		t.Errorf("TO_VICT: ch should NOT receive, got %q", got)
@@ -364,7 +364,7 @@ func TestAct_TO_VICT_OnlyVchReceives(t *testing.T) {
 
 func TestAct_TO_NOTVICT_OnlyBystandersReceive(t *testing.T) {
 	f := setupRouting(t)
-	Act("$n tests", f.ch, f.vch, nil, nil, types.TO_NOTVICT)
+	Act(types.AT_PLAIN, "$n tests", f.ch, f.vch, nil, nil, types.TO_NOTVICT)
 
 	if got := readOutput(t, f.ch, f.chClient); got != "" {
 		t.Errorf("TO_NOTVICT: ch should NOT receive, got %q", got)
@@ -382,7 +382,7 @@ func TestAct_TO_NOTVICT_OnlyBystandersReceive(t *testing.T) {
 
 func TestAct_TO_ROOM_AllExceptActorReceive(t *testing.T) {
 	f := setupRouting(t)
-	Act("$n tests", f.ch, f.vch, nil, nil, types.TO_ROOM)
+	Act(types.AT_PLAIN, "$n tests", f.ch, f.vch, nil, nil, types.TO_ROOM)
 
 	if got := readOutput(t, f.ch, f.chClient); got != "" {
 		t.Errorf("TO_ROOM: ch should NOT receive, got %q", got)
@@ -405,7 +405,7 @@ func TestAct_NilCh_NoPanic(t *testing.T) {
 			t.Fatalf("Act(nil ch) panicked: %v", r)
 		}
 	}()
-	Act("$n tests", nil, nil, nil, nil, types.TO_ROOM)
+	Act(types.AT_PLAIN, "$n tests", nil, nil, nil, nil, types.TO_ROOM)
 }
 
 func TestAct_TO_VICT_NilVch_NoPanic(t *testing.T) {
@@ -415,7 +415,7 @@ func TestAct_TO_VICT_NilVch_NoPanic(t *testing.T) {
 			t.Fatalf("Act(TO_VICT, nil vch) panicked: %v", r)
 		}
 	}()
-	Act("$n tests", ch, nil, nil, nil, types.TO_VICT)
+	Act(types.AT_PLAIN, "$n tests", ch, nil, nil, nil, types.TO_VICT)
 }
 
 func TestActFormat_BadSexFallsBackToNeutral(t *testing.T) {
@@ -445,7 +445,7 @@ func TestActFormat_BadToken_EmitsPlaceholder(t *testing.T) {
 
 func TestAct_EmptyFormat_Noop(t *testing.T) {
 	f := setupRouting(t)
-	Act("", f.ch, f.vch, nil, nil, types.TO_ROOM)
+	Act(types.AT_PLAIN, "", f.ch, f.vch, nil, nil, types.TO_ROOM)
 	if got := readOutput(t, f.vch, f.vchClient); got != "" {
 		t.Errorf("empty format should not send, got %q", got)
 	}

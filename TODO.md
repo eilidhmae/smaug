@@ -60,7 +60,7 @@ Follow-ups queued from plan-timer-subsystem.md:
 Follow-ups queued from plan-channels.md:
 - [ ] Full `do_auction` state machine (list / bid / stop / noauction list / item escrow / gold handling / auction tick in `update.c`). Plan called out as G5; deferred to Phase 6. C refs: `act_obj.c:3775+`, `update.c:2886-3286`. `BroadcastAuction` helper already in place.
 - [ ] `music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk` channel commands — each follows the `DoImmtalk` / `DoGtell` template now that the open-coded pattern is established. Revisit the "factor `talk_channel`?" question once 5+ channels need uniform filtering (see plan-channels.md Open Questions).
-- [ ] Per-AT_ color preservation (`AT_IMMORT` / `AT_GTELL` / `AT_GOSSIP` / `AT_CLANTALK`) — currently all channel commands use `DoClantalk`-style `&Y`/`&G`/`&D`; fidelity pass tracked alongside the existing `util.Act` per-recipient color audit finding.
+- [x] Per-AT_ color preservation in `util.Act` — LANDED 2026-04-18 via plan-tranche-c.md G1-G3. `util.Act` now takes a per-call `aType int` that drives `&X` color prefix + `&D` reset; all 33 callers migrated. Channel commands themselves still use inline `&Y`/`&G`/`&D` (call `ch.Send` directly, not `util.Act`) — factor-out is a Phase-6 follow-up when harmonizing channel coloring. `AT_CLANTALK` does NOT exist in C and was NOT added.
 - [ ] Alias prefix-matching (`":hi"` with no space) — `util.OneArgument` splits on whitespace, so a cmdWord of `":hi"` doesn't match the `":"` registration. Deliberate scope cut for P1; a separate interpreter change is required to support intra-token prefix matching.
 - [x] `DoChannels` toggle command — LANDED 2026-04-17 (see Done below + `smaug-go/doc/plan-do-channels.md`).
 
@@ -70,7 +70,7 @@ Follow-ups queued from plan-do-channels.md:
 
 Follow-ups queued from plan-player-config.md:
 - [x] R1: `persist/player.go:218` reads `Bio` but nothing writes it — **LANDED 2026-04-18 (Tranche A item 1).** `SavePlayer` now emits `Bio      <text>~` when non-empty, gated through `util.SmashTilde`. Round-trip test + empty-bio-not-emitted test in `internal/persist/player_test.go`.
-- [ ] R5: `update_aris` not called before `save_char_obj` in `DoSave` (low-impact for manual save — follow-up).
+- [x] R5: ~~`update_aris` not called before `save_char_obj` in `DoSave`~~ — **Audit-corrected 2026-04-18 via plan-tranche-c.md G5.** Go uses incremental `handler.AffectModify` (internal/handler/handler.go:386-455) rather than C's rebuild-from-scratch `update_aris`; `AffectToChar` / `AffectRemove` adjust `ch.Hitroll`/`Damroll`/`Armor` inline so `SavePlayer` writes correct values verbatim. Architecturally not applicable. Regression guard: `internal/persist/player_affect_test.go:TestSaveLoadPlayer_AffectRemovalMaintainsStatInvariant`. See also `plan-player-config.md:112`.
 - [x] R6: `internal/game/editor.go:156-160` — `/s` does not call `StopEditing`; descriptor stays in `CON_EDITING` forever. **LANDED 2026-04-18 via `plan-editor-save.md`** (Option-C callback pattern).
 - [x] R7: AFK `[AFK]` indicator on `do_who` listings. **LANDED 2026-04-18 (Tranche A item 2).** `DoWho` now prepends `"[AFK] "` to PCs with `PLR_AFK` set (C `act_info.c:3686/4306`). Mutation-verified both directions.
 - [ ] R8: audit claim about `ban.go` honoring AFK is incorrect — tracked for audit-doc correction.
@@ -111,6 +111,9 @@ From `phase5-tier3-completed.md` known deferrals + code-level TODOs:
 - [ ] Stance-table OLC (full `do_stset` with field editing, `do_ststat`, `fwrite_stance`) — Phase 6 OLC. Tranche B G1 loader read-and-discards non-combat fields (class/race restrictions, immune/resist/suscept, dodge/parry, max_weight, dual_wield, wait, prerequisite stance[]) pending `StanceInfo` extension.
 - [ ] `can_use_stance` prerequisite checks in `DoStance` — depends on Phase-6 `StanceInfo` extension.
 - [ ] Class/race stance restrictions + `max_weight` / `dual_wield` restrictions — same prerequisite.
+- [ ] Extend `internal/util/act.go:atColorCode` table to additional AT_* codes (AT_DAMAGE, AT_FLEE, AT_STANCE, AT_CARNAGE, AT_HURT, AT_DYING, etc.) as Phase-6 content or commands using them land. Unknown AT values currently emit no color prefix — safe default.
+- [ ] Per-player `PCData.Colorize[]` customization — C's `set_char_color` honors per-player overrides; Go has no `Colorize` field today. Phase-6 config item.
+- [ ] `DoBlank` / `DoConfig +blank` toggle command — `PLR_BLANK` rendering landed (plan-tranche-c.md G6) and the flag persists via `ch.Act`, but there is no user-facing command to set/clear it. Mirror `DoGag` / `DoAfk` pattern.
 - [x] `timeskilled`, `leverpos`, `pkadrenalized`, `asupressed`, `areamulti`, `multi`, `objtype` if-checks — LANDED 2026-04-18 via plan-tranche-b.md G3 (7 of 9). `isflagged` / `istagged` remain; need variable-subsystem port of C `get_tag` at `src/mud_prog.c:2236+`.
 - [ ] `util/act.go:35,69` — replace local `actCanSee`/`actCanSeeObj` with a shared canonical port when available
 
@@ -124,14 +127,14 @@ From `phase5-tier3-completed.md` known deferrals + code-level TODOs:
 
 Follow-ups queued from plan-dammessage-gaps.md:
 - [x] Port `DoGag` player command (`act_info.c:5585 do_config (gag branch at :5794)` — ~15 LOC). **LANDED 2026-04-18 via `plan-do-gag.md`** — standalone toggle; flag no longer test-only.
-- [ ] Per-recipient color code preservation (`AT_ACTION` / `AT_HIT` / `AT_HITME`) in `util.Act` — audit-flagged, out of scope of the dam-message gaps but tracked here
+- [x] Per-recipient color code preservation (`AT_ACTION` / `AT_HIT` / `AT_HITME`) in `util.Act` — LANDED 2026-04-18 via plan-tranche-c.md G1-G3. Note: C applies the SAME `AType` to every recipient of one call (per-call, not per-recipient); two-call pattern (TO_CHAR with AT_HIT + TO_VICT with AT_HITME) matches C `fight.c:4586-4588` and now works as intended.
 - [x] Fix pre-existing flake in `TestOneHitFull_ExplicitWieldUsed` (`combat_test.go:1981`). **LANDED 2026-04-18 via `plan-rollD20-seam.md`** — `rollD20` is now a function-variable seam; the flaky test stubs it to return `10`. `go test -count=100` deterministic.
 
 ### Usability polish (from audit U1–U3 + phase notes)
 
-- [ ] `PLR_COMPACT` blank-line suppression on descriptor flush (Tier 2 deferral)
-- [ ] `XP-on-skill-gain` plumbing (Tier 1 → Tier 4 deferral)
-- [ ] "Fully learned" message when a skill reaches its adept cap
+- [x] `PLR_BLANK` blank-line emission on descriptor flush — LANDED 2026-04-18 via plan-tranche-c.md G6. (Original entry mislabeled as `PLR_COMPACT`; C uses `PLR_BLANK`.) No user-facing toggle shipped; `DoBlank` follow-up queued below.
+- [x] `XP-on-skill-gain` plumbing — LANDED 2026-04-18 via plan-tranche-c.md G7. 20×skLvl normal (×6 mage, ×3 cleric); silent during combat / `gsnHide` / `gsnSneak`.
+- [x] "Fully learned" message when a skill reaches its adept cap — LANDED 2026-04-18 via plan-tranche-c.md G7. `"&WYou are now an adept of %s! You gain %d bonus experience!\n\r&D"`; 1000×skLvl XP (×5 mage, ×2 cleric); mutually exclusive with normal-gain branch.
 - [ ] Per-language phoneme substitution tables (C `LCNV_DATA`) — scrambler is currently a simple rotation
 
 ### Documentation correction

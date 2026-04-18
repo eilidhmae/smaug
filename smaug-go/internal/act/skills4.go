@@ -26,7 +26,7 @@ func DoMeditate(ch *types.CharData, argument string) {
 		learnFromSuccess(ch, gsn)
 		ch.Substate = types.SUB_PAUSE // marker state; no dedicated SUB_MEDITATE
 		ch.Send("You begin to meditate.\n\r")
-		util.Act("$n begins to meditate.", ch, nil, nil, nil, types.TO_ROOM)
+		util.Act(types.AT_ACTION, "$n begins to meditate.", ch, nil, nil, nil, types.TO_ROOM)
 	} else {
 		learnFromFailure(ch, gsn)
 		ch.Send("Your thoughts drift and you fail to focus.\n\r")
@@ -45,7 +45,7 @@ func DoTrance(ch *types.CharData, argument string) {
 		learnFromSuccess(ch, gsn)
 		ch.Substate = types.SUB_PAUSE
 		ch.Send("You enter a trance.\n\r")
-		util.Act("$n enters a trance.", ch, nil, nil, nil, types.TO_ROOM)
+		util.Act(types.AT_ACTION, "$n enters a trance.", ch, nil, nil, nil, types.TO_ROOM)
 	} else {
 		learnFromFailure(ch, gsn)
 		ch.Send("You fail to enter a trance.\n\r")
@@ -122,7 +122,7 @@ func DoDig(ch *types.CharData, argument string) {
 	}
 	learnFromSuccess(ch, gsn)
 	ch.Send("You dig in the earth.\n\r")
-	util.Act("$n digs in the earth.", ch, nil, nil, nil, types.TO_ROOM)
+	util.Act(types.AT_ACTION, "$n digs in the earth.", ch, nil, nil, nil, types.TO_ROOM)
 }
 
 // DoVisible — cancel invisibility / hide / (if immortal) wiz-invis.
@@ -224,11 +224,11 @@ func DoMistwalk(ch *types.CharData, argument string) {
 	}
 	learnFromSuccess(ch, gsn)
 	if ch.InRoom != nil {
-		util.Act("$n dissolves into mist.", ch, nil, nil, nil, types.TO_ROOM)
+		util.Act(types.AT_ACTION, "$n dissolves into mist.", ch, nil, nil, nil, types.TO_ROOM)
 		handler.CharFromRoom(ch)
 	}
 	handler.CharToRoom(ch, victim.InRoom)
-	util.Act("$n coalesces from the mist.", ch, nil, nil, nil, types.TO_ROOM)
+	util.Act(types.AT_ACTION, "$n coalesces from the mist.", ch, nil, nil, nil, types.TO_ROOM)
 	ch.Send("You drift through the mist.\n\r")
 	DoLook(ch, "auto")
 }
@@ -260,9 +260,9 @@ func DoFeed(ch *types.CharData, argument string) {
 	}
 	handler.ObjFromChar(obj)
 	handler.ObjToChar(obj, victim)
-	util.Act("You feed $p to $N.", ch, victim, obj, nil, types.TO_CHAR)
-	util.Act("$n feeds you $p.", ch, victim, obj, nil, types.TO_VICT)
-	util.Act("$n feeds $p to $N.", ch, victim, obj, nil, types.TO_NOTVICT)
+	util.Act(types.AT_ACTION, "You feed $p to $N.", ch, victim, obj, nil, types.TO_CHAR)
+	util.Act(types.AT_ACTION, "$n feeds you $p.", ch, victim, obj, nil, types.TO_VICT)
+	util.Act(types.AT_ACTION, "$n feeds $p to $N.", ch, victim, obj, nil, types.TO_NOTVICT)
 }
 
 // DoSkin — skin a corpse for food. src/skills.c:523. MVP: turns an

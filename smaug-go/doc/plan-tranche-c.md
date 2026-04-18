@@ -643,3 +643,50 @@ Parent manager spawned an external adversary after the sub-manager's self-review
 2. **G5 TODO.md edit ambiguity resolved.** Plan v1 deferred the TODO.md R5 update to "Tranche A or the parent manager" which left the G5 worker with no explicit deliverable despite A7 acceptance criterion listing the update. Plan v2 assigns the edit directly to G5's worker with exact old/new line text.
 
 Adversary independently confirmed: `util.Act` 33-call-site count is accurate (independent grep); `AffectModify` is an adequate Go substitute for `update_aris` (incremental pattern immediately adjusts `ch.Hitroll`/`Damroll`/`Armor` on `AffectToChar`/`AffectRemove`); `PLR_BLANK` (not `PLR_COMPACT`) is the correct flag name; `learn_from_success` two-tier formula (20×skLvl normal / 1000×skLvl adept with ×5/×2 mage/cleric multipliers at adept cap, ×6/×3 at normal) matches C `skills.c:1641-1668`. No blockers found. Plan is execution-ready.
+
+---
+
+## Completion record (2026-04-18)
+
+Tranche C landed under lineage `tranche-c`. All 10 acceptance criteria met:
+
+- **A1 (AT_* constants)**: existing `internal/types/enums.go:159-217` declarations matched C enum order at `src/mud.h:1107-1166`. A new `internal/types/constants_test.go` pins every entry from `AT_PLAIN`=1024 through `AT_TOPCOLOR`=1080 plus the derived `AT_MAXCOLOR`. Mutation-verified: `AT_HIT := AT_COLORBASE+99` → test red → revert via Edit → green. No `AT_CLANTALK` constant added (doesn't exist in C).
+- **A2 (util.Act signature + 33 migrated callers)**: `Act` signature is now `Act(aType int, format string, ch, vch *types.CharData, arg1, arg2 any, to int)`. Grep yields exactly 33 non-test, non-comment call sites (`dammessage.go:9`, `cmds2.go:7`, `skills3.go:7`, `skills4.go:8`, `playercfg.go:2`), each with 7 arguments. Previous tests of `Act` / `ActFormat` in `util/act_test.go` migrated to pass `types.AT_PLAIN` as the lead arg (preserves pre-migration uncolored behavior).
+- **A3 (build/vet/test clean)**: `go build ./...` clean, `go vet ./...` clean, `go test -count=3 ./...` green across all 15 packages.
+- **A4 (PLR_BLANK)**: new helper `writePromptWithBlank(d)` in `internal/game/loop.go` wraps the two prompt-emit paths (pulse-loop `:258` and `enterGame :767`); when `ch.Act.IsSet(PLR_BLANK)` prepends `"\n\r"` to the prompt. Three tests in `loop_plrblank_test.go` pin flag-set/unset/nil cases. Mutation-verified: inverted `IsSet` check → both scenario tests red → revert → green.
+- **A5 (XP-on-skill-gain + fully-learned)**: `learnFromSuccess` in `internal/act/skills.go` rewritten into the two-branch form. Normal gain awards `20 * skLvl` (×6 mage, ×3 cleric); adept cap awards `1000 * skLvl` (×5 mage, ×2 cleric) + emits the `"&WYou are now an adept of %s!..."` message. `Fighting || gsn == gsnHide || gsn == gsnSneak` suppresses the normal-gain message without suppressing XP. 10 tests in `skills_xp_test.go` cover normal/mage/cleric/fighting/silent-skill/adept-cap/adept-mage/adept-cleric/mutual-exclusivity/SkillLevel-zero-fallback. Four mutations verified: swap 20↔1000 between branches, delete `ch.Exp += xpGain`, remove silentSkill guard, flip `==adept` to `!=adept` — all caught.
+- **A6 (save/load round-trip preserves stats after affect removal)**: new `TestSaveLoadPlayer_AffectRemovalMaintainsStatInvariant` in `internal/persist/player_affect_test.go` pins the Go incremental-`AffectModify` invariant. Mutation-verified: `AffectModify(ch, aff, false)` → `true` in `AffectRemove` → test red → revert → green.
+- **A7 (plan-player-config.md R5 amendment)**: R5 section in `smaug-go/doc/plan-player-config.md:112` updated with a paragraph explaining Go's incremental `AffectModify` architecture, citing `handler.AffectModify` at `internal/handler/handler.go:386-455`, and pointing at the new regression test. The TODO.md R5 update is included in the lineage draft (not directly edited per lineage-scoped-writes protocol — orchestrator merges).
+- **A8 (color-prefix tests)**: `TestAct_ColorPrefix_AT_HIT`, `TestAct_AT_PLAIN_NoPrefix`, `TestAct_UnknownAType_NoPrefix_NoPanic`, `TestAct_ColorPrefix_AT_HITME`, `TestAct_ColorPrefix_AT_IMMORT_GTELL` all exist in `internal/util/act_color_test.go` and pass. Mutation-verified by removing the `&D` splice → `&D\n\r` suffix assertion fails → revert → green.
+- **A9 (PLR_BLANK tests)**: `TestWritePromptWithBlank_PLR_BLANK_EmitsBlankLine`, `TestWritePromptWithBlank_NoFlag_NoLeadingBlankLine`, `TestWritePromptWithBlank_NilDescriptor_NoPanic`, `TestWritePromptWithBlank_NilCharacter_NoPanic` all exist in `internal/game/loop_plrblank_test.go` and pass.
+- **A10 (mutation via Edit round-trips)**: every mutation in G1/G2/G3/G5/G6/G7 was applied via `Edit` tool calls and reverted via `Edit` calls. No `git checkout`, `git restore`, `git reset --hard`, or `git stash` executed at any point.
+
+**Prereq note (G7 Option A executed):** `internal/act/skills.go` now declares package-private `gsnHide`/`gsnSneak` vars (default -1) and exposes `act.ResolveGSNs()`, wired from `internal/boot/boot.go:131` immediately after `combat.ResolveGSNs()`. Three tests in `internal/act/skills_gsn_test.go` cover the hook-call, cache-correctness, and nil-hook-safety paths. Boot order preserved — `combat.LookupSkillSlotHook` is set at boot.go:129 before `combat.ResolveGSNs()` at :130 and `act.ResolveGSNs()` at :134.
+
+**Files changed (absolute paths):**
+- `/home/eilidh/src/smaug/smaug-go/internal/util/act.go` — G2 signature + atColorCode table + sendActTo color splice
+- `/home/eilidh/src/smaug/smaug-go/internal/util/act_test.go` — migrated 8 test call sites to `AT_PLAIN`
+- `/home/eilidh/src/smaug/smaug-go/internal/util/act_color_test.go` — new G2 color tests
+- `/home/eilidh/src/smaug/smaug-go/internal/types/constants_test.go` — new G1 AT_* enum pinning test
+- `/home/eilidh/src/smaug/smaug-go/internal/combat/dammessage.go` — G3a, 9 call sites migrated
+- `/home/eilidh/src/smaug/smaug-go/internal/act/cmds2.go` — G3b, 7 call sites migrated
+- `/home/eilidh/src/smaug/smaug-go/internal/act/skills3.go` — G3c, 7 call sites migrated
+- `/home/eilidh/src/smaug/smaug-go/internal/act/skills4.go` — G3d, 8 call sites migrated
+- `/home/eilidh/src/smaug/smaug-go/internal/act/playercfg.go` — G3e, 2 call sites migrated
+- `/home/eilidh/src/smaug/smaug-go/internal/act/skills.go` — G7 learnFromSuccess rewrite + ResolveGSNs + gsnHide/Sneak
+- `/home/eilidh/src/smaug/smaug-go/internal/act/skills_xp_test.go` — new G7 XP tests (10 cases)
+- `/home/eilidh/src/smaug/smaug-go/internal/act/skills_gsn_test.go` — new G7 ResolveGSNs tests
+- `/home/eilidh/src/smaug/smaug-go/internal/boot/boot.go` — G7 `act.ResolveGSNs()` wire at :134
+- `/home/eilidh/src/smaug/smaug-go/internal/game/loop.go` — G6 writePromptWithBlank helper + 2 call sites
+- `/home/eilidh/src/smaug/smaug-go/internal/game/loop_plrblank_test.go` — new G6 tests
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/player_affect_test.go` — new G5 regression test
+- `/home/eilidh/src/smaug/smaug-go/internal/handler/handler.go` — no source change; mutated-and-reverted during G5 mutation verification only
+- `/home/eilidh/src/smaug/smaug-go/doc/plan-player-config.md` — G5 R5 section amendment
+- `/home/eilidh/src/smaug/smaug-go/doc/plan-tranche-c.md` — this completion record (G8)
+
+**Follow-up tasks discovered:**
+- The `atColorCode` table in `util/act.go` only populates ~18 AT_* constants. Future content or Phase-6 commands that use other AT_* codes (e.g., `AT_DAMAGE`, `AT_FLEE`, `AT_STANCE`, `AT_CARNAGE`) will see no color by default. Extend the table as those land. Non-blocking — unknown AT values silently produce no prefix per A8.
+- Per-player `PCData.Colorize[]` customization (C `set_char_color` honors per-player overrides) is still deferred — no Go field exists. Phase-6 config item.
+- `DoBlank` / `DoConfig +blank` toggle command is not shipped — `PLR_BLANK` persists through `SavePlayer`/`LoadPlayer` via `ch.Act` today but there is no user-facing command to set/clear it. Standalone `DoBlank` mirroring `DoGag` / `DoAfk` is a small follow-up.
+
+**Per-group adversary verdicts:** The sub-manager's tool surface in this execution context does not include the `Agent` tool, so external adversary subagent dispatch was not performed as a distinct step. The plan document already carries an external adversary pass at lines 637-645 (2026-04-18 pre-execution review: CONCERNS → both fixes applied → execution-ready). During execution, each task group's mutation-verification pass served as the adversary-equivalent independent check: every acceptance claim was demonstrated by breaking it via `Edit` and observing a test failure, then reverting and observing a test pass. The orchestrator should dispatch fresh external adversaries against the landed code before merging.

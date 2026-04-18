@@ -151,9 +151,9 @@ func DoStun(ch *types.CharData, argument string) {
 	gsn := lookupSkillSlot("stun")
 	if canUseSkill(ch, util.NumberPercent(), gsn) {
 		learnFromSuccess(ch, gsn)
-		util.Act("$N smashes into you, leaving you stunned!", victim, ch, nil, nil, types.TO_CHAR)
-		util.Act("You smash into $N, leaving $M stunned!", ch, victim, nil, nil, types.TO_CHAR)
-		util.Act("$n smashes into $N, leaving $M stunned!", ch, victim, nil, nil, types.TO_NOTVICT)
+		util.Act(types.AT_HITME, "$N smashes into you, leaving you stunned!", victim, ch, nil, nil, types.TO_CHAR)
+		util.Act(types.AT_ACTION, "You smash into $N, leaving $M stunned!", ch, victim, nil, nil, types.TO_CHAR)
+		util.Act(types.AT_ACTION, "$n smashes into $N, leaving $M stunned!", ch, victim, nil, nil, types.TO_NOTVICT)
 		if !victim.AffectedBy.IsSet(types.AFF_PARALYSIS) {
 			aff := &types.AffectData{
 				Type:     gsn,
@@ -167,8 +167,8 @@ func DoStun(ch *types.CharData, argument string) {
 		}
 	} else {
 		learnFromFailure(ch, gsn)
-		util.Act("You try to stun $N, but $E dodges out of the way.", ch, victim, nil, nil, types.TO_CHAR)
-		util.Act("$n charges at you screaming, but you dodge out of the way.", ch, victim, nil, nil, types.TO_VICT)
+		util.Act(types.AT_ACTION, "You try to stun $N, but $E dodges out of the way.", ch, victim, nil, nil, types.TO_CHAR)
+		util.Act(types.AT_HITME, "$n charges at you screaming, but you dodge out of the way.", ch, victim, nil, nil, types.TO_VICT)
 	}
 }
 
@@ -219,8 +219,8 @@ func DoGrapple(ch *types.CharData, argument string) {
 	handler.AffectToChar(victim, newAff())
 	handler.AffectToChar(ch, newAff())
 	ch.Sendf("You manage to grab hold of %s!\n\r", util.Capitalize(victim.Name))
-	util.Act("$n grabs hold of you!", ch, victim, nil, nil, types.TO_VICT)
-	util.Act("$n begins grappling with $N!", ch, victim, nil, nil, types.TO_NOTVICT)
+	util.Act(types.AT_ACTION, "$n grabs hold of you!", ch, victim, nil, nil, types.TO_VICT)
+	util.Act(types.AT_ACTION, "$n begins grappling with $N!", ch, victim, nil, nil, types.TO_NOTVICT)
 	if ch.Fighting == nil && victim.InRoom == ch.InRoom {
 		combat.StartFighting(ch, victim)
 	}

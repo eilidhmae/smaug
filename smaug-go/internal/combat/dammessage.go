@@ -271,16 +271,16 @@ func DamMessage(ch, victim *types.CharData, dam, dt int, obj *types.ObjData) {
 		if dam == 0 {
 			found := false
 			if skill.MissChar != "" {
-				util.Act(skill.MissChar, ch, victim, nil, nil, types.TO_CHAR)
+				util.Act(types.AT_HIT, skill.MissChar, ch, victim, nil, nil, types.TO_CHAR)
 				found = true
 			}
 			if skill.MissVict != "" {
-				util.Act(skill.MissVict, ch, victim, nil, nil, types.TO_VICT)
+				util.Act(types.AT_HITME, skill.MissVict, ch, victim, nil, nil, types.TO_VICT)
 				found = true
 			}
 			if skill.MissRoom != "" {
 				if skill.MissRoom != "supress" {
-					util.Act(skill.MissRoom, ch, victim, nil, nil, types.TO_NOTVICT)
+					util.Act(types.AT_ACTION, skill.MissRoom, ch, victim, nil, nil, types.TO_NOTVICT)
 				}
 				found = true
 			}
@@ -293,13 +293,13 @@ func DamMessage(ch, victim *types.CharData, dam, dt int, obj *types.ObjData) {
 			// generic "$n's <noun_damage> <verb> $N" line. Only the miss path
 			// above short-circuits.
 			if skill.HitChar != "" {
-				util.Act(skill.HitChar, ch, victim, nil, nil, types.TO_CHAR)
+				util.Act(types.AT_HIT, skill.HitChar, ch, victim, nil, nil, types.TO_CHAR)
 			}
 			if skill.HitVict != "" {
-				util.Act(skill.HitVict, ch, victim, nil, nil, types.TO_VICT)
+				util.Act(types.AT_HITME, skill.HitVict, ch, victim, nil, nil, types.TO_VICT)
 			}
 			if skill.HitRoom != "" {
-				util.Act(skill.HitRoom, ch, victim, nil, nil, types.TO_NOTVICT)
+				util.Act(types.AT_ACTION, skill.HitRoom, ch, victim, nil, nil, types.TO_NOTVICT)
 			}
 		}
 		// Fall through to the generic attacker-verb format.
@@ -348,11 +348,11 @@ func DamMessage(ch, victim *types.CharData, dam, dt int, obj *types.ObjData) {
 	gvflag := dam == 0 && !victim.IsNPC() && victim.PCData != nil &&
 		(victim.PCData.Flags&int(types.PCFLAG_GAG)) != 0
 
-	util.Act(buf1, ch, victim, nil, nil, types.TO_NOTVICT)
+	util.Act(types.AT_ACTION, buf1, ch, victim, nil, nil, types.TO_NOTVICT)
 	if !gcflag {
-		util.Act(buf2, ch, victim, nil, nil, types.TO_CHAR)
+		util.Act(types.AT_HIT, buf2, ch, victim, nil, nil, types.TO_CHAR)
 	}
 	if !gvflag {
-		util.Act(buf3, ch, victim, nil, nil, types.TO_VICT)
+		util.Act(types.AT_HITME, buf3, ch, victim, nil, nil, types.TO_VICT)
 	}
 }

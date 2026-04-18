@@ -127,7 +127,7 @@ func DoSplit(ch *types.CharData, argument string) {
 	msg := fmt.Sprintf("$n splits %d %s coins.  Your share is %d %s coins.",
 		amount, coinName, share, coinName)
 	for _, gch := range mates {
-		util.Act(msg, ch, gch, nil, nil, types.TO_VICT)
+		util.Act(types.AT_ACTION, msg, ch, gch, nil, nil, types.TO_VICT)
 		switch coinType {
 		case coinGold:
 			gch.Gold += share
@@ -176,8 +176,8 @@ func DoLight(ch *types.CharData, argument string) {
 	}
 	obj.Value[3] |= int(types.PIPE_LIT)
 
-	util.Act("You carefully light $p.", ch, nil, obj, nil, types.TO_CHAR)
-	util.Act("$n carefully lights $p.", ch, nil, obj, nil, types.TO_ROOM)
+	util.Act(types.AT_ACTION, "You carefully light $p.", ch, nil, obj, nil, types.TO_CHAR)
+	util.Act(types.AT_ACTION, "$n carefully lights $p.", ch, nil, obj, nil, types.TO_ROOM)
 
 	// If worn as light, increment room light counter.
 	if obj.WearLoc == types.WEAR_LIGHT && ch.InRoom != nil {
@@ -218,9 +218,9 @@ func DoThrow(ch *types.CharData, argument string) {
 
 	if len(exits) == 0 {
 		// No exits — object just clatters to the floor.
-		util.Act("You throw $p, and it clatters to the floor.",
+		util.Act(types.AT_ACTION, "You throw $p, and it clatters to the floor.",
 			ch, nil, obj, nil, types.TO_CHAR)
-		util.Act("$n throws $p, which clatters to the floor.",
+		util.Act(types.AT_ACTION, "$n throws $p, which clatters to the floor.",
 			ch, nil, obj, nil, types.TO_ROOM)
 		handler.ObjFromChar(obj)
 		handler.ObjToRoom(obj, ch.InRoom)
@@ -231,8 +231,8 @@ func DoThrow(ch *types.CharData, argument string) {
 	pick := exits[rand.Intn(len(exits))]
 	dest := pick.ToRoom
 
-	util.Act("You throw $p through the exit.", ch, nil, obj, nil, types.TO_CHAR)
-	util.Act("$n throws $p through an exit.", ch, nil, obj, nil, types.TO_ROOM)
+	util.Act(types.AT_ACTION, "You throw $p through the exit.", ch, nil, obj, nil, types.TO_CHAR)
+	util.Act(types.AT_ACTION, "$n throws $p through an exit.", ch, nil, obj, nil, types.TO_ROOM)
 	handler.ObjFromChar(obj)
 	handler.ObjToRoom(obj, dest)
 
