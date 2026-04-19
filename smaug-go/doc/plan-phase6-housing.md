@@ -108,9 +108,9 @@ struct accessories_data {
 ### Referenced constants already in Go
 
 - `ITEM_HOUSEKEY` — `internal/types/enums.go:638` (iota value).
-- `ROOM_HOUSE` — `internal/types/enums.go:699` (iota value, ~bit in `RoomFlags` BitVector).
-- `LEVEL_DEMI` — `internal/types/constants.go:51` — trust threshold for immortal-only `house set / remove / givekey <name>`.
-- `LEVEL_GREATER` — `internal/types/constants.go:47` — trust threshold for accessory add/remove/setprice and homebuy admin branches.
+- `ROOM_HOUSE` — `internal/types/enums.go:702` (iota value, ~bit in `RoomFlags` BitVector).
+- `LEVEL_DEMI` — `internal/types/constants.go:51` — threshold for non-owner access to `house` commands and for the `house givekey` self-path (`src/house.c:154,164`). **NOT the gate for `house set / remove / givekey <name>` — that is `LEVEL_GREATER` (see below). Audit corrected 2026-04-19; original draft had the two thresholds swapped.**
+- `LEVEL_GREATER` — `internal/types/constants.go:47` — threshold for immortal `house set / remove / givekey <name>` (`src/house.c:307`) AND for accessory add/remove/setprice and homebuy admin branches.
 - `SUB_ROOM_DESC` — `internal/types/enums.go` (same iota pool as `SUB_NONE` / `SUB_OBJ_LONG`). Used in C `do_house` at `src/house.c:100-113`. **Verify the Go enum value exists before G4**.
 - `HomeVnum` — `internal/types/character.go:209` (integer, already defined for a hotboot hook, not currently written anywhere).
 
@@ -232,7 +232,7 @@ Byte-for-byte identical to C. Three files:
    End
    #END
    ```
-   The `#OBJECT` blocks are the *room contents* (house storage — drop things in your house, they persist). Maps to existing `internal/persist/player.go` object-save format exactly (`fwrite_obj` output). The Go port reuses `WriteObjectHierarchy` / `ReadObjectHierarchy` helpers if they exist — audit `player.go` for the precise function name during G5.
+   The `#OBJECT` blocks are the *room contents* (house storage — drop things in your house, they persist). Maps to existing `internal/persist/player.go` object-save format exactly (`fwrite_obj` output). **Audit corrected 2026-04-19:** the helpers are `writePlayerObj(w, obj, nest)` and `readPlayerObject(sc, lookup, nestObj)` — both unexported in the `persist` package. Since `housing.go` lives in the same package they are callable without export. (The earlier draft referenced non-existent `WriteObjectHierarchy` / `ReadObjectHierarchy`.)
 
 2. **`db/houses/house.lst`** (`src/house.c:2119-2122`):
    ```
@@ -297,10 +297,10 @@ Housing does **not** introduce a `CON_HEDIT` connection state. The six commands 
 
 ### Auction tick integration
 
-C's `homebuy_update` runs on a game-loop hook (appears to be invoked from `update.c` on an hourly pulse — verify line in Open Q6). Port:
+C's `homebuy_update` runs on a game-loop hook — `src/update.c:2687-2691` uses `pulse_houseauc = 1800 * PULSE_PER_SECOND` (= 7200 game-loop iterations at 4 Hz = **30 minutes real time**; fires twice per game-hour matching the endtime 2-ticks-per-hour encoding). **Audit corrected 2026-04-19** — original draft mis-stated this as "once per game hour / `PULSE_TICK` / 30 real seconds", which would have produced a 60x-wrong cadence. Port:
 
 1. Add `HomebuyUpdate(w *world.World, now time.Time)` in `internal/persist/housing.go`.
-2. Wire it into `internal/game/update.go` alongside `charUpdate` / `objUpdate`. Frequency: once per game hour (every `PULSE_TICK` — 30 real seconds at 4 Hz). Matches C's 2-ticks-per-hour convention in `endtime`.
+2. Wire it into `internal/game/update.go` alongside `charUpdate` / `objUpdate`. Frequency: **every 30 minutes real time** (use `1800 * PULSE_PER_SECOND` or the existing pulse constant equivalent; DO NOT use `PULSE_TICK`). Fires 2×/game-hour, matching C's `endtime` tick-unit encoding (`7*48 = 336` half-hours = 7 days).
 3. On expiry: transfer gold using offline-player load if seller/bidder is not logged in. Offline load is NOT trivial in Go — see `load_player` at `src/house.c:2746-2815`. Go's closest existing primitive is `persist.LoadPlayer`. Needs a wrapper that does **not** create a `DescriptorData` (plan Open Q5).
 
 ### Offline player gold/housing transfer — the hard part
@@ -366,13 +366,13 @@ Tests: `internal/persist/housing_test.go` — 5 new tests:
 - [ ] `SaveHomebuy(w *world.World, path string) error` — rewrite `homebuy.dat`.
 - [ ] `SaveAccessories(w *world.World, path string) error` — rewrite `homeaccessories.dat`.
 - [ ] `UpdateHouseList(w *world.World, dir string) error` — rewrite `house.lst` in alphabetical order, `$` terminator.
-- [ ] `SaveResidence(w *world.World, room *types.RoomIndexData) error` — invoke the existing `internal/persist/area_write.go` writer on the room's area.
+- [ ] `SaveResidence(w *world.World, room *types.RoomIndexData) error` — invoke `persist.SaveArea(w io.Writer, wld *world.World, area *types.AreaData)` from `internal/persist/area_write.go:13` on the room's area. (`WriteArea` does not exist — audit corrected 2026-04-19.) `SaveResidence` opens the destination file and threads `world` through.
 
 Tests: add to `internal/persist/housing_test.go`:
 6. Round-trip: Load fixture, re-save to `t.TempDir()`, re-load, deep-equal.
 7. `SaveHome` includes object block when the first-room has contents (asserts `#OBJECT` marker in output).
 8. `UpdateHouseList` writes alphabetical order regardless of insert order.
-9. `SaveResidence` calls `WriteArea` on the correct area (use a stub area with one room, assert file created).
+9. `SaveResidence` calls `persist.SaveArea` on the correct area (use a stub area with one room, assert file created).
 
 Mutation check: flip `CapitalizedName` to raw name in `SaveHome`, assert test 6 fails.
 
@@ -553,7 +553,7 @@ Tests: 3 cases:
 3. **Does `persist.LoadPlayer` exist today in a form usable for offline load (no descriptor required)?** — Check `internal/persist/player.go`. If not, a helper `LoadPlayerOffline(name string) (*types.CharData, error)` must be added in G8. Plan assumes a thin wrapper is needed.
 4. **Should `PCData.BidOnHome` be added as a quick-lookup for `DoHomebuy bid`?** — Recommended answer: no. `Homebuys` is at most O(20) entries in practice; linear scan is fine. Avoid mirror state.
 5. **Strategy A for offline gold transfer: what handles concurrent "player logs in during auction-tick processing"?** — Recommended answer: auction tick runs in the game-loop goroutine (same as all `update.go` callers). No concurrency. Document the constraint in `HomebuyUpdate`'s doc comment.
-6. **Which pulse does C's `homebuy_update` run on?** — Grep `src/update.c` for `homebuy_update` call site before G8. If hourly pulse (matches the endtime-in-half-hours encoding: `7*48 = 336 ticks for 7 days at 2 ticks/hour`), invoke from the same hook. Plan assumes hourly.
+6. **Which pulse does C's `homebuy_update` run on?** — **RESOLVED 2026-04-19:** `src/update.c:2687-2691` invokes via `pulse_houseauc = 1800 * PULSE_PER_SECOND` = every 30 minutes real time (2 firings per game-hour, matching the endtime half-hour encoding). Wire accordingly in G8. No executor grep needed.
 7. **What happens to objects stored in a house that is `house remove`d?** — C deletes extra rooms in `remove_house:1662-1694` but does NOT extract objects from the first room before renaming. Objects remain in the (now public) prototype room. Plan preserves — `RemoveHouse` does not extract contents. Option B (extract to player inventory on removal) is a behavior change; reject.
 8. **Should G10's end-to-end test use real area data (`db/area/houses.are`) or fixtures?** — Recommended: real. `houses.are` exists in stock data and the `ADDED_ROOM_HOUSING_AREA` lookup in `add_room` demands it. Boot tests already load real areas.
 9. **`gohome` from an arena room** (Phase 6 Wave D arena just shipped / is landing): does it succeed? — `ROOM_ARENA` flag is not in C's `gohome` reject list; `ROOM_NO_RECALL` *is*. Audit stock arena rooms (10366-10382 per roadmap) for `ROOM_NO_RECALL`. If set (likely), `gohome` is refused. Plan: test case G10 test 3 verifies the refusal via the explicit flag check — does not hard-code the arena room numbers.

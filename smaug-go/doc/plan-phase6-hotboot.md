@@ -4,6 +4,8 @@
 
 **Audit status (2026-04-18):** audited via `audit-hotboot` lineage — verdict PASS with notes. All 7 C citations verified against `src/hotboot.c:73-854`; all 14 Go-state claims verified (HomeVnum L209, RoomVnum L90, PCData.Hotboot L117, Boot L78, act.WorldRef L81, ClearTimerRegistry L152, GameLoop.Run L98 / .Cancel L120 / .SavePlayer L788, LoadPlayerWithWorld L34, DescriptorData L14, server.go accept/readLoop L46/L77, World L12). Surgical corrections applied in-place: Windows-specific caveat strengthened on `(*net.TCPConn).File()` (Go stdlib docs state the returned fd is "not usable on other processes" on Windows, independent of `syscall.Exec`); `syscall.Dup2` portability note added (available on linux/amd64; missing on linux/arm64 where only `Dup3` exists); newacad.are bug list expanded. No design-level blockers.
 
+**Q1 RESOLUTION 2026-04-19:** Windows support is **OUT OF SCOPE**. The executable rewrite ships with an explicit `//go:build !windows` guard on hotboot-specific files; Windows builds compile cleanly but `do_hotboot` hard-errors with "hotboot not supported on this platform". Rationale: (a) Windows cannot satisfy either half of the double-lock (`syscall.Exec` absent AND `(*net.TCPConn).File()` returns an fd "not usable on other processes" per Go stdlib docs); (b) no Windows-deployment demand signal exists today; (c) a degraded save+reconnect-cookie path would double the implementation surface for zero current user benefit. A Windows stub plan can be authored later if demand emerges.
+
 **Wave:** Phase 6 Wave 0 per `phase6-roadmap.md`.
 
 **Scope of this document:**

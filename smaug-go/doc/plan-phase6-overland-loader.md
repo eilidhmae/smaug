@@ -33,7 +33,7 @@ Line cites are against `src/overland.c` unless noted. `src/overland.h` owns the 
 ### Data structures
 
 - `struct map_data` — `mud.h:6471-6477`. Per-room overland binding: `vnum`, `x`, `y`, `entry`. A `RoomIndexData` that represents an overland-map "bucket room" (one of `OVERLAND_MAP1=30000` / `OVERLAND_MAP2=30100` / `OVERLAND_MAP3=30200`) holds a `MAP_DATA *map` (`mud.h:3482`). Regular (non-map) rooms leave it NULL.
-- `struct map_index_data` — `mud.h:6480-6486`. Keyed by map vnum, stores `map_of_vnums[49][81]` — a small display grid. **Not used by the stock overland code path; present for auxiliary legacy "ASCII dungeon" support.** This plan ignores it; defer to a future follow-up if any legacy builder actually depends on it.
+- `struct map_index_data` — `mud.h:6480-6486`. Keyed by map vnum, stores `map_of_vnums[49][81]` — a small display grid. **Audit correction 2026-04-19:** original claim "not used by stock overland code path" was wrong — `db.c:2463-2500` builds the MAP_INDEX_DATA linked list during area load, `db.c:6136` queries via `get_map_index`, and `mapout.c:78-141` constructs more entries. Accurate scope note: **not yet exercised by any Go-port code path**. This plan ignores it; defer to a future follow-up when a Go feature needs the index lookup.
 - `struct mapreset_data` — `overland.h:68-77`. Fields: `next`, `prev`, `type` (TYPE_OBJECT/TYPE_MOBILE), `vnum`, `map` (short), `x`, `y`.
 - `struct landmark_data` — `overland.h:79-89`. Fields: `next`, `prev`, `description` (tilde string), `distance` (int), `map`, `x`, `y`, `Isdesc` (bool — if true the landmark replaces the sector blurb in `display_map`).
 - `struct entrance_data` — `overland.h:91-104`. Fields: `next`, `prev`, `area` (tilde string), `vnum`, `herex`, `herey`, `therex`, `therey`, `tomap`, `onmap`, `prevsector`.
@@ -128,7 +128,7 @@ Line cites are against `src/overland.c` unless noted. `src/overland.h` owns the 
 ### Missing
 
 - No `SECT_RIVER / SECT_JUNGLE / SECT_TUNDRA / SECT_ICE / SECT_OCEAN / SECT_SHORE / SECT_TREE / SECT_STONE / SECT_QUICKSAND / SECT_WALL / SECT_GLACIER / SECT_EXIT / SECT_TRAIL / SECT_BLANDS / SECT_GRASSLAND / SECT_SCRUB / SECT_BARREN / SECT_BRIDGE / SECT_ROAD`. Go has 16 sectors; C overland has 34.
-- No `PLR_ONMAP / ACT_ONMAP / PLR_MAPEDIT / ACT_SENTINEL` — verify in enums.go. `ACT_SENTINEL` is referenced by the hotboot plan's pre-requisite; confirm its presence before wiring. If missing → §Open Questions.
+- No `PLR_ONMAP / PLR_MAPEDIT` — absent from `enums.go`; add in G1. **Audit correction 2026-04-19:** `ACT_SENTINEL` (`constants.go:445`) and `ACT_ONMAP` (`constants.go:488`) are already defined — do not re-add. Original draft incorrectly listed both as missing. `PLR_ONMAP` and `PLR_MAPEDIT` remain genuinely missing.
 - No `ITEM_ONMAP` — required for mapreset object stamping.
 - No `ROOM_MAP` room flag — referenced by `atmob` / `atobj` (out of scope) and by the test harness for "is this the overland room?" check. Add.
 - No `MAP_DIR` path seam, no `map_filenames[]` / `map_names[]` / `map_name[]` / `continents[]` tables.

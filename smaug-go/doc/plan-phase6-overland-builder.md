@@ -198,11 +198,11 @@ Matches the existing `persist/player.go:SavePlayer` pattern (`SaveAtomic` helper
 
 ### `save_map` portability
 
-Three bytes per tile, no BOM, no delimiters. Go: `bufio.Writer` + `WriteByte(r); WriteByte(g); WriteByte(b)` per tile. Lowercase filename (`strings.ToLower`). Join with `filepath.Join(world.DataDir, "maps", name+".raw")`.
+Three bytes per tile, no BOM, no delimiters. Go: `bufio.Writer` + `WriteByte(r); WriteByte(g); WriteByte(b)` per tile. Lowercase filename (`strings.ToLower`). Join with `filepath.Join(world.DataDir, "maps", name+".raw")`. **Audit add 2026-04-19:** `strings.ToLower` does NOT sanitize path separators — `strings.ToLower("../../etc/passwd")` is still `../../etc/passwd`. Before the join, reject `name` if `strings.ContainsAny(name, "/\\") || strings.Contains(name, "..")` (or equivalent `filepath.IsLocal` check on Go ≥1.20); emit "Invalid map name." and bail. Include a dedicated test (`TestSaveMapRejectsPathTraversal`) and a mutation-verify round-trip that drops the guard and fails.
 
 ### `DoSetmark` description-editor integration
 
-The C `substate = SUB_OVERLAND_DESC` path opens a multi-line description editor, and the `/s` save dispatches a closure that updates `landmark->description` and calls `save_landmarks`. This is **exactly** the Tier 12 `EditorSave` callback pattern. Reuse it:
+**Go divergence (documented, audit-corrected 2026-04-19):** C uses `ch->substate = SUB_OVERLAND_DESC` + `ch->dest_buf = landmark` + a re-entrant `switch(ch->substate)` dispatch back into `do_setmark` itself (`src/overland.c:975-998,1083-1089`) — there is no generic closure seam in C. The Go port reuses the Tier 12 `EditorSave` callback pattern instead, which is a legitimate Go design choice but is NOT a C-faithful mapping. The behavior is identical; the seam shape differs. Reuse it:
 
 1. `DoSetmark desc` calls `StartEditing(ch, landmark.Description)` with an `EditorSave` closure:
    ```go
@@ -249,13 +249,21 @@ After every mutation: save the corresponding file immediately (C's pattern — `
 
 ### G0 — Pre-flight audit
 
-**Deliverable:** Confirm loader-plan prerequisites. Determine status of `GetSectypes`, `PutTerr` export, `PLR_MAPEDIT`, `PCData.SecEdit`.
+**Deliverable:** Binary go/no-go gate on loader-plan prerequisites. Fail-fast checklist — every command below must produce the expected result before G1 starts. If any row fails, BLOCK this plan until the loader-side gap is patched.
 
-**Files to touch:**
-- None if all present.
-- Otherwise flag gaps inline and block on the loader plan landing them.
+| Check | Command | Pass criterion |
+|---|---|---|
+| `GetSectypes` exported | `Grep "^func GetSectypes" internal/overland/` | ≥1 hit |
+| `PutTerr` exported | `Grep "^func .*PutTerr" internal/overland/` | returns `MapSectorGrid.PutTerr` (capital P) |
+| `PLR_MAPEDIT` defined | `Grep "^\s*PLR_MAPEDIT\b" internal/types/enums.go` | ≥1 hit |
+| `PCData.SecEdit` absent (this plan adds it) | `Grep "SecEdit" internal/types/pcdata.go` | 0 hits (G1 creates) |
+| `persist.SaveAtomic` exists | `Grep "^func SaveAtomic" internal/persist/` | ≥1 hit (used by G2/G8) |
+| `EditorSave` field on `CharData` | `Grep "^\s*EditorSave\b" internal/types/character.go` | ≥1 hit |
+| `game.CopyBufferFunc` exists | `Grep "CopyBufferFunc" internal/game/` | ≥1 hit |
 
-**Tests:** None (meta).
+**Files to touch:** None; this is a gate.
+
+**Tests:** None (meta). If any check fails, record the gap and the blocking loader-plan section in this doc's §Risks and HALT.
 
 ### G1 — `PCData.SecEdit` + persistence
 
@@ -409,7 +417,7 @@ After every mutation: save the corresponding file immediately (C's pattern — `
 5. `TestDoMapeditHelpLists5Subcommands` — exact C help output (5 lines).
 6. `TestDoMapeditSector` — `mapedit sector forest` → `ch.PCData.SecEdit = SECT_FOREST`; message matches C.
 7. `TestDoMapeditSectorInvalid` — `mapedit sector xyzzy` → "Invalid sector type."
-8. `TestDoMapeditSectorExitRejected` — `mapedit sector exit` → "You cannot place exits this way. Please use the setexit command for this."
+8. `TestDoMapeditSectorExitRejected` — `mapedit sector exit` → "You cannot place exits this way. Please use the setexit command for this." **Audit-note 2026-04-19:** C at `:3520-3536` assigns `ch->pcdata->secedit = value` BEFORE the `exit` check fires (latent C bug — SECT_EXIT briefly lands in `secedit` before being rejected). **Go chooses reject-without-assign** (rejection path must run first); test 8 also asserts `ch.PCData.SecEdit` is UNCHANGED after the rejection (pins the intentional C-bug fix).
 
 **Mutation verify:**
 - Invert the toggle branch → test 1 or 2 fails.
@@ -548,14 +556,14 @@ After every mutation: save the corresponding file immediately (C's pattern — `
 
 ## Open Questions
 
-### Q1. `reload_map` interaction with the floodfill undo stack
+### Q1. `reload_map` interaction with the floodfill undo stack — **RESOLVED 2026-04-19 (option b)**
 
-C's `reload_map` at `:3292-3311` re-zeroes the grid and re-reads the file, but does NOT call `purgeundo`. This means an `undo` after `reload` could partially re-apply pre-reload state, creating inconsistent grid sections. Options:
+C's `reload_map` at `:3292-3311` re-zeroes the grid and re-reads the file, but does NOT call `purgeundo`. An `undo` after `reload` re-applies pre-reload state against the fresh grid, corrupting it. **Audit correction 2026-04-19:** this is NOT a goroutine race (the game loop is single-goroutine in both C and Go) — the concern is undo-list state corruption after the grid pointer's backing data is replaced.
 
 - **(a) Preserve verbatim** — document as a known bug.
-- **(b) Call `PurgeUndo` at the top of `ReloadMap`** — safer; one-line fix.
+- **(b) Call `PurgeUndo` at the top of `ReloadMap`** — safer; one-line fix. **← chosen.**
 
-**Recommended:** (b). Fidelity-to-buggy-C is not worth data corruption. Cite in code comment.
+**Pre-resolution:** option (b). Fidelity-to-buggy-C is not worth data corruption. Cite in code comment next to the `PurgeUndo` call.
 
 ### Q2. `mapedit sector <type>` persistence
 

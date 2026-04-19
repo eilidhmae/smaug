@@ -16,8 +16,9 @@ The four 2026-04-17 audit plans (`plan-combat-depth.md`, `plan-dammessage-gaps.m
 
 6. **Interactive OLC substates** (P2): `CON_OEDITING` / `CON_MEDITING`. **`CON_REDIT` LANDED 2026-04-19** (`plan-phase6-olc-redit.md`) — nanny-dispatch pattern + `OlcData`-on-descriptor allocation + loop CON_REDIT arm are now proven and ready for `oedit`/`medit` to inherit. Remaining work: `plan-phase6-olc-oedit.md` + `plan-phase6-olc-medit.md` (unauthored — soft-blocked on olc-redit which has now landed, so these can be drafted).
 7. **`DoBio` / `DoDescription`** (P2): **Unblocked** now that `plan-editor-save.md` landed — wire via the `EditorSave` callback pattern demonstrated in `DoRedit desc` / `ed`.
-8. **Hotboot/copyover** (P2, infrastructure): Go-native design required — C's `exec()` + fd-inheritance doesn't translate. Design pass first (save-all-state + graceful restart + auto-reconnect handshake), then implementation.
-9. **Big optional systems** (P3): overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps. Each is large and self-contained; pick by demand signal, not order.
+8. **Hotboot/copyover** (P2, infrastructure): Q1 resolved 2026-04-19 — Linux/Unix only with `//go:build !windows` guard. Executable rewrite of `plan-phase6-hotboot.md` unblocked; Windows stub deferred until demand signal.
+9. **Marriage**: DEFERRED 2026-04-19 (human decision — park; revisit on player demand signal). Q2 vnum-100/101 collision not worth forcing a resolution without a use case. **Note:** when marriage is revisited it will be a **rewrite** per `smaug-go/doc/post-phase6-vision.md` §2 (poly-capable, per-coupling agency), not a port of the C two-person `Spouse` field.
+10. **Big optional systems** (P3): overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps. Each is large and self-contained; pick by demand signal, not order.
 
 ---
 
