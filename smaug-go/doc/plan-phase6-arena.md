@@ -693,7 +693,7 @@ Worker fanout cap: 6 per wave (per `_shared.md`). G2-G6 fits comfortably in one 
 
 ---
 
-## Completion Record — 2026-04-19 (commit `9d6d3a9`)
+## Completion Record — 2026-04-19 (commit `0cc1d97`)
 
 ### Summary
 
