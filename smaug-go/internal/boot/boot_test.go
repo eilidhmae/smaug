@@ -179,6 +179,54 @@ func TestBoot_StancesOLCRegistered(t *testing.T) {
 	}
 }
 
+// TestBoot_ArcheryRegistered pins draw/fire/dislodge command registration
+// per plan-phase6-archery.md G6. All three are player-accessible (Level 0).
+// `fire` pre-existed at POS_FIGHTING; `draw` uses POS_FIGHTING (combat
+// draw is allowed); `dislodge` uses POS_RESTING (self-surgery, sitting OK).
+func TestBoot_ArcheryRegistered(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	const maxTrust = 65535
+
+	draw := reg.Find("draw", maxTrust)
+	if draw == nil {
+		t.Fatal("draw must be registered")
+	}
+	if draw.Level != 0 {
+		t.Errorf("draw.Level = %d, want 0", draw.Level)
+	}
+	if draw.DoFun == nil {
+		t.Error("draw.DoFun must be non-nil")
+	}
+
+	fire := reg.Find("fire", maxTrust)
+	if fire == nil {
+		t.Fatal("fire must be registered")
+	}
+	if fire.Level != 0 {
+		t.Errorf("fire.Level = %d, want 0", fire.Level)
+	}
+	if fire.DoFun == nil {
+		t.Error("fire.DoFun must be non-nil")
+	}
+
+	dislodge := reg.Find("dislodge", maxTrust)
+	if dislodge == nil {
+		t.Fatal("dislodge must be registered")
+	}
+	if dislodge.Level != 0 {
+		t.Errorf("dislodge.Level = %d, want 0", dislodge.Level)
+	}
+	if dislodge.DoFun == nil {
+		t.Error("dislodge.DoFun must be non-nil")
+	}
+}
+
 func TestBoot_WiresCallbacks(t *testing.T) {
 	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
 	// Reset globals we care about.

@@ -492,17 +492,9 @@ func DoPoisonWeapon(ch *types.CharData, argument string) {
 	ch.Sendf("You coat %s with poison.\n\r", wield.ShortDescr)
 }
 
-// DoFire — ranged projectile attack (archery primer). MVP: acts like a
-// throw of a named object. Full C is src/skills.c:6223 and depends on
-// ARCHERY enable; we keep a stub so the command name dispatches.
-func DoFire(ch *types.CharData, argument string) {
-	if argument == "" {
-		ch.Send("Fire what, and at whom?\n\r")
-		return
-	}
-	// Reuse throw for MVP; real implementation drops a bow/ranged check.
-	DoThrow(ch, argument)
-}
+// DoFire has moved to internal/act/archery.go (Phase-6 archery port,
+// plan-phase6-archery.md G5). This comment preserved so grep-by-name
+// still surfaces the relocation.
 
 // DoScribe — write a spell into a blank scroll. src/skills.c:4836. The
 // blank scroll is identified by C as the held-slot object of vnum

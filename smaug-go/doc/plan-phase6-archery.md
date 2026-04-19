@@ -424,4 +424,64 @@ Mechanically verifiable end-to-end conditions. The plan is done when:
 
 ## Completion Record
 
-*(Appended after work lands — pending.)*
+**Landed 2026-04-19.** Commit hash: filled in follow-up commit.
+
+### Acceptance cross-reference
+
+- **AC1 (WEAR_LODGE_* slots)** → `internal/types/enums.go:790-796` adds `WEAR_LODGE_RIB=26`/`_ARM=27`/`_LEG=28`, `MAX_WEAR=29`. Pinned by `TestArcheryConstants_WearLodgeSlots` in `internal/types/archery_constants_test.go`.
+- **AC2 (ITEM_LODGE_* + ITEM_LODGED)** → `internal/types/constants.go:593-596` adds `ITEM_LODGE_RIB=1<<22`/`_ARM=1<<23`/`_LEG=1<<24`, `ITEM_WEAR_MAX=24`. `ITEM_LODGED` iota-injected into the extra-flag enum at `enums.go:692-694` before `MAX_ITEM_FLAG`. Pinned by `TestArcheryConstants_ItemLodgeWearFlags` + `TestArcheryConstants_ItemLodgedExtraFlag`.
+- **AC3 (PROJ_*)** → new const block at `internal/types/enums.go:1141-1148` defines `PROJ_BOLT=0`/`PROJ_ARROW=1`/`PROJ_DART=2`/`PROJ_STONE=3`/`PROJ_MAX=4` per C `mud.h:3068`. Pinned by `TestArcheryConstants_ProjectileKinds`.
+- **AC4 (FindQuiver)** → `internal/act/archery.go:32-45`. Back-walk `ch.Carrying` tail→head, return first open visible quiver. Pinned by `TestFindQuiver_*` (4 tests).
+- **AC5 (FindProjectile)** → `internal/act/archery.go:47-60`. Back-walk `quiver.Contents` tail→head, return first visible projectile. Pinned by `TestFindProjectile_*` (3 tests).
+- **AC6 (DoDraw)** → `internal/act/archery.go:108-177`. Pinned by `TestDoDraw_*` (8 tests) including `_Success` which asserts `arrow.WearLoc == WEAR_HOLD` + `ch.Wait == PULSE_VIOLENCE`.
+- **AC7 (DoFire)** → `internal/act/archery.go:303-373`. Pinned by `TestDoFire_*` (8 tests).
+- **AC8 (RangedAttack gates)** → `internal/act/archery.go:375-521`. Pinned by `TestRangedAttack_*` (7 tests): empty arg, wall no-destination, closed-door, secret-closed-is-wall, private-room, no-direction-no-victim, same-room-victim-fires.
+- **AC9 (ScanForVictim)** → `internal/act/archery.go:640-716`. Level-scaled max_dist (8 − 3 decrements at levels <50/<40/<30), 11 sector-cost branches matching C `:825-853`. Pinned by `TestScanForVictim_*` (4 tests).
+- **AC10 (ProjectileHit)** → `internal/act/archery.go:528-619`. THAC0 + AC + prof_bonus + distance penalty (`dist*2`) + hit-zone damage (arm/leg/rib) + position modifiers (BERSERK 1.2 / AGGRESSIVE 1.1 / DEFENSIVE 0.85 / EVASIVE 0.8) + sleeping doubler. Pinned by `TestProjectileHit_*` (5 tests) including hit-zone + lodge.
+- **AC11 (lodge on hit)** → `internal/act/archery.go:621-638` `lodgeProjectile`. Sets `ITEM_LODGED` extra-flag + one of three `ITEM_LODGE_*` wear-flags + equips `WEAR_LODGE_*` slot. Pinned by `TestProjectileHit_HitLodgesProjectile` (asserts `arrow.CarriedBy == target`, `ITEM_LODGED` set, `WearLoc` ∈ {RIB, ARM, LEG}).
+- **AC12 (DoDislodge)** → `internal/act/archery.go:193-257`. Rib-priority scan; C-asymmetric damage formulas preserved verbatim with pin-tests. Arrow stays in inventory. Pinned by `TestDoDislodge_*` (6 tests including `_RibPriority`).
+- **AC13 (boot registry)** → `internal/boot/boot.go:612-615`. `draw`+`dislodge` registered at Level 0 alongside pre-existing `fire`. Pinned by `TestBoot_ArcheryRegistered`.
+- **AC14 (build/test green)** → verified: `go build ./...` clean, `go vet ./...` clean, `go test -count=3 ./...` green across all 15 packages.
+- **AC15 (no melee regression)** → verified: `internal/combat/combat_test.go` test surface unchanged; OneHit/MultiHit/DamMessage tests all green.
+
+### Open Questions resolved
+
+- **Q1 (ITEM_LODGE_* bit values)** — bits 22/23/24 free; placed there matching C `mud.h:2214-2216` BV22/BV23/BV24. No collision.
+- **Q2 (ITEM_LODGED extra-flag bit)** — appended to iota list before `MAX_ITEM_FLAG`. No collision.
+- **Q3 (combat-loop hook)** — OMIT confirmed. C `one_hit` never reads WEAR_MISSILE_WIELD; `grep WEAR_MISSILE_WIELD src/fight.c` returns zero.
+- **Q4 (quiver auto-reload)** — OMIT. C doesn't auto-reload; porting would be new gameplay.
+- **Q5 (PROJ_* values)** — matched C `mud.h:3068` enum order BOLT=0/ARROW=1/DART=2/STONE=3.
+- **Q6 (ROOM_NOMISSILE)** — already at `enums.go:722`. Used at `archery.go:439`.
+- **Q7 (PLR_NICE)** — already at `enums.go:976`. Used at `archery.go:447`.
+- **Q8 (num_fighting / max_fight)** — `NumFighting` was already at `character.go:78`; `maxFight` helper added as minimal `return 3` with TODO to port full C `src/fight.c:281` during combat-depth follow-up.
+- **Q9 (separate_obj / tail_chain)** — `SeparateObj` added as no-op stub with TODO comment (Go port lacks object stacking); `tail_chain` dropped (no-op in Go).
+- **Q10 (`victim == ch` dead check)** — preserved verbatim per plan recommendation; `TestDoFire_VictimEqualsCh_DeadCheck_CBugPreserved` documents.
+- **Q11 (fixtures)** — `makeTestChar` + `makeArcheryObj` + `makeBowArrowQuiver` + `makeLodgedArrow` + `makeFireFixture` + `makeHitFixture` provide all required seams.
+- **Q12 (mob_fire value-index asymmetry)** — `mob_fire` out of scope. `DoFire` ports `[5]!=[4]` verbatim. When mob_fire follow-up plan lands, the author can reconcile against this comment.
+- **Q13 (lodged-arrow `remove` bypass)** — preserved verbatim per plan; arrows do NOT get `ITEM_NOREMOVE` at lodge time. Policy question deferred to builders/future plan.
+
+### Deviations from plan
+
+- G5 test vector count (plan proposed ~40+) delivered at 47 in `archery_test.go`; vectors tightly match plan's breakdown (DoFire 8, RangedAttack 7, ScanForVictim 4, ProjectileHit 5, DoDislodge 6, DoDraw 8, helpers 7, dirName 1, constants tests live in types/).
+- RIS + weapon-spell branches in `projectileHit` omitted rather than ported verbatim — Go port has no public `ris_damage` or `skill_table[sn].spell_fun` dispatch from `act/`. Documented inline as `Simplifications vs C` comment. These are existing Go-port-wide scope gaps, not archery-specific regressions.
+- `can_use_skill` skill-check gate in `rangedGotTarget` collapsed to `util.NumberPercent() > 50` because `gsn_archery`/`gsn_blowguns`/`gsn_slings` are already collapsed to `gsnMissileWeapons` in `combat/skillcheck.go:89,125`.
+- `AT_GREY` action-type used by C for fire/throw messages is absent from Go's `AType` ladder (grey is ansi-color only). Used `AT_ACTION` instead — consistent with existing Tier-C per-call color parameter convention and matches plan §"Act-color choice" note that said "AT_GREY for fire/throw" (Go-equivalent is AT_ACTION for the plain-text route).
+
+### Follow-ups added to TODO.md
+
+- `archery-followup-is-safe`: port full `src/fight.c is_safe` — current `isSafe(ch, vch, checkFriendly)` is a minimal 3-branch gate (nil/self/ROOM_SAFE).
+- `archery-followup-max-fight`: port full `src/fight.c:281 max_fight` — currently returns flat `3`.
+- `archery-followup-separate-obj`: implement `handler.SeparateObj` when object stacking lands — currently a no-op.
+- `archery-followup-ris-in-projectile-hit`: wire RIS bitmap check once Go gets a public `ris_damage` helper.
+- `archery-followup-weapon-spell-in-projectile-hit`: wire `APPLY_WEAPONSPELL` iteration once skill_table spell-fun dispatch is callable from `act/`.
+- `archery-followup-mob-fire`: port `src/archery.c:1335-1362 mob_fire` as a follow-up plan; resolve the value-index asymmetry vs `do_fire` at that time.
+- `archery-followup-learn-from-failure-on-miss`: wire `learn_from_failure` on archery miss once the combat package exports a safe hook.
+- `archery-ux-lodge-remove-policy`: decide whether to set `ITEM_NOREMOVE` on arrows at lodge time to close the `DoRemove` bypass (current C behavior: bypass allowed).
+
+### Resource summary
+
+- 3 new files: `archery.go` (730 LOC), `archery_test.go` (900+ LOC / 47 tests), `archery_constants_test.go` (85 LOC / 4 tests).
+- 4 modified files: `enums.go` (+12 LOC), `constants.go` (+5 LOC), `skills4.go` (stub removed), `boot.go` (+3 LOC), `boot_test.go` (+1 test).
+- Total test delta: +52.
+- Full-suite runtime: ≈420s at `-count=3` across 15 packages.
+

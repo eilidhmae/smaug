@@ -610,6 +610,10 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "skin", DoFun: act.DoSkin, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "poison", DoFun: act.DoPoisonWeapon, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "fire", DoFun: act.DoFire, Position: types.POS_FIGHTING, Level: 0})
+	// Phase 6 archery (plan-phase6-archery.md G6). `fire` pre-existed; `draw`
+	// and `dislodge` are new with this plan.
+	reg.Register(&command.Command{Name: "draw", DoFun: act.DoDraw, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "dislodge", DoFun: act.DoDislodge, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "scribe", DoFun: act.DoScribe, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "cook", DoFun: act.DoCook, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "slookup", DoFun: act.DoSlookup, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})

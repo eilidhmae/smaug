@@ -588,7 +588,12 @@ const (
 	ITEM_WEAR_BACK     uint32 = 1 << 19
 	ITEM_WEAR_FACE     uint32 = 1 << 20
 	ITEM_WEAR_ANKLE    uint32 = 1 << 21
-	ITEM_WEAR_MAX             = 21
+	// Phase 6 archery (plan-phase6-archery.md G1). C src/mud.h:2214-2216
+	// (BV22/BV23/BV24).
+	ITEM_LODGE_RIB uint32 = 1 << 22
+	ITEM_LODGE_ARM uint32 = 1 << 23
+	ITEM_LODGE_LEG uint32 = 1 << 24
+	ITEM_WEAR_MAX         = 24
 )
 
 // Exit flags.

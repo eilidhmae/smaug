@@ -686,6 +686,9 @@ const (
 	ITEM_NOFILL
 	ITEM_BLACKENED
 	ITEM_NOSCAVANGE
+	// Phase 6 archery (plan-phase6-archery.md G1). C src/mud.h:2135 under
+	// ENABLE_ARCHERY.
+	ITEM_LODGED
 	MAX_ITEM_FLAG
 )
 
@@ -789,7 +792,12 @@ const (
 	WEAR_FACE          int = 23
 	WEAR_ANKLE_L       int = 24
 	WEAR_ANKLE_R       int = 25
-	MAX_WEAR           int = 26
+	// Phase 6 archery (plan-phase6-archery.md G1). C src/mud.h:2448-2450 under
+	// ENABLE_ARCHERY. Ported unconditionally per roadmap policy.
+	WEAR_LODGE_RIB int = 26
+	WEAR_LODGE_ARM int = 27
+	WEAR_LODGE_LEG int = 28
+	MAX_WEAR       int = 29
 )
 
 // ApplyType represents apply types for affects.
@@ -1121,4 +1129,16 @@ const (
 	DAM_DART
 	DAM_STONE
 	DAM_PEA
+)
+
+// Projectile kinds for archery ammunition matching. C src/mud.h:3068
+// projectile_types enum (BOLT=0, ARROW=1, DART=2, STONE=3). Ported
+// unconditionally under ENABLE_ARCHERY. plan-phase6-archery.md G1.
+
+const (
+	PROJ_BOLT = iota
+	PROJ_ARROW
+	PROJ_DART
+	PROJ_STONE
+	PROJ_MAX
 )

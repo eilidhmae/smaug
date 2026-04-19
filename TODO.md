@@ -259,14 +259,16 @@ Follow-ups queued from plan-dammessage-gaps.md:
 - [ ] Polymorph G2 worker prompt: explicitly include C-fidelity resource-leak note — `do_morph_char` deducts hp/mana/move/blood/favour/glory as each check runs (not atomically); objs already extracted are not refunded if a later check fails. Preserve check-and-spend ordering.
 - [ ] Polymorph G4 execution: adopt mandatory G4a/G4b split (morphset is 889 LOC not 700). G4a = structure + create/destroy/stat + minimal field set; G4b = full field coverage.
 - [ ] Polymorph G0-G6 execution — ~1500 Go LOC estimated.
-- [ ] Archery G1 corrected scope: drop `ROOM_NOMISSILE` and `PLR_NICE` items (both present); add `ITEM_WEAR_MAX` bump from 21 to 24 at `internal/types/constants.go:588`.
-- [ ] Archery Open Questions Q1-Q11 — notably Q1 (`ITEM_LODGE_*` wear-flag bit values — grep `ITEM_WEAR_FINGER` to locate free bits), Q2 (`ITEM_LODGED` extra-flag bit value), Q5 (`PROJ_*` kind values vs C `src/mud.h`).
-- [ ] Archery: document lodged-arrow `remove` vs `dislodge` policy — C does not set `ITEM_NOREMOVE` on lodged arrows, so players can `remove` to bypass dislodge damage. Decide whether to preserve (bug/feature?) or ship with ITEM_NOREMOVE.
-- [ ] Archery: mob_fire value-index asymmetry note — C's `mob_fire:1352` uses `bow->value[4] != arrow->value[5]` whereas `do_fire:1295` uses `[5]!=[4]`. Preserve verbatim when mob_fire is ported; track in deferred mob_fire follow-up.
-- [ ] Archery pre-req verification: grep-confirm `gsn_archery`/`gsn_blowguns`/`gsn_slings` shipped via skill-table; confirm `handler.SeparateObj` exists; confirm `NumFighting`/`max_fight` handling on `CharData`.
-- [ ] Archery follow-up: port `mob_fire` NPC autonomous firing (`src/archery.c:1335-1362`) — out of scope for main plan; needs mob-AI update-pulse hook.
-- [ ] Archery human decision: 3 preserved C bugs (do_dislodge arm formula, do_draw WEAR_DUAL_WIELD omission, do_fire dead victim==ch) all currently verbatim-preserved. Wave C precedent supports preservation.
-- [ ] Archery G7 quiver auto-reload — cut as new gameplay; requires human approval if re-added.
+- [x] Archery G1 corrected scope: drop `ROOM_NOMISSILE` and `PLR_NICE` items (both present); add `ITEM_WEAR_MAX` bump from 21 to 24 at `internal/types/constants.go:588` (LANDED 2026-04-19 — both bumps in place: `ITEM_WEAR_MAX=24`, `MAX_WEAR=29`).
+- [x] Archery Open Questions Q1-Q13 — all resolved in plan completion record (LANDED 2026-04-19).
+- [ ] `archery-ux-lodge-remove-policy`: document lodged-arrow `remove` vs `dislodge` policy — C does not set `ITEM_NOREMOVE` on lodged arrows, so players can `remove` to bypass dislodge damage. Ship-state preserves bypass verbatim; decide whether to close in follow-up (would be new gameplay).
+- [ ] `archery-followup-mob-fire`: port `mob_fire` NPC autonomous firing (`src/archery.c:1335-1362`). Needs mob-AI update-pulse hook. Resolve the value-index asymmetry at that time (`mob_fire:1352` uses `bow->value[4] != arrow->value[5]` vs `do_fire:1295` uses `[5]!=[4]` — port verbatim or reconcile).
+- [ ] `archery-followup-is-safe`: port full `src/fight.c is_safe` — current Go archery `isSafe(ch, vch, checkFriendly)` is a minimal 3-branch gate (nil/self/ROOM_SAFE). Full C also checks SAFE_* stances, group membership, NPC protect, etc.
+- [ ] `archery-followup-max-fight`: port full `src/fight.c:281 max_fight` — currently returns flat `3`.
+- [ ] `archery-followup-separate-obj`: implement `handler.SeparateObj` when object stacking lands — currently a no-op (Go port has no object stacking yet).
+- [ ] `archery-followup-ris-in-projectile-hit`: wire RIS bitmap check (C `src/archery.c:435-493`) once Go gets a public `ris_damage` helper.
+- [ ] `archery-followup-weapon-spell-in-projectile-hit`: wire `APPLY_WEAPONSPELL` iteration (C `:608-629`) once skill_table spell-fun dispatch is callable from `act/`.
+- [ ] `archery-followup-learn-from-failure-on-miss`: wire `learn_from_failure` on archery miss once the combat package exports a safe hook.
 
 ### Infrastructure
 
