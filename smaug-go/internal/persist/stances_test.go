@@ -165,6 +165,95 @@ func TestLoadStances_NilTargetIsNoop(t *testing.T) {
 	}
 }
 
+// G1 — plan-phase6-stances-olc.md — ensure every C fread_stance key
+// is stored (no silent drop).
+func TestLoadStances_FullFieldRoundTripLoad(t *testing.T) {
+	withSavedStances(t, func() {
+		path := filepath.Join("testdata", "stances_full.dat")
+		if err := LoadStancesInto(&combat.StanceIndex, path); err != nil {
+			t.Fatalf("LoadStancesInto: %v", err)
+		}
+		dragon := combat.StanceIndex[types.STANCE_DRAGON]
+		if dragon.NumAttacks != 2 {
+			t.Errorf("Dragon.NumAttacks = %d, want 2", dragon.NumAttacks)
+		}
+		if dragon.Class != 7 {
+			t.Errorf("Dragon.Class = %d, want 7", dragon.Class)
+		}
+		if dragon.DamDone != 150 {
+			t.Errorf("Dragon.DamDone = %d, want 150", dragon.DamDone)
+		}
+		if dragon.DamTaken != 90 {
+			t.Errorf("Dragon.DamTaken = %d, want 90", dragon.DamTaken)
+		}
+		if dragon.Dodge != 10 {
+			t.Errorf("Dragon.Dodge = %d, want 10", dragon.Dodge)
+		}
+		if dragon.Dual != 1 {
+			t.Errorf("Dragon.Dual = %d, want 1", dragon.Dual)
+		}
+		if dragon.Immune != 5 {
+			t.Errorf("Dragon.Immune = %d, want 5", dragon.Immune)
+		}
+		if dragon.Others != "$n enters a fierce Dragon stance." {
+			t.Errorf("Dragon.Others = %q", dragon.Others)
+		}
+		if dragon.Parry != 5 {
+			t.Errorf("Dragon.Parry = %d, want 5", dragon.Parry)
+		}
+		if dragon.SpecialPercent != 25 {
+			t.Errorf("Dragon.SpecialPercent = %d, want 25", dragon.SpecialPercent)
+		}
+		if dragon.Race != 3 {
+			t.Errorf("Dragon.Race = %d, want 3", dragon.Race)
+		}
+		if dragon.Resist != 3 {
+			t.Errorf("Dragon.Resist = %d, want 3", dragon.Resist)
+		}
+		if dragon.Self != "You enter a fierce Dragon stance." {
+			t.Errorf("Dragon.Self = %q", dragon.Self)
+		}
+		if dragon.SpecialMove != 0 {
+			t.Errorf("Dragon.SpecialMove = %d, want 0 (stub)", dragon.SpecialMove)
+		}
+		if dragon.Prereq[0] != types.STANCE_TIGER {
+			t.Errorf("Dragon.Prereq[0] = %d, want TIGER=%d", dragon.Prereq[0], types.STANCE_TIGER)
+		}
+		if dragon.Prereq[1] != types.STANCE_NONE {
+			t.Errorf("Dragon.Prereq[1] = %d, want NONE=%d", dragon.Prereq[1], types.STANCE_NONE)
+		}
+		if dragon.Suscept != 2 {
+			t.Errorf("Dragon.Suscept = %d, want 2", dragon.Suscept)
+		}
+		if dragon.Wait != 12 {
+			t.Errorf("Dragon.Wait = %d, want 12", dragon.Wait)
+		}
+		if dragon.MaxWeight != 500 {
+			t.Errorf("Dragon.MaxWeight = %d, want 500", dragon.MaxWeight)
+		}
+		// Tiger minimal block (regression guard — short blocks still work).
+		tiger := combat.StanceIndex[types.STANCE_TIGER]
+		if tiger.NumAttacks != 1 {
+			t.Errorf("Tiger.NumAttacks = %d, want 1", tiger.NumAttacks)
+		}
+		if tiger.DamDone != 110 {
+			t.Errorf("Tiger.DamDone = %d, want 110", tiger.DamDone)
+		}
+	})
+}
+
+func TestLoadStances_StancePathRecorded(t *testing.T) {
+	withSavedStances(t, func() {
+		savedPath := StancePath
+		t.Cleanup(func() { StancePath = savedPath })
+		path := filepath.Join("testdata", "stances_two.dat")
+		_ = LoadStancesInto(&combat.StanceIndex, path)
+		if StancePath != path {
+			t.Errorf("StancePath = %q, want %q", StancePath, path)
+		}
+	})
+}
+
 func TestLoadStances_RealShippedStubLoads(t *testing.T) {
 	// The stub at db/system/stances.dat contains just "End\n"; loader
 	// must accept it without error and without mutating the defaults.

@@ -3,6 +3,7 @@ package act
 import (
 	"testing"
 
+	"github.com/eilidhmae/smaug/internal/combat"
 	"github.com/eilidhmae/smaug/internal/types"
 )
 
@@ -109,9 +110,146 @@ func TestDoStance_NoArg(t *testing.T) {
 
 func TestDoStance_Set(t *testing.T) {
 	ch, _ := newSkillTestRoom()
-	DoStance(ch, "dragon")
+	// Use VIPER rather than DRAGON: post-Phase-6-stances-olc, DoStance
+	// consults CanUseStance which walks the Prereq chain. VIPER has
+	// Prereq[0]=0 in the default StanceIndex (no prerequisite), so it
+	// always succeeds on a freshly-built PC without seeding Stances[].
+	// Any prereq-gated stance (e.g., DRAGON if Prereq ever becomes
+	// non-zero in data) would need explicit mastery seeding.
+	DoStance(ch, "viper")
+	if ch.Stance != types.STANCE_VIPER {
+		t.Errorf("expected STANCE_VIPER, got %d", ch.Stance)
+	}
+}
+
+// G2 — plan-phase6-stances-olc.md DoStance state machine.
+// Covers A7 + A8.
+
+func TestDoStance_MountedRejected(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.Mount = &types.CharData{Name: "horse"}
+	before := ch.Stance
+	DoStance(ch, "viper")
+	if ch.Stance != before {
+		t.Errorf("mount-gated DoStance mutated stance: %d → %d", before, ch.Stance)
+	}
+}
+
+func TestDoStance_NoArg_FromNone_EntersNormal(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_NONE
+	DoStance(ch, "")
+	if ch.Stance != types.STANCE_NORMAL {
+		t.Errorf("no-arg from NONE → stance=%d, want NORMAL=%d", ch.Stance, types.STANCE_NORMAL)
+	}
+}
+
+func TestDoStance_NoArg_FromNonNone_ExitsToNone(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_DRAGON
+	ch.StanceResistant = 999 // arbitrary; UpdateStances should only clear stance bits
+	DoStance(ch, "")
+	if ch.Stance != types.STANCE_NONE {
+		t.Errorf("no-arg from DRAGON → stance=%d, want NONE=%d", ch.Stance, types.STANCE_NONE)
+	}
+}
+
+func TestDoStance_ChangeWhileAlreadyInStance_Rejected(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_DRAGON
+	DoStance(ch, "tiger")
 	if ch.Stance != types.STANCE_DRAGON {
-		t.Errorf("expected STANCE_DRAGON, got %d", ch.Stance)
+		t.Errorf("change-while-active should be rejected: got %d, want DRAGON", ch.Stance)
+	}
+}
+
+func TestDoStance_Unknown_ShowsSyntax(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_NONE
+	before := ch.Stance
+	DoStance(ch, "nonesuch")
+	if ch.Stance != before {
+		t.Errorf("unknown stance should not mutate; got %d", ch.Stance)
+	}
+}
+
+func TestDoStance_NormalViaName_TreatedAsUnknown(t *testing.T) {
+	// GetStanceNumber("normal") returns STANCE_NORMAL but the switch in
+	// DoStance only allows VIPER..SWALLOW → default: syntax block.
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_NONE
+	DoStance(ch, "normal")
+	if ch.Stance != types.STANCE_NONE {
+		t.Errorf("'stance normal' should fall through to syntax; got %d", ch.Stance)
+	}
+}
+
+func TestDoStance_NoneViaName_TreatedAsUnknown(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_NONE
+	DoStance(ch, "none")
+	if ch.Stance != types.STANCE_NONE {
+		t.Errorf("'stance none' should fall through to syntax; got %d", ch.Stance)
+	}
+}
+
+func TestDoStance_CanUseBlocked_ShowsSyntax(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_NONE
+	// Seed DRAGON with a prereq the PC cannot satisfy.
+	saved := combat.StanceIndex[types.STANCE_DRAGON]
+	combat.StanceIndex[types.STANCE_DRAGON] = combat.StanceInfo{
+		NumAttacks: saved.NumAttacks, DamDone: saved.DamDone, DamTaken: saved.DamTaken,
+		Prereq: [2]int{types.STANCE_TIGER, 0},
+	}
+	t.Cleanup(func() { combat.StanceIndex[types.STANCE_DRAGON] = saved })
+	DoStance(ch, "dragon")
+	if ch.Stance != types.STANCE_NONE {
+		t.Errorf("prereq-gated dragon should be blocked; got %d", ch.Stance)
+	}
+}
+
+func TestDoStance_SuccessfulEntry_SetsStance_UpdatesRIS_SetsWait(t *testing.T) {
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_NONE
+	ch.Wait = 0
+	saved := combat.StanceIndex[types.STANCE_VIPER]
+	combat.StanceIndex[types.STANCE_VIPER] = combat.StanceInfo{
+		NumAttacks: saved.NumAttacks, DamDone: saved.DamDone, DamTaken: saved.DamTaken,
+		Wait:    7,
+		Resist:  int(types.RIS_FIRE),
+		Immune:  int(types.RIS_COLD),
+		Suscept: int(types.RIS_ACID),
+	}
+	t.Cleanup(func() { combat.StanceIndex[types.STANCE_VIPER] = saved })
+	DoStance(ch, "viper")
+	if ch.Stance != types.STANCE_VIPER {
+		t.Errorf("expected STANCE_VIPER, got %d", ch.Stance)
+	}
+	if ch.StanceResistant != int(types.RIS_FIRE) {
+		t.Errorf("StanceResistant = %#x, want RIS_FIRE", ch.StanceResistant)
+	}
+	if ch.StanceImmune != int(types.RIS_COLD) {
+		t.Errorf("StanceImmune = %#x, want RIS_COLD", ch.StanceImmune)
+	}
+	if ch.Wait < 7 {
+		t.Errorf("Wait = %d, want >= 7 (UMAX)", ch.Wait)
+	}
+}
+
+func TestDoStance_NilSelfOtherSkipsActCall(t *testing.T) {
+	// Covers A8: empty Self/Others must not fall through to a bare
+	// util.Act call. Verified via no-panic; strict byte-level output
+	// inspection would require a descriptor buffer.
+	ch, _ := newSkillTestRoom()
+	ch.Stance = types.STANCE_NONE
+	saved := combat.StanceIndex[types.STANCE_VIPER]
+	combat.StanceIndex[types.STANCE_VIPER] = combat.StanceInfo{Self: "", Others: ""}
+	t.Cleanup(func() { combat.StanceIndex[types.STANCE_VIPER] = saved })
+	// Should not panic.
+	DoStance(ch, "viper")
+	if ch.Stance != types.STANCE_VIPER {
+		t.Errorf("VIPER with empty messages should still enter; got %d", ch.Stance)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/eilidhmae/smaug/internal/combat"
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -178,25 +179,99 @@ func DoStyle(ch *types.CharData, argument string) {
 	ch.Send("No such style.\n\r")
 }
 
-// DoStance — toggle combat stance. MVP: store the requested index on
-// CharData.Stance and echo. Real C uses STANCE_MONGOOSE…STANCE_SWALLOW
-// with learned proficiency per stance; we keep name-to-index mapping.
+// DoStance — enter or leave a combat stance. Mirrors C do_stance at
+// src/stances.c:51-128. The full state machine:
+//
+//  1. Mount check: "While you are mounted?" when ch.Mount != nil.
+//  2. No arg:
+//     · STANCE_NONE       → enter STANCE_NORMAL; UpdateStances(true);
+//     wait := STANCE_NONE.Wait.
+//     · any other stance  → UpdateStances(false); set STANCE_NONE;
+//     wait := STANCE_NORMAL.Wait.
+//  3. Already in a non-NONE stance: "cannot change stances until you
+//     come up from the one you are currently in."
+//  4. Look up arg via GetStanceNumber. Only the 10 player-accessible
+//     stances (VIPER..SWALLOW) are selectable — NONE and NORMAL fall
+//     through to the default syntax block.
+//  5. Gate via CanUseStance; rejected → syntax block.
+//  6. Commit: assign ch.Stance, send entry message, apply WAIT_STATE,
+//     UpdateStances(true).
+//
+// The WAIT_STATE call uses SMAUG's UMAX semantics
+// (`ch.Wait = UMAX(ch.Wait, val)`) so a pre-existing higher wait is
+// preserved.
 func DoStance(ch *types.CharData, argument string) {
 	arg, _ := util.OneArgument(argument)
 	arg = strings.ToLower(arg)
-	names := []string{"mongoose", "bull", "mantis", "dragon", "tiger", "monkey", "swallow"}
-	if arg == "" {
-		ch.Send("Available stances: mongoose, bull, mantis, dragon, tiger, monkey, swallow.\n\r")
+
+	if ch.Mount != nil {
+		ch.Send("While you are mounted?\n\r")
 		return
 	}
-	for i, n := range names {
-		if strings.HasPrefix(n, arg) {
-			ch.Stance = types.STANCE_MONGOOSE + i
-			ch.Sendf("You take the %s stance.\n\r", n)
+
+	if arg == "" {
+		if ch.Stance == types.STANCE_NONE {
+			ch.Stance = types.STANCE_NORMAL
+			sendStanceMessage(ch, true)
+			combat.UpdateStances(ch, true)
+			ch.Wait = util.UMAX(ch.Wait, combat.StanceIndex[types.STANCE_NONE].Wait)
+		} else {
+			combat.UpdateStances(ch, false)
+			ch.Stance = types.STANCE_NONE
+			sendStanceMessage(ch, true)
+			ch.Wait = util.UMAX(ch.Wait, combat.StanceIndex[types.STANCE_NORMAL].Wait)
+		}
+		return
+	}
+
+	if ch.Stance > types.STANCE_NONE {
+		ch.Send("You cannot change stances until you come up from the one you are currently in.\n\r")
+		return
+	}
+
+	newStance := persist.GetStanceNumber(arg)
+	switch newStance {
+	case types.STANCE_VIPER, types.STANCE_CRANE, types.STANCE_CRAB,
+		types.STANCE_MONGOOSE, types.STANCE_BULL, types.STANCE_MANTIS,
+		types.STANCE_DRAGON, types.STANCE_TIGER, types.STANCE_MONKEY,
+		types.STANCE_SWALLOW:
+		if !combat.CanUseStance(ch, newStance) {
+			sendStanceMessage(ch, false)
 			return
 		}
+		ch.Stance = newStance
+	default:
+		sendStanceMessage(ch, false)
+		return
 	}
-	ch.Send("No such stance.\n\r")
+
+	sendStanceMessage(ch, true)
+	ch.Wait = util.UMAX(ch.Wait, combat.StanceIndex[newStance].Wait)
+	combat.UpdateStances(ch, true)
+}
+
+// sendStanceMessage broadcasts either the stance's entry messages
+// (Self/Others from the stance table) on `entering=true`, or the syntax
+// block on `entering=false`. Mirrors C send_stance_message at
+// src/stances.c:285-298, with a Go-side nil-guard: when Others/Self
+// are empty strings, skip the util.Act call rather than dereferencing
+// a NULL (C would segfault; see plan-phase6-stances-olc.md §Q7).
+func sendStanceMessage(ch *types.CharData, entering bool) {
+	if entering {
+		if ch.Stance < 0 || ch.Stance >= types.MAX_STANCE {
+			return
+		}
+		info := combat.StanceIndex[ch.Stance]
+		if info.Others != "" {
+			util.Act(types.AT_STANCE, info.Others, ch, nil, nil, nil, types.TO_ROOM)
+		}
+		if info.Self != "" {
+			util.Act(types.AT_STANCE, info.Self, ch, nil, nil, nil, types.TO_CHAR)
+		}
+	} else {
+		ch.Send("Syntax is: stance <style>.\n\r")
+		ch.Send("Stance being one of: Viper, Crane, Crab, Mongoose, Bull.\n\r")
+	}
 }
 
 // DoMistwalk — short-range teleport to a named character. src/skills.c:3887.

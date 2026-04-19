@@ -48,16 +48,21 @@ func GetStanceNumber(name string) int {
 	return -1
 }
 
-// LoadStancesInto reads a SMAUG `stances.dat` file and overwrites the
-// combat-relevant fields (NumAttacks, DamDone, DamTaken) of entries in
-// target for every StartStance…EndStance block whose name resolves via
-// GetStanceNumber. Unmentioned stances keep whatever target already held.
+// StancePath captures the last path passed to LoadStancesInto. The
+// `stset save` admin command reads this to round-trip edits back to the
+// same file the boot-time loader consumed. See plan-phase6-stances-olc.md
+// §Q8.
+var StancePath string
+
+// LoadStancesInto reads a SMAUG `stances.dat` file and overwrites all
+// per-stance fields of entries in target for every StartStance…EndStance
+// block whose name resolves via GetStanceNumber. Unmentioned stances
+// keep whatever target already held.
 //
-// Non-combat keys (Class, Immune, Resist, Suscept, Dodge, Dual, Parry,
-// Percent, Race, Stance, Special, Other, Self, Wait, Weight) are
-// consumed so the scanner advances past them; their payloads are
-// discarded pending the Phase-6 `StanceInfo` extension that will store
-// them (see plan-tranche-b.md G1.3).
+// As of Phase 6 plan-phase6-stances-olc.md G1, all 18 C `fread_stance`
+// keys are stored (Attacks, Class, DamDone, DamTaken, Dodge, Dual,
+// Immune, Other, Parry, Percent, Race, Resist, Self, Special, Stance,
+// Suscept, Wait, Weight). Unknown keys log a BUG line and skip.
 //
 // Behaviour when the file is absent: returns nil without mutating
 // target. The shipped stub file contains just "End\n" and is likewise
@@ -70,6 +75,7 @@ func LoadStancesInto(target *[types.MAX_STANCE]combat.StanceInfo, path string) e
 	if target == nil {
 		return nil
 	}
+	StancePath = path
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -122,23 +128,52 @@ func readStanceBlock(sc *Scanner, target *[types.MAX_STANCE]combat.StanceInfo) {
 			return
 		case "Attacks":
 			target[idx].NumAttacks = sc.ReadNumber()
+		case "Class":
+			target[idx].Class = sc.ReadNumber()
 		case "DamDone":
 			target[idx].DamDone = sc.ReadNumber()
 		case "DamTaken":
 			target[idx].DamTaken = sc.ReadNumber()
-		// Known but not-yet-stored keys — consume payload so the
-		// scanner advances correctly. See G1.3 in plan-tranche-b.md.
-		case "Class", "Dodge", "Dual", "Immune", "Parry", "Percent",
-			"Race", "Resist", "Suscept", "Wait", "Weight":
-			_ = sc.ReadNumber()
-		case "Other", "Self":
-			_ = sc.ReadString()
+		case "Dodge":
+			target[idx].Dodge = sc.ReadNumber()
+		case "Dual":
+			target[idx].Dual = sc.ReadNumber()
+		case "Immune":
+			target[idx].Immune = sc.ReadNumber()
+		case "Other":
+			target[idx].Others = sc.ReadString()
+		case "Parry":
+			target[idx].Parry = sc.ReadNumber()
+		case "Percent":
+			target[idx].SpecialPercent = sc.ReadNumber()
+		case "Race":
+			target[idx].Race = sc.ReadNumber()
+		case "Resist":
+			target[idx].Resist = sc.ReadNumber()
+		case "Self":
+			target[idx].Self = sc.ReadString()
 		case "Special":
-			_ = sc.ReadWord()
+			// C get_special_number returns 0 unconditionally (stub);
+			// we still advance the scanner past the name token.
+			specName := sc.ReadWord()
+			target[idx].SpecialMove = combat.GetSpecialNumber(specName)
 		case "Stance":
-			// Two word payload (prerequisite pair).
-			_ = sc.ReadWord()
-			_ = sc.ReadWord()
+			// Two-word payload: primary and optional secondary
+			// prerequisite stance names.
+			s1 := sc.ReadWord()
+			s2 := sc.ReadWord()
+			if n := GetStanceNumber(s1); n >= 0 {
+				target[idx].Prereq[0] = n
+			}
+			if n := GetStanceNumber(s2); n >= 0 {
+				target[idx].Prereq[1] = n
+			}
+		case "Suscept":
+			target[idx].Suscept = sc.ReadNumber()
+		case "Wait":
+			target[idx].Wait = sc.ReadNumber()
+		case "Weight":
+			target[idx].MaxWeight = sc.ReadNumber()
 		default:
 			util.Bug("LoadStancesInto: unknown key %q in %s block", word, name)
 		}

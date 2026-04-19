@@ -614,6 +614,9 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "cook", DoFun: act.DoCook, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "slookup", DoFun: act.DoSlookup, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "sset", DoFun: act.DoSset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	// Phase 6 Stances OLC (plan-phase6-stances-olc.md A16).
+	reg.Register(&command.Command{Name: "ststat", DoFun: act.DoSTstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "stset", DoFun: act.DoSTset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 
 	// Quest
 	reg.Register(&command.Command{Name: "quest", DoFun: act.DoQuest, Position: types.POS_RESTING, Level: 0})

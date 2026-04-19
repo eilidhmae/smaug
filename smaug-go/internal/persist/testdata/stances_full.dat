@@ -1,0 +1,28 @@
+StartStance	Dragon
+Attacks	2
+Class	7
+DamDone	150
+DamTaken	90
+Dodge	10
+Dual	1
+Immune	5
+Other	$n enters a fierce Dragon stance.~
+Parry	5
+Percent	25
+Race	3
+Resist	3
+Self	You enter a fierce Dragon stance.~
+Special	None
+Stance	Tiger None
+Suscept	2
+Wait	12
+Weight	500
+EndStance
+
+StartStance	Tiger
+Attacks	1
+DamDone	110
+DamTaken	110
+EndStance
+
+End

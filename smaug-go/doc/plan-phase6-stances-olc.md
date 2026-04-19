@@ -1039,3 +1039,83 @@ This exercises all 18 keys on Dragon + verifies minimal two-key Tiger block stil
 5. G5 commit: "Phase 6 Stances OLC G5: boot registration + end-to-end scenario tests".
 
 Single-PR delivery; five commits for review clarity. The orchestrator may squash if desired.
+
+---
+
+## Completion Record — 2026-04-19
+
+**Landed** in a single squashed commit. All 5 task groups (G1..G5) delivered, all 20 acceptance criteria (A1..A20) satisfied, all preserved-C-bug pin-tests in place, all mutation gates verified via `Edit` round-trips only.
+
+### Acceptance criteria mapping
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| A1 | `combat.StanceInfo` has 19 C-cognate fields | ✓ | `internal/combat/stance_index.go:44-64` |
+| A2 | `LoadStancesInto` stores every `fread_stance` key | ✓ | `internal/persist/stances.go:108-160`; `TestLoadStances_FullFieldRoundTripLoad` |
+| A3 | `GetStanceName` exhaustive (12 cases + default) | ✓ | `TestGetStanceName_Exhaustive` |
+| A4 | `GetStanceMastery` nil-safe on IndexData/PCData | ✓ | `TestGetStanceMastery_NilIndexDataNilPCDataSafe` |
+| A5 | `CanUseStance` 3 PC prereq branches + 4 post-gates | ✓ | 19 tests in `can_use_stance_test.go` |
+| A6 | `UpdateStances` symmetric entry/exit RIS toggle | ✓ | `TestUpdateStances_LeavingClearsResistImmuneSuscept_Idempotent` + `_PreservesUnrelatedBits` |
+| A7 | `DoStance` mount-gate + no-arg toggle + change-while-active + CanUseStance + messages + WAIT_STATE | ✓ | 12 `TestDoStance_*` tests including `_MountedRejected`, `_NoArg_FromNone_EntersNormal`, `_NoArg_FromNonNone_ExitsToNone`, `_ChangeWhileAlreadyInStance_Rejected`, `_CanUseBlocked_ShowsSyntax`, `_SuccessfulEntry_SetsStance_UpdatesRIS_SetsWait` |
+| A8 | `sendStanceMessage` nil-guards empty strings | ✓ | `TestDoStance_NilSelfOtherSkipsActCall` |
+| A9 | `SaveStances` produces byte-faithful C format | ✓ | `TestSaveStances_FullyPopulatedStance_EmitsAllKeys` with tab/tilde/blank-line invariants |
+| A10 | 18 conditional-write invariants | ✓ | `TestSaveStances_ConditionalWriteInvariants` (38 table-driven cases) |
+| A11 | Save→load round-trip matches via `reflect.DeepEqual` | ✓ | `TestSaveStances_RoundTripMatchesLoad` |
+| A12 | `DoSTstat` prints 13+ per-stance field lines | ✓ | `TestDoSTstat_KnownStance_PrintsAllFields` (19 substring assertions) |
+| A13 | `DoSTset` supports 18 field keys with C-faithful range guards | ✓ | 25+ `TestDoSTset_*` tests |
+| A14 | `DoSTset` preserves 4 C bugs with inline refs | ✓ | `TestDoSTset_Dual_CBugPreserved`, `_Class_NoOp_CBugPreserved`, `_Race_NoOp_CBugPreserved`, `_Special_InvokesStub_SetsSpecialMoveToZero` |
+| A15 | `stset save` calls `SaveStances` and round-trips | ✓ | `TestDoSTset_Save_InvokesWriter`, `TestScenario_StsetEditThenSaveThenReload` |
+| A16 | `ststat`/`stset` at `LEVEL_IMMORTAL`; `stance` player-accessible at POS_DEAD | ✓ | `TestBoot_StancesOLCRegistered` |
+| A17 | Full stset → save → reload works end-to-end | ✓ | `TestScenario_StsetEditThenSaveThenReload` |
+| A18 | `go vet ./...` clean | ✓ | |
+| A19 | `go test -count=3 ./...` green across all 15 packages | ✓ | |
+| A20 | No regression in Tranche B tests | ✓ | `TestLoadStances_TwoStancesOverridesDefaults` + `TestLoadStances_EmptyFileKeepsDefaults` continue to pass |
+
+### Preserved-C-bug pin-tests
+
+- `TestDoSTset_Class_NoOp_CBugPreserved` — `stances.c:823-826` body absent.
+- `TestDoSTset_Race_NoOp_CBugPreserved` — `stances.c:918-921` same.
+- `TestDoSTset_Dual_CBugPreserved` — `stances.c:858-861` inverted assignment.
+- `TestCanUseStance_ClassRestriction_CBug_PreservesMaskANDIndex` + `TestCanUseStance_RaceRestriction_CBug_SameAsClass` — `stances.c:276-279` `IS_SET(mask, index)`.
+
+### Fixed-C-bug pin-test
+
+- `do_ststat` newline-every-4 operator-precedence (`stances.c:687`) — Go ports reconstructed intent `index_num % 4 == 0`; test `TestDoSTstat_NoArg_ListsAllStances` checks the output contains all 12 names (layout-correct).
+
+### Mutation gates (all caught via `Edit` round-trip revert)
+
+1. Drop `Dodge` case in loader → `TestLoadStances_FullFieldRoundTripLoad` fails on `Dragon.Dodge=0, want 10`.
+2. Flip `ch.Stance == STANCE_NONE` to `!=` in `GetStanceMastery` → PC/NPC mastery tests fail.
+3. Flip `|=` to `&=` in `UpdateStances` entering branch → entering + unrelated-bits tests fail.
+4. Flip `CarryWeight > MaxWeight` to `>=` → `TestCanUseStance_MaxWeightEqual_TRUE_BoundaryOff` fails.
+5. Remove `Stance > STANCE_NONE` change-while-active gate in `DoStance` → `TestDoStance_ChangeWhileAlreadyInStance_Rejected` fails.
+6. Flip `DamDone > 0` to `!= 0` in `SaveStances` → invariants suite fails on negative case.
+7. Drop `EndStance\n\n` trailing blank line → round-trip parser garbage-chains `EndStanceStartStance`.
+8. Flip `attacks > 5` upper bound to `> 4` → `TestDoSTset_Attacks_PositiveBoundary` fails.
+
+### Open questions resolved
+
+- **Q1** — `stset none attacks 5` allowed (preserves C; `STANCE_NONE` is never entered).
+- **Q2** — Class/race setters remain no-op (preserve C bug).
+- **Q3** — `dual` inverted assignment preserved.
+- **Q4** — `CanUseStance` class/race `IS_SET(mask, index)` preserved.
+- **Q5** — `do_ststat` newline bug fixed (port intent).
+- **Q6** — `RisflagNames` = 22 entries terminating `magic`/`paralysis`.
+- **Q7** — `sendStanceMessage` empty-string skip (defensive Go, not C).
+- **Q8** — `WorldRef.DataDir` fallback + `persist.StancePath` primary.
+- **Q9** — `stance` was already registered at `boot.go:606` (Level 0, POS_DEAD).
+- **Q10** — `util.UMAX` used instead of a local `maxInt` helper.
+
+### Follow-ups (tracked in TODO.md)
+
+- `stance-ris-wire` — combat resolution at `internal/combat/combat.go` still reads `ch.Resistant/Immune/Susceptible` not the Stance* bitsets. Next tranche wires stance-RIS into the final R/I/S check so the data this plan made live is actually consumed.
+- Richer `DoSTstat` class/race restriction formatting (currently `0x%x` hex) — would require cross-package reads of class/race table names.
+- `STANCEFLAGS` help file entry referenced in error paths; absent today, cosmetic.
+
+### Scope deviations
+
+None. Every task group delivered as planned; every scope cut in §Scope Cuts remained a scope cut.
+
+### Test count delta
+
+**+109 tests** across 9 files. Test-package green runs: act 21s, combat 23s, persist sub-second, boot sub-second, util sub-second — all under `-count=3`.

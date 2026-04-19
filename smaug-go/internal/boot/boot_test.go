@@ -136,6 +136,49 @@ func TestBoot_ClanOfficerRegistered(t *testing.T) {
 	}
 }
 
+// TestBoot_StancesOLCRegistered pins ststat/stset command registration
+// per plan-phase6-stances-olc.md A16. Both carry LEVEL_IMMORTAL and
+// POS_DEAD; `stance` (already registered elsewhere) remains Level 0.
+func TestBoot_StancesOLCRegistered(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	const maxTrust = 65535
+
+	ststat := reg.Find("ststat", maxTrust)
+	if ststat == nil {
+		t.Fatal("ststat must be registered")
+	}
+	if ststat.Level != types.LEVEL_IMMORTAL {
+		t.Errorf("ststat.Level = %d, want %d (LEVEL_IMMORTAL)",
+			ststat.Level, types.LEVEL_IMMORTAL)
+	}
+	if ststat.DoFun == nil {
+		t.Error("ststat.DoFun must be non-nil")
+	}
+
+	stset := reg.Find("stset", maxTrust)
+	if stset == nil {
+		t.Fatal("stset must be registered")
+	}
+	if stset.Level != types.LEVEL_IMMORTAL {
+		t.Errorf("stset.Level = %d, want %d (LEVEL_IMMORTAL)",
+			stset.Level, types.LEVEL_IMMORTAL)
+	}
+
+	stance := reg.Find("stance", maxTrust)
+	if stance == nil {
+		t.Fatal("stance must be registered")
+	}
+	if stance.Level != 0 {
+		t.Errorf("stance.Level = %d, want 0 (player-accessible)", stance.Level)
+	}
+}
+
 func TestBoot_WiresCallbacks(t *testing.T) {
 	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
 	// Reset globals we care about.
