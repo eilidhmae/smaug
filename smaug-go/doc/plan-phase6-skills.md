@@ -414,4 +414,75 @@ Options:
 
 ## Completion Record
 
-*To be filled in after work lands.*
+**Landed 2026-04-18** via lineage `phase6-skills`. Worktree branch
+`worktree-agent-a5165eae`. All 16 acceptance criteria satisfied.
+
+### Decisions
+
+- **Q1 (bloodlet operator-precedence bug) → Option A** as recommended. Go's
+  `isBloodRace` helper implements the reconstructed intent `!IS_NPC && (vampire
+  || demon)`. Documented inline with C citation to `src/skills.c:3521` and
+  cross-reference to this plan's Open Question 1.
+- **Q2 (broach tautological+inverted predicate) → Option A** as recommended.
+  Go's `DoBroach` implements the reconstructed intent
+  `success := CLOSED && LOCKED && !PICKPROOF && can_use_skill`. Documented
+  inline with C citation to `src/skills.c:3987-3990` and cross-reference to
+  this plan's Open Question 2.
+- **Q3 (color) → Option A for broach** (inline `&g` prefix on each send);
+  **bloodlet uses `util.Act(types.AT_BLOOD, ...)`** as plan alternative —
+  renders uncolored today but will auto-colorize when `util.atColorCode` gains
+  an AT_BLOOD entry (tracked separately in TODO Active).
+- **Q4 (bloodlet registration position) → POS_RESTING** as recommended
+  (matches skills.dat Minpos).
+- **Q5 (registration minlevel) → Level 0** as recommended (matches existing
+  Go skill convention; PCData.Learned gates actual use).
+
+### Readiness-vet findings confirmed during execution
+
+- `combat.Damage(w, ch, ch, ...)` self-target safety — verified safe via
+  `damageWith` guard at `internal/combat/combat.go:647-658` (skips
+  `StartFighting` when `ch == victim`; `victim.Hit <= 0` early-returns).
+  Pinned by `TestDoBloodlet_SuccessSelfDamages` (ch.Hit 100 → 96 after
+  level-20 bloodlet).
+- `ch.Wait` units confirmed as pulses — `types.PULSE_VIOLENCE = 12` for the
+  bloodlet Wait, `WorldRef.Skills[gsn].Beats` (skills.dat-loaded) for
+  pounce/broach.
+
+### Mutation-verify round-trips (all via `Edit` tool only — no banned git ops)
+
+1. DoPounce weapon-type set: dropped `DAM_PIERCE` — `TestDoPounce_EachValidWeaponTypeAccepted` failed on type 11; reverted → green.
+2. DoBroach success predicate: flipped `&&` to `||` and `!` inversions — 3 tests failed (NotClosed/Pickproof/FailedSkillCheck); reverted → green.
+3. DoBloodlet bloodthirst delta: `-7` → `-6` — `TestDoBloodlet_SuccessDecrementsBloodthirst` failed (got 14, want 13); reverted → green.
+4. DoBloodlet Wait: `PULSE_VIOLENCE` → `PULSE_TICK` — `TestDoBloodlet_WaitStateSet` failed (got 280, want 12); reverted → green.
+5. DoBroach reverse-exit clearing: removed the `exit.ReverseExit != nil && ToRoom == ch.InRoom` block — `TestDoBroach_SuccessRemovesLockBothSides` failed (reverse lock still set); reverted → green.
+
+### Files modified
+
+- `internal/act/skills.go` — `DoBroach` (+~70 LOC) after `DoPick`.
+- `internal/act/skills3.go` — `DoPounce` (+~85 LOC) after `DoStun`.
+- `internal/act/skills4.go` — `isBloodRace` helper + `DoBloodlet` (+~90 LOC) after `DoFeed`. Also added `combat` package import.
+- `internal/boot/boot.go` — three one-line registrations (`broach` adjacent to `pick`; `pounce` adjacent to `circle`; `bloodlet` adjacent to `feed`).
+- `internal/act/skills_test.go` — 11 `DoBroach` tests (+~180 LOC).
+- `internal/act/skills3_test.go` — 14 `DoPounce` tests (+~225 LOC).
+- `internal/act/skills4_test.go` — 16 `isBloodRace` + `DoBloodlet` tests (+~255 LOC).
+
+### Test delta
+
+- Package `internal/act/` added 41 tests: 14 DoPounce + 11 DoBroach + 6 isBloodRace + 10 DoBloodlet.
+- `go test -count=3 ./...` green across all 15 packages.
+- `go vet ./...` clean. `go build ./...` clean.
+
+### Scope deviations from plan
+
+- None material. Color decision for bloodlet opted for the plan's
+  sub-recommendation inside Q3 (Option-A-via-`util.Act`) rather than the top-
+  level Option A (inline `&r`) — rationale documented in Q3: `util.Act`
+  preserves C's actor/victim substitution and will auto-colorize when
+  `atColorCode` gains AT_BLOOD. Broach still uses the top-level Option A
+  inline `&g` because C uses `send_to_char` there, not `act`.
+
+### Follow-ups added to TODO.md
+
+- None new. Skills-plan-specific follow-ups all resolved or covered by
+  pre-existing shared TODOs (AT_BLOOD/AT_DGREEN color extension; PK-legality
+  subsystem; deity-favor subsystem; trap-dispatcher).

@@ -172,6 +172,91 @@ func DoStun(ch *types.CharData, argument string) {
 	}
 }
 
+// DoPounce — stealth opening attack. src/skills.c:2607. Requires a wielded
+// weapon with one of {DAM_SLICE, DAM_STAB, DAM_SLASH, DAM_CLAW, DAM_BITE,
+// DAM_PIERCE} in Value[3], a non-fighting target that is either asleep or at
+// full HP, and not mounted. The combat-side short-circuit for gsnPounce in
+// MultiHit (internal/combat/combat.go:247) makes this a single-hit skill.
+//
+// Omissions vs. C:
+//   - is_safe / check_attacker / check_illegal_pk — PK-legality subsystem not
+//     ported in Go (matches DoBackstab/DoCircle convention).
+//   - luck-derived percent modifier (C uses get_curr_lck adjustments) — Go
+//     skills uniformly drop this.
+func DoPounce(ch *types.CharData, argument string) {
+	// NPC + AFF_CHARM early-return (C :2614-2618).
+	if ch.IsNPC() && ch.AffectedBy.IsSet(types.AFF_CHARM) {
+		ch.Send("You can't do that right now.\n\r")
+		return
+	}
+
+	arg, _ := util.OneArgument(argument)
+
+	// Mount gate (C :2622-2626). Checked before arg test, matching C source
+	// order — if mounted, report mount issue even if no arg supplied.
+	if ch.Mount != nil {
+		ch.Send("You can't get close enough while mounted.\n\r")
+		return
+	}
+
+	if arg == "" {
+		ch.Send("Pounce on whom?\n\r")
+		return
+	}
+
+	victim := handler.GetCharRoom(ch, arg)
+	if victim == nil {
+		ch.Send("They aren't here.\n\r")
+		return
+	}
+	if victim == ch {
+		ch.Send("Pounce on yourself?\n\r")
+		return
+	}
+
+	// Weapon-type gate (C :2649-2660). Value[3] is the damage-type index.
+	wield := handler.GetEqChar(ch, types.WEAR_WIELD)
+	if wield == nil ||
+		(wield.Value[3] != types.DAM_SLICE &&
+			wield.Value[3] != types.DAM_STAB &&
+			wield.Value[3] != types.DAM_SLASH &&
+			wield.Value[3] != types.DAM_CLAW &&
+			wield.Value[3] != types.DAM_BITE &&
+			wield.Value[3] != types.DAM_PIERCE) {
+		ch.Send("You are not wielding an appropriate weapon type to effectively pounce.\n\r")
+		return
+	}
+
+	// Victim-already-fighting gate (C :2662-2666).
+	if victim.Fighting != nil {
+		ch.Send("You cannot pounce on someone who is in combat.\n\r")
+		return
+	}
+
+	// Hurt-and-awake gate (C :2668-2673). IS_AWAKE == Position > POS_SLEEPING.
+	if victim.Hit < victim.MaxHit && victim.Position > types.POS_SLEEPING {
+		util.Act(types.AT_PLAIN, "$N is hurt and suspicious ... you can't sneak up.",
+			ch, victim, nil, nil, types.TO_CHAR)
+		return
+	}
+
+	// WAIT_STATE uses skill_table[gsn_pounce]->beats (= 12 per skills.dat).
+	gsn := lookupSkillSlot("pounce")
+	if WorldRef != nil && gsn >= 0 && gsn < len(WorldRef.Skills) && WorldRef.Skills[gsn] != nil {
+		ch.Wait = WorldRef.Skills[gsn].Beats
+	}
+
+	// Success gate (C :2682): succeed if victim is asleep (auto-success) OR
+	// the skill check passes.
+	if victim.Position <= types.POS_SLEEPING || canUseSkill(ch, numberPercent(), gsn) {
+		learnFromSuccess(ch, gsn)
+		combat.MultiHit(WorldRef, ch, victim, gsn)
+	} else {
+		learnFromFailure(ch, gsn)
+		combat.Damage(WorldRef, ch, victim, 0, gsn)
+	}
+}
+
 // DoGrapple — lock the target in a clinch. src/skills.c:1690. MVP: drop
 // the PKill-only and NPC-restrictions (C requires IS_PKILL(ch) and
 // !IS_NPC(victim)); allow anyone to grapple anyone in the same room. If

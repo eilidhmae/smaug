@@ -268,12 +268,12 @@ func TestLearnFromSuccess_FormulaTable(t *testing.T) {
 		wantMsg   bool
 	}{
 		// chance = learned + 5*5 = learned + 25
-		{"roll>=chance gains 2", 10, 99, 2, true},           // chance 35, roll 99 -> gain 2
-		{"chance-roll<=25 gains 1", 10, 20, 1, true},        // chance 35, diff 15 -> gain 1
-		{"chance-roll>25 no gain", 10, 5, 0, false},         // chance 35, diff 30 -> no gain
-		{"roll exactly chance gains 2", 10, 35, 2, true},    // roll>=chance path
-		{"diff exactly 25 gains 1", 10, 10, 1, true},        // chance-roll==25 -> gain 1
-		{"cap at adept on gain of 2", 94, 99, 1, true},      // 94+2=96 clamped to 95
+		{"roll>=chance gains 2", 10, 99, 2, true},        // chance 35, roll 99 -> gain 2
+		{"chance-roll<=25 gains 1", 10, 20, 1, true},     // chance 35, diff 15 -> gain 1
+		{"chance-roll>25 no gain", 10, 5, 0, false},      // chance 35, diff 30 -> no gain
+		{"roll exactly chance gains 2", 10, 35, 2, true}, // roll>=chance path
+		{"diff exactly 25 gains 1", 10, 10, 1, true},     // chance-roll==25 -> gain 1
+		{"cap at adept on gain of 2", 94, 99, 1, true},   // 94+2=96 clamped to 95
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -439,5 +439,191 @@ func cleanupSkillTestRoom(ch *types.CharData, victim *types.CharData) {
 	if victim != nil {
 		handler.CharFromRoom(victim)
 		WorldRef.RemoveChar(victim)
+	}
+}
+
+// --- DoBroach (Phase 6 skills G2) ---
+
+// setupBroachRooms builds two rooms connected by a forward exit (north from
+// roomA → roomB) and its reverse (south from roomB → roomA). Returns the
+// character, forward exit, and reverse exit so tests can mutate ExitInfo.
+func setupBroachRooms(t *testing.T) (*types.CharData, *types.ExitData, *types.ExitData) {
+	t.Helper()
+	roomA := &types.RoomIndexData{Vnum: 9000, Name: "Broach Room A"}
+	roomB := &types.RoomIndexData{Vnum: 9001, Name: "Broach Room B"}
+	forward := &types.ExitData{
+		Direction: types.DIR_NORTH,
+		ToRoom:    roomB,
+	}
+	reverse := &types.ExitData{
+		Direction: types.DIR_SOUTH,
+		ToRoom:    roomA,
+	}
+	forward.ReverseExit = reverse
+	reverse.ReverseExit = forward
+	roomA.Exits = append(roomA.Exits, forward)
+	roomB.Exits = append(roomB.Exits, reverse)
+
+	ch := newTestCharWithDesc()
+	ch.InRoom = roomA
+	ch.Level = 45
+	roomA.People = append(roomA.People, ch)
+	return ch, forward, reverse
+}
+
+func TestDoBroach_MissingArgPromptsDirection(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	DoBroach(ch, "")
+	if fwd.ExitInfo&int(types.EX_LOCKED) == 0 {
+		t.Error("no-arg broach should leave lock untouched")
+	}
+}
+
+func TestDoBroach_MountedRejected(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	mount := &types.CharData{Name: "horse"}
+	mount.Act.Set(types.ACT_IS_NPC)
+	ch.Mount = mount
+	DoBroach(ch, "north")
+	if fwd.ExitInfo&int(types.EX_LOCKED) == 0 {
+		t.Error("mounted broach should leave lock untouched")
+	}
+}
+
+func TestDoBroach_NPCCharmedRejected(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.AffectedBy.Set(types.AFF_CHARM)
+	DoBroach(ch, "north")
+	if fwd.ExitInfo&int(types.EX_LOCKED) == 0 {
+		t.Error("charmed-NPC broach should leave lock untouched")
+	}
+}
+
+func TestDoBroach_NoDoor(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	DoBroach(ch, "east") // no east exit
+	if fwd.ExitInfo&int(types.EX_LOCKED) == 0 {
+		t.Error("no-door broach should leave lock untouched")
+	}
+}
+
+func TestDoBroach_DoorNotClosed(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	setLearned(t, ch, "broach", 100)
+	fwd.ExitInfo = int(types.EX_LOCKED) // locked but open (absurd but valid data)
+	restore := withStubNumberPercent(1) // skill would pass
+	defer restore()
+	DoBroach(ch, "north")
+	if fwd.ExitInfo&int(types.EX_LOCKED) == 0 {
+		t.Error("open-door broach should fail (per fix of C predicate); lock unchanged")
+	}
+}
+
+func TestDoBroach_DoorNotLocked(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	setLearned(t, ch, "broach", 100)
+	fwd.ExitInfo = int(types.EX_CLOSED) // closed but not locked
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBroach(ch, "north")
+	if fwd.ExitInfo != int(types.EX_CLOSED) {
+		t.Errorf("unlocked-door broach should not modify exit; ExitInfo=%x", fwd.ExitInfo)
+	}
+}
+
+func TestDoBroach_DoorPickproof(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	setLearned(t, ch, "broach", 100)
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED | types.EX_PICKPROOF)
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBroach(ch, "north")
+	if fwd.ExitInfo&int(types.EX_LOCKED) == 0 {
+		t.Error("pickproof broach should leave lock intact")
+	}
+}
+
+func TestDoBroach_FailedSkillCheck(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	setLearned(t, ch, "broach", 1) // very low
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	restore := withStubNumberPercent(99) // roll high → skill fails
+	defer restore()
+	DoBroach(ch, "north")
+	if fwd.ExitInfo&int(types.EX_LOCKED) == 0 {
+		t.Error("skill-check-fail broach should leave lock intact")
+	}
+}
+
+func TestDoBroach_SuccessRemovesLockBothSides(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, rev := setupBroachRooms(t)
+	setLearned(t, ch, "broach", 100)
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	rev.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBroach(ch, "north")
+	if fwd.ExitInfo&int(types.EX_LOCKED) != 0 {
+		t.Error("success broach should clear forward EX_LOCKED")
+	}
+	if rev.ExitInfo&int(types.EX_LOCKED) != 0 {
+		t.Error("success broach should clear reverse EX_LOCKED")
+	}
+}
+
+func TestDoBroach_SuccessOneSidedWhenReverseDoesNotReciprocate(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, rev := setupBroachRooms(t)
+	setLearned(t, ch, "broach", 100)
+	// Reverse points to a DIFFERENT room — the rev.ToRoom != ch.InRoom
+	// guard should prevent us from modifying it.
+	stranger := &types.RoomIndexData{Vnum: 9999, Name: "Somewhere else"}
+	rev.ToRoom = stranger
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	rev.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBroach(ch, "north")
+	if fwd.ExitInfo&int(types.EX_LOCKED) != 0 {
+		t.Error("success broach should clear forward EX_LOCKED")
+	}
+	if rev.ExitInfo&int(types.EX_LOCKED) == 0 {
+		t.Error("non-reciprocating reverse exit should NOT be modified")
+	}
+}
+
+func TestDoBroach_WaitStateSet(t *testing.T) {
+	ensureSkill(t, "broach")
+	ch, fwd, _ := setupBroachRooms(t)
+	// Put a specific Beats value on the skill.
+	gsn := lookupSkillSlot("broach")
+	WorldRef.Skills[gsn].Beats = 24
+	fwd.ExitInfo = int(types.EX_CLOSED | types.EX_LOCKED)
+	ch.Wait = 0
+	DoBroach(ch, "north")
+	if ch.Wait != 24 {
+		t.Errorf("ch.Wait = %d after broach; want 24 (beats)", ch.Wait)
+	}
+
+	// Also verify Wait is set even on the "no-door" fail branch, per
+	// plan A8 — C sets WAIT_STATE unconditionally before find_door.
+	ch.Wait = 0
+	DoBroach(ch, "east") // no east exit
+	if ch.Wait != 24 {
+		t.Errorf("ch.Wait = %d after no-door broach; want 24", ch.Wait)
 	}
 }

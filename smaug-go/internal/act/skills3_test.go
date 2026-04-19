@@ -273,3 +273,226 @@ func TestDoBerserk_Success(t *testing.T) {
 		}
 	}
 }
+
+// --- DoPounce (Phase 6 skills G1) ---
+
+// equipPounceWeapon gives ch a wielded weapon with Value[3]=DAM_STAB so the
+// weapon-type gate passes. Returns the obj for mutation tests.
+func equipPounceWeapon(t *testing.T, ch *types.CharData) *types.ObjData {
+	t.Helper()
+	wield := &types.ObjData{
+		Name:       "dagger",
+		ShortDescr: "a dagger",
+		ItemType:   types.ITEM_WEAPON,
+		WearLoc:    types.WEAR_WIELD,
+	}
+	wield.Value[1] = 1
+	wield.Value[2] = 4
+	wield.Value[3] = types.DAM_STAB
+	handler.ObjToChar(wield, ch)
+	handler.EquipChar(ch, wield, types.WEAR_WIELD)
+	return wield
+}
+
+func TestDoPounce_MissingArgPromptsTarget(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, _ := newSkillTestRoom()
+	equipPounceWeapon(t, ch)
+	prevWait := ch.Wait
+	DoPounce(ch, "")
+	if ch.Wait != prevWait {
+		t.Errorf("no-arg pounce should not set wait; was %d, now %d", prevWait, ch.Wait)
+	}
+	if ch.Fighting != nil {
+		t.Error("no-arg pounce should not start combat")
+	}
+}
+
+func TestDoPounce_TargetNotFound(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, _ := newSkillTestRoom()
+	equipPounceWeapon(t, ch)
+	DoPounce(ch, "nobody")
+	if ch.Fighting != nil {
+		t.Error("pounce on absent target should not start combat")
+	}
+}
+
+func TestDoPounce_SelfTargetRejected(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, _ := newSkillTestRoom()
+	equipPounceWeapon(t, ch)
+	DoPounce(ch, ch.Name)
+	if ch.Fighting != nil {
+		t.Error("self-pounce should not start combat")
+	}
+}
+
+func TestDoPounce_MountedRejected(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, victim := newSkillTestRoom()
+	equipPounceWeapon(t, ch)
+	mount := &types.CharData{Name: "horse"}
+	mount.Act.Set(types.ACT_IS_NPC)
+	ch.Mount = mount
+	DoPounce(ch, "target")
+	if ch.Fighting != nil || victim.Fighting != nil {
+		t.Error("mounted pounce should not start combat")
+	}
+}
+
+func TestDoPounce_NPCCharmedRejected(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, _ := newSkillTestRoom()
+	// Convert ch to NPC and charm.
+	ch.Act.Set(types.ACT_IS_NPC)
+	ch.AffectedBy.Set(types.AFF_CHARM)
+	equipPounceWeapon(t, ch)
+	prevWait := ch.Wait
+	DoPounce(ch, "target")
+	if ch.Wait != prevWait {
+		t.Errorf("charmed-NPC pounce should not set wait; was %d, now %d", prevWait, ch.Wait)
+	}
+}
+
+func TestDoPounce_NoWeaponRejected(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, _ := newSkillTestRoom()
+	DoPounce(ch, "target")
+	if ch.Fighting != nil {
+		t.Error("no-weapon pounce should not start combat")
+	}
+}
+
+func TestDoPounce_WrongWeaponTypeRejected(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, _ := newSkillTestRoom()
+	wield := &types.ObjData{
+		Name: "bludgeon", ShortDescr: "a bludgeon",
+		ItemType: types.ITEM_WEAPON, WearLoc: types.WEAR_WIELD,
+	}
+	wield.Value[3] = types.DAM_HIT // not in {1,2,3,5,10,11}
+	handler.ObjToChar(wield, ch)
+	handler.EquipChar(ch, wield, types.WEAR_WIELD)
+	DoPounce(ch, "target")
+	if ch.Fighting != nil {
+		t.Error("wrong-weapon-type pounce should not start combat")
+	}
+}
+
+func TestDoPounce_EachValidWeaponTypeAccepted(t *testing.T) {
+	ensureSkill(t, "pounce")
+	validTypes := []int{
+		types.DAM_SLICE, types.DAM_STAB, types.DAM_SLASH,
+		types.DAM_CLAW, types.DAM_BITE, types.DAM_PIERCE,
+	}
+	for _, dt := range validTypes {
+		ch, victim := newSkillTestRoom()
+		setLearned(t, ch, "pounce", 100)
+		wield := &types.ObjData{
+			Name: "weapon", ShortDescr: "a weapon",
+			ItemType: types.ITEM_WEAPON, WearLoc: types.WEAR_WIELD,
+		}
+		wield.Value[1] = 1
+		wield.Value[2] = 4
+		wield.Value[3] = dt
+		handler.ObjToChar(wield, ch)
+		handler.EquipChar(ch, wield, types.WEAR_WIELD)
+		// Victim is sleeping → auto-success gate; combat starts.
+		victim.Position = types.POS_SLEEPING
+		DoPounce(ch, "target")
+		if ch.Fighting == nil {
+			t.Errorf("valid weapon type %d: expected pounce to start combat", dt)
+		}
+	}
+}
+
+func TestDoPounce_VictimAlreadyFighting(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, victim := newSkillTestRoom()
+	equipPounceWeapon(t, ch)
+	// Third-party engaging victim.
+	third := &types.CharData{
+		Name: "other", Level: 5, Hit: 20, MaxHit: 20,
+		InRoom: ch.InRoom, Position: types.POS_STANDING,
+	}
+	third.Act.Set(types.ACT_IS_NPC)
+	ch.InRoom.People = append(ch.InRoom.People, third)
+	combat.StartFighting(victim, third)
+	combat.StartFighting(third, victim)
+	DoPounce(ch, "target")
+	if ch.Fighting != nil {
+		t.Error("pounce on already-fighting victim should not start combat for ch")
+	}
+}
+
+func TestDoPounce_HurtAwakeVictim(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, victim := newSkillTestRoom()
+	equipPounceWeapon(t, ch)
+	victim.Hit = victim.MaxHit - 1
+	victim.Position = types.POS_STANDING
+	DoPounce(ch, "target")
+	if ch.Fighting != nil {
+		t.Error("hurt-and-awake victim should reject pounce")
+	}
+}
+
+func TestDoPounce_SleepingVictimAllowed(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, victim := newSkillTestRoom()
+	setLearned(t, ch, "pounce", 100)
+	equipPounceWeapon(t, ch)
+	victim.Hit = victim.MaxHit - 1
+	victim.Position = types.POS_SLEEPING
+	DoPounce(ch, "target")
+	if ch.Fighting == nil {
+		t.Error("sleeping hurt victim should allow pounce")
+	}
+}
+
+func TestDoPounce_SuccessInvokesMultiHit(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, victim := newSkillTestRoom()
+	setLearned(t, ch, "pounce", 100)
+	equipPounceWeapon(t, ch)
+	// Keep victim alive during combat cascade (damageWith early-returns on
+	// Hit <= 0 which would unset Fighting bookkeeping).
+	victim.Hit = 10000
+	victim.MaxHit = 10000
+	restore := withStubNumberPercent(1) // guaranteed canUseSkill success
+	defer restore()
+	DoPounce(ch, "target")
+	if ch.Fighting == nil || ch.Fighting.Who != victim {
+		t.Errorf("pounce success: ch.Fighting should target victim")
+	}
+}
+
+func TestDoPounce_FailureDoesZeroDamage(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, victim := newSkillTestRoom()
+	setLearned(t, ch, "pounce", 0) // unlearned → canUseSkill false
+	equipPounceWeapon(t, ch)
+	origHit := victim.Hit
+	restore := withStubNumberPercent(99)
+	defer restore()
+	DoPounce(ch, "target")
+	if victim.Hit != origHit {
+		t.Errorf("failed pounce should do 0 damage; hit went %d -> %d", origHit, victim.Hit)
+	}
+}
+
+func TestDoPounce_WaitStateSet(t *testing.T) {
+	ensureSkill(t, "pounce")
+	ch, _ := newSkillTestRoom()
+	setLearned(t, ch, "pounce", 100)
+	equipPounceWeapon(t, ch)
+	// Put a specific Beats value on the skill for this assertion.
+	gsn := lookupSkillSlot("pounce")
+	WorldRef.Skills[gsn].Beats = 12
+	ch.Wait = 0
+	DoPounce(ch, "target")
+	if ch.Wait != 12 {
+		t.Errorf("ch.Wait = %d after pounce; want 12 (beats)", ch.Wait)
+	}
+}

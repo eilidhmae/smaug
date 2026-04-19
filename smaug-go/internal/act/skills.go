@@ -478,6 +478,88 @@ func DoPick(ch *types.CharData, argument string) {
 	ch.Send("You see nothing to pick.\n\r")
 }
 
+// DoBroach implements the 'broach' command: forcefully break a lock. Distinct
+// from pick (thief lock-picking) — broach is a brute-force alternative that
+// clears EX_LOCKED on both the forward exit and its reverse when the check
+// succeeds. src/skills.c:3960.
+//
+// C predicate bug fix (plan Open Question 2, src/skills.c:3987-3990): C reads
+//
+//	if (!CLOSED || !LOCKED || PICKPROOF || can_use_skill) { fail; }
+//
+// which is a tautology on unlocked/open doors AND inverts the can_use_skill
+// sense (fails on success). We port the reconstructed intent:
+//
+//	success := CLOSED && LOCKED && !PICKPROOF && can_use_skill
+//
+// Also drops the C calls to adjust_favor (deity subsystem unported; plan
+// Scope Cuts) and check_room_for_traps (trap subsystem unported).
+//
+// Color: C calls set_char_color(AT_DGREEN, ch) once and then send_to_char
+// inherits the color. Go has no per-descriptor color state; we prefix each
+// send with the &g (dark green) inline token to preserve the visual intent
+// (plan Open Question 3, Option A).
+func DoBroach(ch *types.CharData, argument string) {
+	// NPC + AFF_CHARM early-return (C :3967-3971).
+	if ch.IsNPC() && ch.AffectedBy.IsSet(types.AFF_CHARM) {
+		ch.Send("&gYou can't concentrate enough for that.\n\r")
+		return
+	}
+
+	arg, _ := util.OneArgument(argument)
+	if arg == "" {
+		ch.Send("&gAttempt this in which direction?\n\r")
+		return
+	}
+
+	// Mount gate (C :3978-3982).
+	if ch.Mount != nil {
+		ch.Send("&gYou should really dismount first.\n\r")
+		return
+	}
+
+	gsn := lookupSkillSlot("broach")
+
+	// WAIT_STATE uses skill_table[gsn_broach]->beats (= 24 per skills.dat). C
+	// sets this unconditionally before the find-door branch so a bogus
+	// direction still spends the wait.
+	if WorldRef != nil && gsn >= 0 && gsn < len(WorldRef.Skills) && WorldRef.Skills[gsn] != nil {
+		ch.Wait = WorldRef.Skills[gsn].Beats
+	}
+
+	exit := findDoor(ch, arg)
+	if exit == nil {
+		// C's find_door(ch, arg, TRUE) is silent on failure; C then falls
+		// through to the trailing "Your attempt fails." send.
+		ch.Send("&gYour attempt fails.\n\r")
+		return
+	}
+
+	closed := exit.ExitInfo&int(types.EX_CLOSED) != 0
+	locked := exit.ExitInfo&int(types.EX_LOCKED) != 0
+	pickproof := exit.ExitInfo&int(types.EX_PICKPROOF) != 0
+	skillPass := canUseSkill(ch, numberPercent(), gsn)
+
+	if !(closed && locked && !pickproof && skillPass) {
+		ch.Send("&gYour attempt fails.\n\r")
+		learnFromFailure(ch, gsn)
+		// TODO: adjust_favor / check_room_for_traps — unported subsystems.
+		return
+	}
+
+	// Success: clear EX_LOCKED on forward exit and, when the reverse exit
+	// points back to ch's room, clear it there too (C :4001-4005).
+	exit.ExitInfo &^= int(types.EX_LOCKED)
+	if exit.ReverseExit != nil && exit.ReverseExit.ToRoom == ch.InRoom {
+		exit.ReverseExit.ExitInfo &^= int(types.EX_LOCKED)
+	}
+	ch.Send("&gYou successfully broach the exit...\n\r")
+	learnFromSuccess(ch, gsn)
+	// TODO: adjust_favor(ch, 9, 1) — deity subsystem unported.
+	// TODO: check_room_for_traps(ch, TRAP_PICK | trap_door[pexit->vdir]) —
+	// trap dispatcher unported.
+}
+
 // --- Utility Skills ---
 
 // DoScan implements the 'scan' command: look in adjacent rooms.

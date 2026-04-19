@@ -3,6 +3,7 @@ package act
 import (
 	"strings"
 
+	"github.com/eilidhmae/smaug/internal/combat"
 	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
@@ -263,6 +264,95 @@ func DoFeed(ch *types.CharData, argument string) {
 	util.Act(types.AT_ACTION, "You feed $p to $N.", ch, victim, obj, nil, types.TO_CHAR)
 	util.Act(types.AT_ACTION, "$n feeds you $p.", ch, victim, obj, nil, types.TO_VICT)
 	util.Act(types.AT_ACTION, "$n feeds $p to $N.", ch, victim, obj, nil, types.TO_NOTVICT)
+}
+
+// isBloodRace mirrors C's composite predicate "IS_VAMPIRE(ch) ||
+// IS_DEMON(ch)" (src/mud.h:4029-4034). A character qualifies as blood-race
+// when they're a PC (not an NPC) AND either their race OR their class is
+// vampire or demon. IS_VAMPIRE / IS_DEMON each expand to a race-OR-class
+// disjunction; the caller's intent is "any blood identity", so we union.
+//
+// See plan-phase6-skills.md Open Question 1: C's bloodlet gate reads
+// "IS_NPC(ch) || !IS_VAMPIRE(ch) || !IS_DEMON(ch)" (skills.c:3521) which by
+// operator precedence requires BOTH predicates — a functionally dead gate
+// for every typical single-identity vampire or demon. We port the intent.
+func isBloodRace(ch *types.CharData) bool {
+	if ch.IsNPC() {
+		return false
+	}
+	return ch.Race == types.RACE_VAMPIRE ||
+		ch.Race == types.RACE_DEMON ||
+		ch.Class == types.CLASS_VAMPIRE ||
+		ch.Class == types.CLASS_DEMON
+}
+
+// DoBloodlet — vampire/demon self-harm ritual. src/skills.c:3517. Consumes
+// COND_BLOODTHIRST, spawns an OBJ_VNUM_BLOODLET pool in the room, and
+// self-damages for ch.Level/5 HP. Bug fix for the gate condition is
+// documented on isBloodRace (plan Open Question 1).
+//
+// Omissions vs. C: none meaningful — the skill is self-contained. Color
+// fidelity: C calls act(AT_BLOOD, ...) which would render blood-red; Go's
+// atColorCode table has no AT_BLOOD entry yet so messages render uncolored
+// (plan Scope Cuts — covered by the existing atColorCode TODO).
+func DoBloodlet(ch *types.CharData, argument string) {
+	// Blood-race gate (C :3521 intent; see isBloodRace). Silent early-return
+	// for NPCs and plain characters — matches C behavior of "return" with no
+	// user message.
+	if !isBloodRace(ch) {
+		return
+	}
+
+	if ch.Fighting != nil {
+		ch.Send("You're too busy fighting...\n\r")
+		return
+	}
+	if ch.PCData == nil || ch.PCData.Condition[types.COND_BLOODTHIRST] < 10 {
+		ch.Send("You are too drained to offer any blood...\n\r")
+		return
+	}
+
+	// WAIT_STATE uses the literal PULSE_VIOLENCE (C :3535) — NOT the
+	// skills.dat Beats (= 12). This divergence is intentional in C.
+	ch.Wait = types.PULSE_VIOLENCE
+
+	gsn := lookupSkillSlot("bloodlet")
+	if canUseSkill(ch, numberPercent(), gsn) {
+		GainCondition(ch, types.COND_BLOODTHIRST, -7)
+		util.Act(types.AT_BLOOD,
+			"Tracing a sharp nail over your skin, you let your blood spill.",
+			ch, nil, nil, nil, types.TO_CHAR)
+		util.Act(types.AT_BLOOD,
+			"$n traces a sharp nail over $s skin, spilling a quantity of blood to the ground.",
+			ch, nil, nil, nil, types.TO_ROOM)
+		learnFromSuccess(ch, gsn)
+
+		// Spawn the blood pool in the room. C :3546-3552.
+		if WorldRef != nil && ch.InRoom != nil {
+			idx := WorldRef.GetObjIndex(types.OBJ_VNUM_BLOODLET)
+			if idx == nil {
+				util.Bug("DoBloodlet: OBJ_VNUM_BLOODLET (vnum %d) not found; skipping spawn",
+					types.OBJ_VNUM_BLOODLET)
+			} else {
+				obj := handler.CreateObject(WorldRef, idx, 0)
+				obj.Timer = 1
+				obj.Value[1] = 6
+				handler.ObjToRoom(obj, ch.InRoom)
+			}
+		}
+
+		// Self-damage LAST so the object spawn survives even if the damage
+		// kills ch. C :3554 runs damage after obj_to_room for the same
+		// reason. damageWith guards self-damage: it skips StartFighting
+		// when ch == victim (internal/combat/combat.go:647-658).
+		combat.Damage(WorldRef, ch, ch, ch.Level/5, gsn)
+	} else {
+		util.Act(types.AT_BLOOD, "You cannot manage to draw much blood...",
+			ch, nil, nil, nil, types.TO_CHAR)
+		util.Act(types.AT_BLOOD, "$n slices open $s skin, but no blood is spilled...",
+			ch, nil, nil, nil, types.TO_ROOM)
+		learnFromFailure(ch, gsn)
+	}
 }
 
 // DoSkin — skin a corpse for food. src/skills.c:523. MVP: turns an

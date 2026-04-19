@@ -243,3 +243,270 @@ func TestDoMistwalk_NoArg(t *testing.T) {
 	ch, _ := newSkillTestRoom()
 	DoMistwalk(ch, "")
 }
+
+// --- isBloodRace / DoBloodlet (Phase 6 skills G3) ---
+
+func TestIsBloodRace_NPC(t *testing.T) {
+	ch := &types.CharData{Race: types.RACE_VAMPIRE, Class: types.CLASS_VAMPIRE}
+	ch.Act.Set(types.ACT_IS_NPC)
+	if isBloodRace(ch) {
+		t.Error("NPC should never qualify as blood race")
+	}
+}
+
+func TestIsBloodRace_VampireRace(t *testing.T) {
+	ch := &types.CharData{Race: types.RACE_VAMPIRE, Class: types.CLASS_WARRIOR, PCData: &types.PCData{}}
+	if !isBloodRace(ch) {
+		t.Error("RACE_VAMPIRE PC should qualify")
+	}
+}
+
+func TestIsBloodRace_VampireClass(t *testing.T) {
+	ch := &types.CharData{Race: types.RACE_HUMAN, Class: types.CLASS_VAMPIRE, PCData: &types.PCData{}}
+	if !isBloodRace(ch) {
+		t.Error("CLASS_VAMPIRE PC should qualify")
+	}
+}
+
+func TestIsBloodRace_DemonRace(t *testing.T) {
+	ch := &types.CharData{Race: types.RACE_DEMON, Class: types.CLASS_WARRIOR, PCData: &types.PCData{}}
+	if !isBloodRace(ch) {
+		t.Error("RACE_DEMON PC should qualify")
+	}
+}
+
+func TestIsBloodRace_DemonClass(t *testing.T) {
+	ch := &types.CharData{Race: types.RACE_HUMAN, Class: types.CLASS_DEMON, PCData: &types.PCData{}}
+	if !isBloodRace(ch) {
+		t.Error("CLASS_DEMON PC should qualify")
+	}
+}
+
+func TestIsBloodRace_Plain(t *testing.T) {
+	ch := &types.CharData{Race: types.RACE_HUMAN, Class: types.CLASS_WARRIOR, PCData: &types.PCData{}}
+	if isBloodRace(ch) {
+		t.Error("plain human warrior should not qualify")
+	}
+}
+
+// newBloodletFixture creates a vampire PC in a fresh room with bloodthirst
+// set high enough to pass the gate. Returns the character and a helper to
+// snapshot pre-call room contents for assertions.
+func newBloodletFixture(t *testing.T, learned int) *types.CharData {
+	t.Helper()
+	ensureSkill(t, "bloodlet")
+	gsn := lookupSkillSlot("bloodlet")
+	// Bump Beats=1 to match typical skills.dat values; bloodlet uses
+	// PULSE_VIOLENCE for Wait, not Beats — but Beats still needs to exist.
+	WorldRef.Skills[gsn].Beats = 12
+	// Adept=100 so learnFromSuccess/failure don't cap out during tests.
+	for i := 0; i < types.MAX_CLASS; i++ {
+		WorldRef.Skills[gsn].SkillAdept[i] = 100
+	}
+
+	room := &types.RoomIndexData{Vnum: 9500, Name: "Bloodlet Test"}
+	ch := newTestCharWithDesc()
+	ch.InRoom = room
+	ch.Level = 20
+	ch.Hit = 100
+	ch.MaxHit = 100
+	ch.Position = types.POS_STANDING
+	ch.Race = types.RACE_VAMPIRE
+	ch.PCData.Condition[types.COND_BLOODTHIRST] = 20
+	ch.PCData.Learned[gsn] = learned
+	room.People = append(room.People, ch)
+	return ch
+}
+
+func TestDoBloodlet_NPCSilentNoop(t *testing.T) {
+	ensureSkill(t, "bloodlet")
+	room := &types.RoomIndexData{Vnum: 9500}
+	ch := &types.CharData{InRoom: room, Level: 20, Hit: 100, MaxHit: 100}
+	ch.Act.Set(types.ACT_IS_NPC)
+	room.People = append(room.People, ch)
+	prevHit := ch.Hit
+	DoBloodlet(ch, "")
+	if ch.Hit != prevHit {
+		t.Errorf("NPC bloodlet should be no-op; hit went %d -> %d", prevHit, ch.Hit)
+	}
+	if len(room.Contents) != 0 {
+		t.Error("NPC bloodlet should not spawn object")
+	}
+}
+
+func TestDoBloodlet_NonBloodRaceSilentNoop(t *testing.T) {
+	ensureSkill(t, "bloodlet")
+	room := &types.RoomIndexData{Vnum: 9500}
+	ch := newTestCharWithDesc()
+	ch.InRoom = room
+	ch.Level = 20
+	ch.Hit = 100
+	ch.MaxHit = 100
+	ch.Race = types.RACE_HUMAN
+	ch.Class = types.CLASS_WARRIOR
+	ch.PCData.Condition[types.COND_BLOODTHIRST] = 20
+	room.People = append(room.People, ch)
+	prevHit := ch.Hit
+	DoBloodlet(ch, "")
+	if ch.Hit != prevHit {
+		t.Errorf("non-blood-race bloodlet should be no-op; hit went %d -> %d", prevHit, ch.Hit)
+	}
+	if len(room.Contents) != 0 {
+		t.Error("non-blood-race bloodlet should not spawn object")
+	}
+}
+
+func TestDoBloodlet_BlockedIfFighting(t *testing.T) {
+	ch := newBloodletFixture(t, 100)
+	victim := &types.CharData{Name: "foe", Level: 5, Hit: 20, MaxHit: 20, InRoom: ch.InRoom}
+	victim.Act.Set(types.ACT_IS_NPC)
+	ch.Fighting = &types.FightData{Who: victim}
+	prevHit := ch.Hit
+	DoBloodlet(ch, "")
+	if ch.Hit != prevHit {
+		t.Error("fighting bloodlet should be rejected before damage")
+	}
+	if len(ch.InRoom.Contents) != 0 {
+		t.Error("fighting bloodlet should not spawn object")
+	}
+}
+
+func TestDoBloodlet_BlockedIfBloodthirstLow(t *testing.T) {
+	ch := newBloodletFixture(t, 100)
+	ch.PCData.Condition[types.COND_BLOODTHIRST] = 9
+	prevHit := ch.Hit
+	DoBloodlet(ch, "")
+	if ch.Hit != prevHit {
+		t.Error("low-bloodthirst bloodlet should be rejected before damage")
+	}
+	if len(ch.InRoom.Contents) != 0 {
+		t.Error("low-bloodthirst bloodlet should not spawn object")
+	}
+}
+
+func TestDoBloodlet_SuccessSpawnsObject(t *testing.T) {
+	// Guarantee OBJ_VNUM_BLOODLET is in the world index — test init may or
+	// may not have loaded the real area. Inject a minimal prototype.
+	if WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] == nil {
+		WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] = &types.ObjIndexData{
+			Vnum:       types.OBJ_VNUM_BLOODLET,
+			Name:       "blood pool",
+			ShortDescr: "a pool of blood",
+		}
+	}
+	ch := newBloodletFixture(t, 100)
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBloodlet(ch, "")
+	var pool *types.ObjData
+	for _, o := range ch.InRoom.Contents {
+		if o.IndexData != nil && o.IndexData.Vnum == types.OBJ_VNUM_BLOODLET {
+			pool = o
+			break
+		}
+	}
+	if pool == nil {
+		t.Fatal("successful bloodlet should spawn OBJ_VNUM_BLOODLET in room")
+	}
+	if pool.Timer != 1 {
+		t.Errorf("bloodlet obj Timer = %d; want 1", pool.Timer)
+	}
+	if pool.Value[1] != 6 {
+		t.Errorf("bloodlet obj Value[1] = %d; want 6", pool.Value[1])
+	}
+}
+
+func TestDoBloodlet_SuccessDecrementsBloodthirst(t *testing.T) {
+	if WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] == nil {
+		WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] = &types.ObjIndexData{Vnum: types.OBJ_VNUM_BLOODLET}
+	}
+	ch := newBloodletFixture(t, 100)
+	ch.PCData.Condition[types.COND_BLOODTHIRST] = 20
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBloodlet(ch, "")
+	if got := ch.PCData.Condition[types.COND_BLOODTHIRST]; got != 13 {
+		t.Errorf("bloodthirst = %d after bloodlet; want 13 (20-7)", got)
+	}
+}
+
+func TestDoBloodlet_SuccessSelfDamages(t *testing.T) {
+	if WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] == nil {
+		WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] = &types.ObjIndexData{Vnum: types.OBJ_VNUM_BLOODLET}
+	}
+	ch := newBloodletFixture(t, 100)
+	ch.Level = 20
+	ch.Hit = 100
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBloodlet(ch, "")
+	// Level/5 = 4 damage. damageWith subtracts dam from Hit.
+	if ch.Hit != 96 {
+		t.Errorf("ch.Hit = %d after bloodlet; want 96 (100 - 20/5)", ch.Hit)
+	}
+}
+
+func TestDoBloodlet_FailureNoDamageNoObject(t *testing.T) {
+	if WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] == nil {
+		WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] = &types.ObjIndexData{Vnum: types.OBJ_VNUM_BLOODLET}
+	}
+	ch := newBloodletFixture(t, 0) // unlearned so canUseSkill=false
+	prevHit := ch.Hit
+	prevBlood := ch.PCData.Condition[types.COND_BLOODTHIRST]
+	restore := withStubNumberPercent(99)
+	defer restore()
+	DoBloodlet(ch, "")
+	if ch.Hit != prevHit {
+		t.Errorf("failed bloodlet should do 0 damage; hit went %d -> %d", prevHit, ch.Hit)
+	}
+	if ch.PCData.Condition[types.COND_BLOODTHIRST] != prevBlood {
+		t.Error("failed bloodlet should not consume bloodthirst")
+	}
+	// Check no pool was spawned.
+	for _, o := range ch.InRoom.Contents {
+		if o.IndexData != nil && o.IndexData.Vnum == types.OBJ_VNUM_BLOODLET {
+			t.Error("failed bloodlet should not spawn object")
+		}
+	}
+}
+
+func TestDoBloodlet_MissingObjIndexLogsBugNoSpawn(t *testing.T) {
+	// Force the index missing.
+	saved := WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET]
+	delete(WorldRef.ObjIndex, types.OBJ_VNUM_BLOODLET)
+	defer func() {
+		if saved != nil {
+			WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] = saved
+		}
+	}()
+
+	ch := newBloodletFixture(t, 100)
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBloodlet(ch, "") // should not panic
+
+	for _, o := range ch.InRoom.Contents {
+		if o.IndexData != nil && o.IndexData.Vnum == types.OBJ_VNUM_BLOODLET {
+			t.Error("missing-index bloodlet should not spawn a pool")
+		}
+	}
+	// Self-damage still ran.
+	if ch.Hit == 100 {
+		t.Error("missing-index bloodlet should still self-damage")
+	}
+}
+
+func TestDoBloodlet_WaitStateSet(t *testing.T) {
+	if WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] == nil {
+		WorldRef.ObjIndex[types.OBJ_VNUM_BLOODLET] = &types.ObjIndexData{Vnum: types.OBJ_VNUM_BLOODLET}
+	}
+	ch := newBloodletFixture(t, 100)
+	ch.Wait = 0
+	restore := withStubNumberPercent(1)
+	defer restore()
+	DoBloodlet(ch, "")
+	if ch.Wait != types.PULSE_VIOLENCE {
+		t.Errorf("ch.Wait = %d after bloodlet; want PULSE_VIOLENCE (%d)",
+			ch.Wait, types.PULSE_VIOLENCE)
+	}
+}
