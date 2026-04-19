@@ -747,7 +747,7 @@ Agent-based adversary dispatch was unavailable in both the original manager sess
 
 **Adversary pass.** Structured self-review substituted per the CLAUDE.md tooling caveat (manager-subagent `Agent`-tool availability remains inconsistent). The review catalogued 11 adversary concerns including `HasPrefix("create", "")` empty-prefix semantics (gated with `arg2Lower != ""`), rename-to-self false-positive (verified matches C), map-iteration randomness in `CheckPlanes` (safe because every room gets the same value), and DoPset nil-plane access in the `name` branch (plane != nil by control flow).
 
-**Verdict: LANDED.** Commit `<pending>`.
+**Verdict: LANDED.** Commit `d895e5b`.
 
 ---
 
