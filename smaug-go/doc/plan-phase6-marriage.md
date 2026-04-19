@@ -1,6 +1,6 @@
 # Plan: Phase 6 — Marriage
 
-**Status:** Planned (2026-04-18). Adversary-verified: to be filled after plan adversary pass.
+**Status:** Planned (2026-04-18). External adversary audit 2026-04-18 (lineage `audit-marriage`) — verdict CONCERNS: factual claims verified, 1 typo fix (criteria count 10→12), 1 significant design concern (vnum-collision at 100/101 with `newgate.are`) flagged; Q2 resolutions updated. Re-review recommended after Q2 human input.
 **Priority:** Wave 1 of Phase 6 (`phase6-roadmap.md`). Small self-contained port; all primitives already shipped.
 **Scope:** New files `internal/act/marry.go` + `internal/act/marry_test.go`. Modifications to `internal/persist/player.go` (add `Spouse` writer — the load path already exists but save does not), `internal/types/constants.go` (add `OBJ_VNUM_DIAMOND_RING` / `OBJ_VNUM_WEDDING_BAND` constants), `internal/types/pcdata.go` (decide between the dual `Spouse` fields that already exist), `internal/boot/boot.go` (command registration), and shipped area data `db/area/Build.are` (add vnum 100 / 101 diamond-ring / wedding-band objects) — OR a Go-side fallback if the human chooses to deny area-data edits. See §Open Questions Q2. No new package.
 
@@ -31,9 +31,10 @@ The Go port has:
 - `SavePlayer` does not write `Spouse` (only loads it — schema-level asymmetry).
 - `OBJ_VNUM_DIAMOND_RING = 100` / `OBJ_VNUM_WEDDING_BAND = 101` constants (missing from `internal/types/constants.go`; C definitions at `src/mud.h:2071-2072`).
 - Ring object prototypes (vnum 100 / 101) **in shipped area data** — verified via `grep` over `db/area/*.are`:
-  - `db/area/newgate.are` has `#OBJECTS` starting at line 400; vnum 100 there is a `candelabra`, NOT a diamond ring.
+  - `db/area/newgate.are` has `#OBJECTS` starting at line 400; vnum 100 there is a `candelabra` (L401-408), NOT a diamond ring.
+  - `db/area/newgate.are` vnum 101 is a `magical spring` (L409-416), NOT a wedding band.
   - The only text match for "diamond ring" in any area file is `db/area/unholy.are:367` — vnum 2111, a loot drop, unrelated to wedding rings.
-  - **Conclusion: no area file ships an object at either vnum 100 or 101 as a ring.** `handler.CreateObject` requires an `ObjIndexData`; without one, the command cannot produce a ring. See §Open Questions Q2 for three resolution options.
+  - **Conclusion: no area file ships an object at either vnum 100 or 101 as a ring, BUT both vnums ARE registered** (as non-ring objects). `WorldRef.GetObjIndex(100)` and `GetObjIndex(101)` return non-nil candelabra/spring prototypes in production. The C-constant vnums collide with shipped data. See §Open Questions Q2 — the plan's original nil-guard strategy does not fire in production.
 - `#ifdef MARRIAGE` gating in C is confirmed at `src/marry.c:76` and `:362`. Per the Phase 6 roadmap directive ("port unconditionally"), the Go port compiles the commands in always.
 
 **Unreachable-code call:** `src/marry.c:128-132` contains a level-10 minimum check. The check is structurally dead in C: `do_marry` enters an outer `if (victim->pcdata->spouse[0] == '\0' && victim2->pcdata->spouse[0] == '\0')` at L110. Both branches (successful marry path L113-121, and "already married" L122-126) unconditionally `return`. The level-10 check at L128 comes after both `return`s. No execution path reaches it. It is dead code — commented-out-intent with its comment-braces removed. The roadmap's recommendation to omit is confirmed here as **omit**, with reasoning captured in §Open Questions Q1.
@@ -508,7 +509,7 @@ Recommendation: **Option A** if area-data edits are in scope; otherwise **Option
 
 ## Acceptance Criteria
 
-Ten criteria. Each is mechanically verifiable.
+Twelve criteria. Each is mechanically verifiable.
 
 1. **Field canonicalization.** `grep -r 'PCData\.Spouse\|\bp\.Spouse\b' smaug-go/` returns zero matches. `grep -r 'ch\.Spouse\|\.Spouse\b' smaug-go/internal/` returns the expected references in `character.go`, `persist/player.go`, `persist/player_test.go`, `act/marry.go`, `act/marry_test.go`, and the new `Spouse` save path — and nothing in `pcdata.go`.
 
@@ -528,7 +529,7 @@ Ten criteria. Each is mechanically verifiable.
 
 9. **`rings` minted object shape.** Ring is in `alice.Carrying` (not `bob.Carrying`) — C one-ring-only fidelity. Ring has exactly one `ExtraDescrData` with keyword `"inscription"`. Description and inscription text vary across three `alice.Sex` cases (MALE / FEMALE / NEUTRAL) in the documented pattern.
 
-10. **`rings` guards against missing prototype.** When `WorldRef.GetObjIndex(vnum)` returns nil (e.g., no Build.are entry shipped), the command prints a documented error and logs via `util.Bug` — does NOT crash, does NOT mint a partial object.
+10. **`rings` guards against missing prototype.** When `WorldRef.GetObjIndex(vnum)` returns nil, the command prints a documented error and logs via `util.Bug` — does NOT crash, does NOT mint a partial object. **Audit note (2026-04-18):** in production, vnums 100/101 are registered by `db/area/newgate.are` as a candelabra/spring respectively, so `GetObjIndex` does NOT return nil — the nil-guard only fires in tests that deliberately omit prototype registration. The production vnum-collision behaviour is covered by Q2's pending resolution; a "prototype shape is a ring" check may be needed in addition to the nil-guard.
 
 11. **Registration and authority.** `marry`, `divorce`, `rings` are registered at `Level: LEVEL_IMMORTAL`, `Position: POS_DEAD`. A mortal calling any of them via `Interpret` gets the dispatcher's "huh?" unknown-command message (standard authority behaviour).
 
@@ -580,15 +581,29 @@ If the human overturns this, G1 adds `if victim.Level < 10 || victim2.Level < 10
 - `db/area/newgate.are` has a mob at vnum 100 (Samylla) and objects at vnum 100+ — but object 100 is a `candelabra`, not a ring.
 - The only text match for "diamond ring" is `db/area/unholy.are:367`, vnum 2111 — unrelated.
 
-Three resolutions:
+**CRITICAL vnum-collision correction (audit 2026-04-18):** `db/area/newgate.are` DOES register an `ObjIndexData` at **both** vnums 100 (candelabra, L401-408) AND 101 (magical spring, L409-416). This means:
 
-- **Option A — Add vnum 100/101 to `db/area/Build.are`.** Provides the prototypes from shipped data. Clean operator story. Requires confirming that `Build.are` is the appropriate location (it is the builder/test area that ships populated with a few test objects).
-- **Option B — Go-side fallback prototype.** If `GetObjIndex` returns nil, construct an `ObjIndexData` inline. Registers phantom data at command time. Works without area edits. Adds command-time state mutation, which can surprise an administrator inspecting `ObjIndex`.
-- **Option C — Error out.** G3 handles nil gracefully with a "prototype missing" error. Test-suite works (tests register prototypes in a test-world). Production `rings` produces an error until operators provide the data.
+- `WorldRef.GetObjIndex(100)` returns the candelabra prototype — **not nil**.
+- `WorldRef.GetObjIndex(101)` returns the spring prototype — **not nil**.
+- In production, `DoRings(alice, bob)` with `bob.Sex == SEX_FEMALE` mints a **candelabra** (with the inscription extra-descr attached), and gives it to alice. A non-female spouse mints a magical spring instead. This is worse than the plan's nil-guard scenario — the guard never fires.
+- The `persist/area.go:545` loader emits `util.Bug("loadObjects: vnum %d duplicated")` on re-registration but overwrites regardless; load order across areas decides which prototype wins. So adding rings at vnum 100/101 to another `.are` file is fragile.
 
-**Recommendation: Option A if area-data edits are in scope for Phase 6; otherwise Option C. Reject Option B — complexity without upside.**
+This invalidates Option C (the nil-guard path doesn't fire in production) and complicates Option A (an additive `Build.are` edit collides with newgate.are's existing entries). The resolution must either:
 
-**Human input needed:** which option?
+1. **Move the ring prototypes to different vnums.** Diverges from C constants `OBJ_VNUM_DIAMOND_RING = 100` / `OBJ_VNUM_WEDDING_BAND = 101`. Requires picking unused vnums (grep over `db/area/*.are` for free slots) and documenting the divergence. Lowest operational risk.
+2. **Remove vnums 100/101 from newgate.are** and replace with different vnums for the candelabra/spring. Requires updating any reset / spec-proc references to those vnums. Largest blast radius; not recommended.
+3. **Change `DoRings`'s prototype-lookup to validate object shape** (e.g., expect `ItemType == ITEM_TREASURE` and `WearFlags & ITEM_WEAR_FINGER`). If the prototype at vnum 100 is a candelabra (wrong shape), fall through to an error or a hard-coded in-Go prototype. Adds complexity; defensive.
+4. **Auto-register ring prototypes at boot time** (before area-loading, so `loadObjects`'s duplicate-check catches the newgate candelabra/spring and the ring prototypes are overwritten by area data). Inverts the problem. Fragile; depends on load order.
+
+The original plan's Options A/B/C should be re-read with this context. A clean resolution likely combines: pick new vnums for the rings (resolution 1), OR ship rings at 100/101 in Build.are loaded AFTER newgate.are (depends on alphabetic load order — `Build.are` sorts before `newgate.are` by default, so Build wins on initial load, newgate overwrites — needs verification).
+
+Three resolutions (**superseded — see above**):
+
+- **Option A — Add vnum 100/101 to `db/area/Build.are`.** Provides the prototypes from shipped data. Clean operator story. Requires confirming that `Build.are` is the appropriate location (it is the builder/test area that ships populated with a few test objects). **Audit note:** collides with newgate.are's candelabra/spring at same vnums.
+- **Option B — Go-side fallback prototype.** If `GetObjIndex` returns nil, construct an `ObjIndexData` inline. Registers phantom data at command time. Works without area edits. Adds command-time state mutation, which can surprise an administrator inspecting `ObjIndex`. **Audit note:** nil-trigger never fires in production because newgate.are registers non-ring objects at 100/101.
+- **Option C — Error out.** G3 handles nil gracefully with a "prototype missing" error. Test-suite works (tests register prototypes in a test-world). Production `rings` produces an error until operators provide the data. **Audit note:** same nil-trigger problem as Option B — never fires in production.
+
+**Human input needed:** given the vnum collision, (a) use new vnums (diverge from C constants), (b) remove newgate.are vnums 100/101 (largest blast radius), (c) validate prototype shape in `DoRings`, or (d) rely on alphabetic load-order and ship Build.are rings that get overwritten by newgate (fragile)?
 
 **Q3 — C switch-statement bug in `do_rings`.** C `marry.c:225-356` has a `SEX_FEMALE` branch (L227) that builds the diamond ring's description+inscription but lacks a `break`. Execution falls through into the `SEX_MALE / SEX_NEUTRAL / default` branch (L282), which overwrites `ring` with a wedding-band, leaking the diamond ring. **Go cannot accidentally fall through — Go requires explicit `fallthrough`.** The Go port will have correct per-branch behaviour. This means a female-spouse recipient gets a *diamond ring with correct description*, not the C-observed mangled output.
 

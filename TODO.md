@@ -59,7 +59,7 @@ Follow-ups queued from plan-timer-subsystem.md:
 
 Follow-ups queued from plan-channels.md:
 - [ ] Full `do_auction` state machine (list / bid / stop / noauction list / item escrow / gold handling / auction tick in `update.c`). Plan called out as G5; deferred to Phase 6. C refs: `act_obj.c:3775+`, `update.c:2886-3286`. `BroadcastAuction` helper already in place.
-- [ ] `music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk` channel commands — each follows the `DoImmtalk` / `DoGtell` template now that the open-coded pattern is established. Revisit the "factor `talk_channel`?" question once 5+ channels need uniform filtering (see plan-channels.md Open Questions).
+- [ ] `music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk` channel commands — `plan-phase6-channels-extra.md` drafted 2026-04-18 via `phase6-channels-extra` lineage. 6 groups, 18 criteria. Decision taken: factor `talkChannel` helper (new) + 6 thin wrappers (not retrofitted to Tier-9 channels — separate plan). C `||`-bug in wartalk deaf-exception corrected to `&&`. External adversary queued.
 - [x] Per-AT_ color preservation in `util.Act` — LANDED 2026-04-18 via plan-tranche-c.md G1-G3. `util.Act` now takes a per-call `aType int` that drives `&X` color prefix + `&D` reset; all 33 callers migrated. Channel commands themselves still use inline `&Y`/`&G`/`&D` (call `ch.Send` directly, not `util.Act`) — factor-out is a Phase-6 follow-up when harmonizing channel coloring. `AT_CLANTALK` does NOT exist in C and was NOT added.
 - [ ] Alias prefix-matching (`":hi"` with no space) — `util.OneArgument` splits on whitespace, so a cmdWord of `":hi"` doesn't match the `":"` registration. Deliberate scope cut for P1; a separate interpreter change is required to support intra-token prefix matching.
 - [x] `DoChannels` toggle command — LANDED 2026-04-17 (see Done below + `smaug-go/doc/plan-do-channels.md`).
@@ -161,15 +161,37 @@ Follow-ups queued from plan-dammessage-gaps.md:
 - [x] `plan-phase6-hotboot.md` — drafted 2026-04-18 as DESIGN-EXPLORATION (not executable). Two PoCs in `/tmp/` both PASS; recommends Design A (syscall.Exec + FD inheritance, seamless ~65ms pause).
 - [x] `plan-phase6-starmap.md` — drafted 2026-04-18. 3 task groups, 13 acceptance criteria.
 - [x] `plan-phase6-holidays.md` — drafted 2026-04-18. 4 task groups, 13 acceptance criteria. Fixes 2 latent C bugs.
-- [x] `plan-phase6-marriage.md` — drafted 2026-04-18. 7 task groups, 12 acceptance criteria. Discovered `PCData.Spouse` orphan; `SavePlayer` Spouse asymmetry.
+- [x] `plan-phase6-marriage.md` — drafted 2026-04-18; **audited 2026-04-18 (CONCERNS)** via `audit-marriage` lineage. Plan is self-consistent at G1-G5 (5 groups, not 7), 12 criteria. Discovered `PCData.Spouse` orphan; `SavePlayer` Spouse asymmetry. Audit uncovered **vnum-100/101 collision** with `newgate.are` — original nil-guard strategy invalid; Q2 resolution space broadened to 7 options. Re-audit required after Q2 human input.
+- [x] `plan-phase6-planes.md` — drafted 2026-04-18 via `phase6-planes` lineage. 3 groups, ~20 criteria. Zero schema additions. Self-review only; external adversary queued.
+- [x] `plan-phase6-channels-extra.md` — drafted 2026-04-18 via `phase6-channels-extra` lineage; **audited 2026-04-18 (CONCERNS)** via `audit-channels-extra` lineage. 6 groups, 18 criteria. 5 sites of `util.TranslateFor` misattribution corrected to `translateFor` (`internal/act/comm.go:13`). `db/councils/council.lst` verified empty → `newbiechat` immortal-only by default (matches C). Executable without re-audit.
+- [x] `plan-phase6-skills.md` — drafted 2026-04-18 via `phase6-skills` lineage; **audited 2026-04-18 (PASS with clarifications)** via `audit-skills` lineage. 3 groups, 16 criteria, parallel-safe. Q1 reachability refined: `IS_VAMPIRE`/`IS_DEMON` macros expand to race-OR-class disjunctions, so gate IS reachable for dual-identity characters while functionally dead for typical single-identity. Option A (fix-the-bug) recommendation stands.
+- [x] `plan-phase6-hotboot.md` — drafted 2026-04-18 as DESIGN-EXPLORATION (not executable); **audited 2026-04-18 (PASS with notes)** via `audit-hotboot` lineage (re-run after empty-drafts first pass). 28 C + 19 Go citations verified. Windows double-lock strengthened (both `syscall.Exec` absent AND `(*net.TCPConn).File()` fd unusable cross-process per Go stdlib). `syscall.Dup2` → `syscall.Dup3(old, new, 0)` needed for linux/arm64.
+- [x] `plan-phase6-planes.md` — drafted 2026-04-18 via `phase6-planes` lineage; **audited 2026-04-18 (CONCERNS)** via `audit-planes` lineage. 3 groups, 13 criteria. Audit caught algorithmic bug in `DoPset delete` slice-splice (broken swap-to-end-then-remove-last on mid-index deletes — corrected via 3-index hand trace) + `one_argument` quote-support misstatement (both C and Go support `'`/`"` quotes, so `pset "Prime Material" delete` IS addressable).
 
-**Open items blocking Wave-A plan execution:**
-- [ ] External adversary pass on each of the 5 authored plans. All Wave A managers lacked the `Agent` tool in their subagent harness — self-reviews substituted, but independent adversary verification hasn't happened. This is also a tooling-environment issue to investigate (see adversary-dispatch follow-up below).
-- [ ] Resolve `plan-phase6-hotboot.md` Open Question 1 (Windows support) — Design A is Linux/macOS only; a Windows build adds Design B fallback behind `//go:build windows` and roughly doubles implementation cost. Human decision needed before executable-hotboot rewrite.
-- [ ] Resolve `plan-phase6-marriage.md` Open Question 2 — ring prototypes (vnum 100 / 101) absent from shipped `.are` files. Option A: edit `db/area/Build.are`. Option B: Go-side fallback prototype in `DoRings`. Option C: error-only. Plan recommends A if area-data edits in scope.
-- [ ] Resolve `plan-phase6-marriage.md` Q3-Q5 (C-bug policy, one-ring anomaly, message-typo policy) — plan has recommendations; human confirmation preferred.
+**Open items blocking Wave-A/B plan execution:**
+- [ ] External adversary pass on remaining self-reviewed Wave-A plans: starmap, holidays (marriage/planes/channels-extra/skills/hotboot audited 2026-04-18). Use `manager` subagent type — note: all 2026-04-18 manager audits reported `Agent` tool unavailable in the harness despite spec listing it; structured self-review substituted. Separate tooling investigation tracked below.
+- [ ] Resolve `plan-phase6-hotboot.md` Open Question 1 (Windows support) — Design A is Linux/macOS only; audit strengthened to double-lock (`syscall.Exec` absent AND `(*net.TCPConn).File()` fd not usable on other processes per Go stdlib). A Windows build adds Design B fallback behind `//go:build windows` and roughly doubles implementation cost. Human decision needed before executable-hotboot rewrite.
+- [ ] Resolve `plan-phase6-marriage.md` Q2 vnum-collision — `newgate.are` registers non-ring objects at vnums 100/101 (candelabra + magical spring); 7 resolution options (new vnums, remove newgate entries, runtime shape validation, boot-time synthetic registration, etc.). Plan recommends new vnums as smallest operational risk.
+- [ ] Resolve `plan-phase6-marriage.md` Q1 (level-10 gate — dead-code omit), Q3 (C-bug policy), Q4 (one-ring anomaly), Q5 (message-typo policy) — plan has recommendations; human confirmation preferred.
+- [ ] Reconcile upstream-doc drift: `CLAUDE.md` / `TODO.md` / `phase6-roadmap.md` referenced marriage plan as "7 groups G0/G0b/G7" but plan is self-consistent at G1-G5. CLAUDE.md already updated 2026-04-18; roadmap line 122 still references G0/G0b pattern — cosmetic only, not a functional blocker.
 - [ ] Resolve `plan-phase6-arena.md` Open Questions 1-7 — Q3 (arena-room selection filter), Q4 (challenge command level), Q6 (ROOM_ARENA flag) are the highest-priority before worker dispatch.
-- [ ] Investigate manager-harness `Agent` tool availability: the manager.md spec lists `Agent` in its `tools:` block, but every Wave A manager reported the tool was absent from its actual function set. Either (a) ensure `Agent` is always available to manager subagents, or (b) formalize "self-verification" as an acceptable fallback with explicit flag in the completion report.
+
+**Audit follow-ups (Wave B audits, 2026-04-18):**
+- [ ] Hotboot pre-G1 prerequisite: wire `HomeVnum` on sentinel-mob creation. `internal/handler/handler.go:14 CreateMobile` does not populate `HomeVnum` from `idx.Act & ACT_SENTINEL`. C `src/hotboot.c:86-94` saves `mob->home_vnum` for sentinel mobs; Go currently saves 0 → recovery restores to LIMBO. Add `if util.XIsSet(mob.Act, ACT_SENTINEL) { mob.HomeVnum = room.Vnum }` in `CreateMobile` (or equivalent char_to_room path). Blocks G1 of the hotboot executable plan.
+- [ ] Hotboot plan: pfile-schema migration policy — document as an Operations constraint (rolling-restart only with matching schema) in the executable plan.
+- [ ] Hotboot plan: partial-line readLoop buffering at exec time — pause readLoops + drain pending `InputQueue` before FD extraction; add to executable plan's G3 implementation notes.
+- [ ] Hotboot plan: mid-login descriptor-close C bug policy — C `src/hotboot.c:675` writes farewell to `ch->desc` (probable typo for `d`). Decide mirror vs fix in executable plan's G3.
+- [ ] Hotboot plan: linux/arm64 portability — use `syscall.Dup3(old, new, 0)` instead of `syscall.Dup2`; same semantics when flags==0, available on all Linux architectures.
+- [ ] Hotboot plan: G6 integration-test harness budget — build-tag `//go:build integration` so it doesn't run on every `go test ./...`. Realistic 1-2 day budget.
+- [ ] Hotboot plan: re-estimate LOC after executable-plan task expansion (current ~555 Go LOC estimate likely low).
+- [ ] Planes plan Q5 (roadmap + plan): feature is cosmetic (named room groupings with no gameplay interaction). Audit flagged the scope-worthiness question for orchestrator decision. Plan argues for shipping on schema-already-exists + future-integration-cost grounds. Orchestrator call before G1 dispatch.
+- [ ] Planes plan Q9 (added post-audit): decide SmashTilde ordering for `DoPset <plane> name <new>` rename — smash BEFORE or AFTER the `planeLookup` duplicate-check. Audit recommends BEFORE.
+- [ ] Planes plan: decide whether `DoPset` syntax help should include a quoted-form example (`pset "Prime Material" delete`). Audit recommends YES — one extra line, makes multi-word addressability discoverable.
+- [ ] Planes plan G2 mutation-verify: ensure the three new index-position tests (`DeleteFirstPlane` / `DeleteMiddlePlane` / `DeleteLastPlane`) exercise the audit-corrected slice-splice algorithm.
+- [ ] Skills plan Q1: confirm Option A for bloodlet gate given refined reachability (dual-identity characters). Audit recommends Option A stands — every other `IS_VAMPIRE`/`IS_DEMON` site (10 precedent sites) uses positive disjunction. Human confirmation requested.
+- [ ] Skills plan G3 pre-flight: verify `combat.Damage(w, ch, ch, ...)` self-target safety. Either add `TestDamage_SelfTarget` or cite existing `combat_test.go` coverage of the ch==victim path.
+- [ ] Skills plan: add one-line scope-cut entry noting C `#ifdef OVERLANDCODE` 3-arg `obj_to_room` fork at `src/skills.c:3549-3553`. Go port uses 2-arg form unconditionally — disclosure only.
+- [ ] (Optional) Ship a stock "Newbie Council" definition — `db/councils/council.lst` is empty in stock data; `newbiechat` is immortal-only by default in both C and Go. Low-priority polish if non-empty default desired.
 
 ### Infrastructure
 
@@ -182,7 +204,7 @@ Follow-ups queued from plan-dammessage-gaps.md:
 
 - [ ] **Arena PvP** (358 C LOC) — `plan-phase6-arena.md` drafted + audited 2026-04-18. Challenge / accept / decline / withdraw + teleport + victory branch. 7 task groups, 15 criteria. `TIMER_CHALLENGE=8` slot, AddTimer signature corrected, `ROOM_VNUM_ALTAR` already-exists confirmed.
 - [ ] **Star maps** (226 C LOC) — `plan-phase6-starmap.md` drafted 2026-04-18. 3 task groups, 13 criteria. Pure render over shared constellation data.
-- [ ] **Planes** (298 C LOC) — `plan-phase6-planes.md` to draft (Wave B). `RoomIndexData.Plane` field already exists; Go port is load/populate/command-surface only.
+- [ ] **Planes** (298 C LOC) — `plan-phase6-planes.md` drafted 2026-04-18 via `phase6-planes` lineage. 3 groups, ~20 criteria. `RoomIndexData.Plane` + `PlaneData` struct pre-exist; port is persistence + commands + `CheckPlanes` orphan-assign. External adversary queued.
 - [ ] **Holidays** (416 C LOC) — `plan-phase6-holidays.md` drafted 2026-04-18. 4 task groups, 13 criteria. Bundles `month_name[]` port.
 - [ ] **Marriage** (362 C LOC) — `plan-phase6-marriage.md` drafted 2026-04-18. 7 task groups, 12 criteria. Canonicalises `CharData.Spouse` (removes `PCData.Spouse` orphan) and fixes `SavePlayer` Spouse asymmetry. Correct ring vnums are `OBJ_VNUM_DIAMOND_RING=100` / `OBJ_VNUM_WEDDING_BAND=101` (roadmap's prior `STEEL_RING` naming was wrong).
 - [ ] **Combat stances OLC** — `plan-phase6-stances-olc.md` to draft (Wave B). Full `do_stset` + `StanceInfo` struct extension + persistence. Tranche B G1 loader already read-and-discards non-combat fields.
@@ -203,9 +225,9 @@ Follow-ups queued from plan-dammessage-gaps.md:
 
 ### Content
 
-- [ ] **Skills not yet ported** (`bloodlet`, `pounce`, `broach`) — `plan-phase6-skills.md` to draft. ~200 C LOC total.
+- [ ] **Skills not yet ported** (`bloodlet`, `pounce`, `broach`) — `plan-phase6-skills.md` drafted 2026-04-18 via `phase6-skills` lineage. ~200 C LOC total. Three parallel-safe work units. External adversary queued.
 - [ ] **Clan officer commands** (`promote`, `demote`, `induct`, `outcast`, `bestow`) — `plan-phase6-clan-officer.md` to draft. Blocks on `SaveClan` port.
-- [ ] **Extra channels** (`music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk`) — `plan-phase6-channels-extra.md` to draft. Template exists from Tier 9.
+- [ ] **Extra channels** (`music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk`) — `plan-phase6-channels-extra.md` drafted 2026-04-18 via `phase6-channels-extra` lineage. 6 groups, 18 criteria. Template exists from Tier 9; plan factors `talkChannel` helper. External adversary queued.
 - [ ] Councils: all commands (not implemented as player-facing yet).
 - [ ] **Deities: full prayer, favor beyond `mpFavor`, deity-specific effects** — `plan-phase6-deity-prayer.md` to draft. ~400 C LOC.
 
