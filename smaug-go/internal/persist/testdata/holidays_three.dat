@@ -1,0 +1,22 @@
+#HOLIDAY
+Name		One~
+Announce	First.~
+Month		1
+Day		1
+End
+
+#HOLIDAY
+Name		Two~
+Announce	Second.~
+Month		2
+Day		2
+End
+
+#HOLIDAY
+Name		Three~
+Announce	Third.~
+Month		3
+Day		3
+End
+
+#END

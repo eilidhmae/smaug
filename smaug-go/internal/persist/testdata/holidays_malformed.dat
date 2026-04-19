@@ -1,0 +1,20 @@
+#HOLIDAY
+Name		First~
+Announce	Hello.~
+Month		2
+Day		5
+Garbage		42
+End
+
+#BOGUS
+Nothing		0
+End
+
+#HOLIDAY
+Name		Second~
+Announce	World.~
+Month		3
+Day		7
+End
+
+#END

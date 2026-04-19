@@ -123,6 +123,15 @@ func DoTime(ch *types.CharData, argument string) {
 
 	ch.Sendf("It is hour %d of the day, %s.\n\rDay %d of month %d, year %d.\n\r",
 		hour, timeOfDay, day, month, year)
+
+	// Holiday-today suffix (plan-phase6-holidays.md A15). Mirrors C
+	// `do_time` at src/timezone.c:528 (#ifdef ENABLE_HOLIDAYS guarded
+	// in C; Go ports it unconditionally since the holiday subsystem is
+	// always compiled in). Season-tick auto-broadcast (C :617-631) is
+	// deferred — weatherUpdate has no echo_to_all/season_update hook.
+	if h := GetHoliday(WorldRef.TimeInfo.Month, WorldRef.TimeInfo.Day); h != nil {
+		ch.Sendf("&wIt's a holiday today:&W %s&D\n\r", h.Name)
+	}
 }
 
 // DoPager implements the 'pager' command: toggle pager on/off and set page length.

@@ -329,6 +329,27 @@ func bootDB(w *world.World, dataDir string) error {
 	persist.CheckPlanes(w, nil)
 	log.Printf("Loaded %d planes.", len(w.Planes))
 
+	// Load holiday chart from db/system/holidays.dat. Missing file is
+	// non-fatal (matches C load_holidays at src/holidays.c:149-210).
+	// Plan plan-phase6-holidays.md §D5.
+	if w.SysData.MaxHoliday == 0 {
+		w.SysData.MaxHoliday = 32 // default ceiling; matches stock sysdata.dat seed.
+	}
+	if w.SysData.MonthsPerYear == 0 {
+		w.SysData.MonthsPerYear = len(types.MonthNames)
+	}
+	if w.SysData.DaysPerMonth == 0 {
+		w.SysData.DaysPerMonth = 30
+	}
+	holidayPath := filepath.Join(dataDir, "system", "holidays.dat")
+	holidays, err := persist.LoadHolidays(holidayPath, w.SysData.MaxHoliday)
+	if err != nil {
+		log.Printf("WARNING: failed to load holidays: %v", err)
+	}
+	w.Holidays = holidays
+	act.HolidayFilePath = holidayPath
+	log.Printf("Loaded %d holidays.", len(w.Holidays))
+
 	// Wire skill lookups so player save/load persists learned proficiencies.
 	persist.SkillNameLookup = func(name string) int {
 		for i, sk := range w.Skills {
@@ -686,6 +707,14 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "plist", DoFun: act.DoPlist, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "pstat", DoFun: act.DoPstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "pset", DoFun: act.DoPset, Position: types.POS_DEAD, Level: types.LEVEL_GREATER})
+
+	// Holidays — calendar CRUD (plan-phase6-holidays.md). `holidays` is
+	// player-visible (Level 0); saveholiday/setholiday gate at
+	// LEVEL_ASCENDANT (60) matching stock db/system/en/commands.dat
+	// entries at lines 3864-3878.
+	reg.Register(&command.Command{Name: "holidays", DoFun: act.DoHolidays, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "saveholiday", DoFun: act.DoSaveHoliday, Position: types.POS_DEAD, Level: types.LEVEL_ASCENDANT})
+	reg.Register(&command.Command{Name: "setholiday", DoFun: act.DoSetHoliday, Position: types.POS_DEAD, Level: types.LEVEL_ASCENDANT})
 
 	// Banking
 	reg.Register(&command.Command{Name: "bank", DoFun: act.DoBank, Position: types.POS_STANDING, Level: 0})

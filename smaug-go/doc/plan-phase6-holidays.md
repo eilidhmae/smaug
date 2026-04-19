@@ -628,7 +628,73 @@ Save subcommand:
 
 ## Completion Record
 
-*(Filled after work lands.)*
+**Landed:** 2026-04-19. All 15 acceptance criteria (A1–A15, including A14/A15 added during the 2026-04-19 readiness vet) satisfied. Q6 partially resolved: `GetHoliday` (A14) + `DoTime` suffix (A15) landed; season-tick auto-broadcast deferred to TODO.md.
+
+### Files added
+- `/home/eilidh/src/smaug/smaug-go/internal/types/months.go` — `MonthNames [17]string` verbatim from `src/act_info.c:2455-2460` + `MonthName(m int)` helper with OOB→`"<unknown>"` fallback (A1).
+- `/home/eilidh/src/smaug/smaug-go/internal/types/holiday.go` — `HolidayData{Month, Day int; Name, Announce string}` (A2).
+- `/home/eilidh/src/smaug/smaug-go/internal/types/months_test.go` — 7 tests covering MonthNames pinning + OOB safety + HolidayData zero-value.
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/holidays.go` — `LoadHolidays` + `SaveHolidays` + `DefaultHolidayAnnounce` (A3, A4). Loader handles implicit `#END` at EOF (shipped file has no terminator; C logs a spurious bug on every boot — Go stays quiet, pinned by `TestLoadHolidays_ShippedFileLoadsNoBug`).
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/holidays_test.go` — 16 tests including shipped-file pin + bug-content assertion for unknown-section.
+- `/home/eilidh/src/smaug/smaug-go/internal/persist/testdata/holidays_two.dat` / `holidays_empty.dat` / `holidays_malformed.dat` / `holidays_three.dat` / `holidays_no_announce.dat` — fixtures.
+- `/home/eilidh/src/smaug/smaug-go/internal/act/holidays.go` — 3 commands + `GetHoliday` (A14) + helpers (`firstToken`, `preserveCaseRest`, `findHoliday`, `maxOrDefault`, `atoi`, `holidaySyntax`, `HolidayFilePath` package var, `createDefaultAnnounce` const).
+- `/home/eilidh/src/smaug/smaug-go/internal/act/holidays_test.go` — 32 tests including the 3 C-bug pin-tests (A13), GetHoliday 3 tests (A14), DoTime suffix 2 tests (A15), round-trip via persistence.
+
+### Files modified
+- `/home/eilidh/src/smaug/smaug-go/internal/world/world.go` — added `Holidays []*types.HolidayData` in the Data tables block alongside Planes.
+- `/home/eilidh/src/smaug/smaug-go/internal/act/info2.go` — `DoTime` appends `"&wIt's a holiday today:&W %s&D\n\r"` when `GetHoliday(TimeInfo.Month, TimeInfo.Day)` non-nil (A15). Mirrors C `src/timezone.c:528`.
+- `/home/eilidh/src/smaug/smaug-go/internal/boot/boot.go` — after `planes` loader: defaults `SysData.{MaxHoliday=32, MonthsPerYear=17, DaysPerMonth=30}` if zero, calls `LoadHolidays(filepath.Join(dataDir, "system", "holidays.dat"), w.SysData.MaxHoliday)`, assigns `w.Holidays` + `act.HolidayFilePath`, logs count. 3 `reg.Register` calls after the planes block.
+- `/home/eilidh/src/smaug/smaug-go/internal/boot/boot_test.go` — 2 tests: `TestBoot_MissingHolidaysFileIsNonFatal` (asserts 0 holidays, MaxHoliday defaulted to 32, MonthsPerYear/DaysPerMonth non-zero, all 3 commands registered at correct levels, `act.HolidayFilePath` set); `TestBoot_LoadsHolidaysWhenFilePresent` (writes scratch fixture into testDataDir/system/, boots, asserts 2 holidays loaded).
+
+### Mutation gates verified
+All reverts via `Edit` tool round-trips only — no destructive git operations per the project banned-command list.
+
+G1:
+1. Swap `MonthNames[0]`/`[1]` → `TestMonthNames_WinterFirst` + `TestMonthName_ZeroIndexed` + `TestMonthName_MatchesCArray` fail.
+2. Drop `m >= len(MonthNames)` OOB guard → `TestMonthName_OutOfRange` panics.
+3. Remove `Announce` field from `HolidayData` → compile fail (`TestHolidayData_ZeroValue` references it).
+
+G2:
+4. Drop `Announce` default-seed in End branch → `TestLoadHolidays_MissingAnnounceDefaults` fails.
+5. Swap `Month`/`Day` KVP dispatch → `TestLoadHolidays_TwoHolidaysRoundTrip` fails (12/30 → 30/12).
+6. Drop `maxHolidays` ceiling check → `TestLoadHolidays_MaxHolidaysEnforced` fails.
+7. Change saver terminator `#END\n` → `#END\r\n` → `TestSaveHolidays_ProducesExpectedBytes` + `EmptyListWritesOnlyTerminator` fail.
+8. Drop unknown-section bug log → `TestLoadHolidays_UnknownSectionEmitsSpecificBug` fails (added `captureBugMessages` helper to distinguish from the Garbage-key bug that also fires).
+
+G3:
+9. Swap `+1` to `+0` in `create`'s `TimeInfo.Month+1`/`Day+1` → `TestDoSetHoliday_CreateAddsToList` fails on both Month and Day assertions.
+10. Swap `< 1` back to `<= 1` in day branch → `TestDoSetHoliday_DayAcceptsOne` fails with "You must specify a numeric value : 1 - 30" (C bug re-emerges).
+11. Drop `findHoliday(arg1)` duplicate check in create → `TestDoSetHoliday_CreateRejectsDuplicateName` fails (list grows to 2).
+12. Replace MaxHoliday guard with `if false` → `TestDoSetHoliday_CreateRejectsOverMax` fails (list exceeds cap).
+13. Drop `+1` in `GetHoliday`'s `month+1`/`day+1` translation → both `TestGetHoliday_NewYearsDay` and `TestDoTime_EmitsHolidaySuffix` fail.
+
+G4:
+14. Drop `SysData.MaxHoliday == 0` default-to-32 block → `TestBoot_MissingHolidaysFileIsNonFatal` fails (MaxHoliday = 0).
+15. Unregister `saveholiday` command → same test fails on both the registered-name check and the LEVEL_ASCENDANT resolve check.
+
+### C divergences (all documented inline in source comments + plan §Open Questions)
+- **Implicit `#END` at EOF** (loader). Shipped `db/system/holidays.dat` lacks `#END`; C logs `load_holidays: # not found.` every boot. Go treats EOF at section-header position as success. Pinned by `TestLoadHolidays_ShippedFileLoadsNoBug`.
+- **`day 1`/`month 1` accepted** (DoSetHoliday). C rejects both via `<= 1`; Go uses `< 1` per intent. Pinned by `TestDoSetHoliday_{Day,Month}AcceptsOne`.
+- **`create` 0→1 index shift**. C stores `time_info.{day,month}` unshifted; Go emits `+1` to match the 1-indexed file format. Pinned by `TestDoSetHoliday_CreateAddsToList`.
+- **`announce` takes full remainder**. C uses single-word `arg3` (truncates multi-word announcements); Go takes everything after `<name> announce` via `preserveCaseRest`. Pinned by `TestDoSetHoliday_AnnounceSetsString` asserting `"Trick or treat!"` round-trip.
+- **Name case preservation on create**. `util.OneArgument` lowercases; Go uses `firstToken` (no lowercasing) for arg1 and `preserveCaseRest` for the `name` rename so "Halloween" stays capitalized. C `one_argument` doesn't lowercase either, so this restores C behavior despite Go's OneArgument divergence.
+- **Clean month-list fallback**. C's `do_setholiday month` fallback uses `while (month_name[x] != '\0' && ...)` — compares `char*` pointer against null char, always true, would OOB into junk memory. Go iterates `types.MonthNames` with a clean bounds check.
+- **`DoTime` holiday suffix unconditional**. C guards behind `#ifdef ENABLE_HOLIDAYS` (compile-flag dependent); Go always emits when `GetHoliday(...)` returns non-nil. Matches "Go ports the feature" convention.
+
+### Season-tick announce deferred (Q6 part C)
+C `src/timezone.c:617-631` broadcasts `day->announce` via `echo_to_all(AT_IMMORT, day->announce, ECHOTAR_ALL)` on hour-0 of a holiday day inside `season_update`. Go-side `weatherUpdate` at `internal/game/update.go:135-154` advances hour/day and fires mudprog triggers but has **no `echo_to_all`/`season_update` equivalent**. Deferred to `TODO.md` follow-up with C citation; landing requires a Go-side global broadcast primitive or new tick-hook.
+
+### Test count delta
+- `internal/types`: +7 tests (months + HolidayData zero-value).
+- `internal/persist`: +16 tests (loader 9 + saver 5 + smoke + round-trip + bug-content-specific).
+- `internal/act`: +32 tests (DoHolidays 4 + DoSaveHoliday 2 + DoSetHoliday 18 + GetHoliday 3 + DoTime suffix 2 + round-trip 1 + 2 case-preservation helpers pins).
+- `internal/boot`: +2 tests (missing-file-non-fatal with defaults, scratch-file-loads).
+
+Total: **55 new tests**. Runs green on `go test -count=3 ./...` across all 15 packages.
+
+### Commit
+Single landing commit — see `git log --oneline` for hash.
+
 
 ---
 

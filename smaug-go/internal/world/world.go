@@ -43,6 +43,11 @@ type World struct {
 	// orphan-assignment on every room.Plane back-reference.
 	Planes []*types.PlaneData
 
+	// Holidays — named calendar entries (src/holidays.h:48-56).
+	// Loaded from db/system/holidays.dat at boot; read by DoHolidays,
+	// DoTime's holiday-today suffix, and DoSetHoliday CRUD.
+	Holidays []*types.HolidayData
+
 	// Shops
 	Shops   []*types.ShopData
 	Repairs []*types.RepairData

@@ -658,6 +658,89 @@ func TestBoot_ArenaRoomsFlaggedInShipped(t *testing.T) {
 	}
 }
 
+// --- Holidays boot wiring (plan-phase6-holidays.md G4) ---------------
+
+func TestBoot_MissingHolidaysFileIsNonFatal(t *testing.T) {
+	// testDataDir has no system/holidays.dat; Boot should succeed,
+	// Holidays remains nil/empty, commands still registered, and
+	// SysData defaults seeded.
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	_ = os.Remove(filepath.Join(testDataDir, "system", "holidays.dat"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if len(w.Holidays) != 0 {
+		t.Errorf("expected 0 holidays on missing file; got %d", len(w.Holidays))
+	}
+	if w.SysData.MaxHoliday != 32 {
+		t.Errorf("MaxHoliday = %d, want 32 (default)", w.SysData.MaxHoliday)
+	}
+	if w.SysData.MonthsPerYear == 0 {
+		t.Errorf("MonthsPerYear not defaulted")
+	}
+	if w.SysData.DaysPerMonth == 0 {
+		t.Errorf("DaysPerMonth not defaulted")
+	}
+	expectedPath := filepath.Join(testDataDir, "system", "holidays.dat")
+	if act.HolidayFilePath != expectedPath {
+		t.Errorf("HolidayFilePath = %q, want %q", act.HolidayFilePath, expectedPath)
+	}
+	const maxTrust = 65535
+	for _, name := range []string{"holidays", "saveholiday", "setholiday"} {
+		if reg.Find(name, maxTrust) == nil {
+			t.Errorf("command %q not registered", name)
+		}
+	}
+	// Level pin: holidays is Level 0; the others at LEVEL_ASCENDANT.
+	if cmd := reg.Find("holidays", 0); cmd == nil {
+		t.Errorf("holidays should be player-visible (Level 0)")
+	}
+	if cmd := reg.Find("saveholiday", 0); cmd != nil {
+		t.Errorf("saveholiday should NOT resolve at trust 0")
+	}
+	if cmd := reg.Find("saveholiday", types.LEVEL_ASCENDANT); cmd == nil {
+		t.Errorf("saveholiday should resolve at LEVEL_ASCENDANT")
+	}
+	if cmd := reg.Find("setholiday", types.LEVEL_ASCENDANT); cmd == nil {
+		t.Errorf("setholiday should resolve at LEVEL_ASCENDANT")
+	}
+}
+
+func TestBoot_LoadsHolidaysWhenFilePresent(t *testing.T) {
+	// Write a scratch holidays.dat into testDataDir/system/, boot,
+	// verify the holidays loaded, then remove the scratch file.
+	scratchPath := filepath.Join(testDataDir, "system", "holidays.dat")
+	// Make sure there's nothing left over from a previous run.
+	_ = os.Remove(scratchPath)
+	content := "#HOLIDAY\nName\t\tFirst~\nAnnounce\tAlpha.~\nMonth\t\t1\nDay\t\t1\nEnd\n\n#HOLIDAY\nName\t\tSecond~\nAnnounce\tBeta.~\nMonth\t\t12\nDay\t\t30\nEnd\n\n#END\n"
+	if err := os.WriteFile(scratchPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write scratch holidays.dat: %v", err)
+	}
+	defer os.Remove(scratchPath)
+
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+
+	_, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if len(w.Holidays) != 2 {
+		t.Fatalf("len(Holidays) = %d, want 2", len(w.Holidays))
+	}
+	if w.Holidays[0].Name != "First" {
+		t.Errorf("Holidays[0].Name = %q, want First", w.Holidays[0].Name)
+	}
+	if w.Holidays[1].Name != "Second" {
+		t.Errorf("Holidays[1].Name = %q, want Second", w.Holidays[1].Name)
+	}
+}
+
 // itoa formats n as a base-10 ASCII string without importing strconv
 // (keeps the drift-test dependency surface tiny).
 func itoa(n int) string {

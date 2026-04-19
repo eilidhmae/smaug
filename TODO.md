@@ -317,6 +317,14 @@ Follow-ups queued from plan-dammessage-gaps.md:
 - [ ] Nanny-protocol prompt table (centralize exact-string nanny prompts)
 - [ ] Mutation-verify the 2026-04-17 batch-1 fixes per CLAUDE.md TDD convention (spot-checked during review; formal mutation pass deferred)
 
+### Holidays follow-ups (from `plan-phase6-holidays.md`, landed 2026-04-19)
+
+- [ ] Season-tick holiday announce — port C `season_update` at `src/timezone.c:617-631` which broadcasts `day->announce` via `echo_to_all(AT_IMMORT, day->announce, ECHOTAR_ALL)` on hour-0 of any holiday day. Go-side `weatherUpdate` at `internal/game/update.go:135-154` has no `echo_to_all`/`season_update` equivalent; landing requires a Go-side global-broadcast primitive or a new tick-hook layer. Deferred from Q6 resolution.
+- [ ] `DoTime` calendar styling upgrade — use `types.MonthName(TimeInfo.Month)` for `"the Month of %s"` output matching C `do_time` at `src/act_info.c:2493`. Currently generic `"month %d"`. Bundle with a broader DoTime polish pass (ordinal day, weekday if ported).
+- [ ] `DoLoad` umbrella admin command — C has no `do_load holiday` runtime reload (verified during holidays audit); `saveholiday` covers the in-memory→disk direction, but no disk→in-memory reload exists. Future Phase-6 general admin-reload subsystem could cover skills/races/holidays/planes together.
+- [ ] `DoCset` / `sysdata.dat` loader-saver — `SysData.MaxHoliday`/`MonthsPerYear`/`DaysPerMonth` are boot-time-defaulted but not persisted. C `cset max-holidays N` at `act_wiz.c:8141-8146` tunes at runtime. Deferred to a future plan.
+- [ ] `setholiday name` uniqueness check on rename — C doesn't enforce this (verified); Go port mirrors C. Latent UX bug: renaming A to match existing B's name leaves B unreachable via name lookup. No data-integrity risk — both entries still load/save correctly. Flag for future UX polish.
+
 ---
 
 ## Done
