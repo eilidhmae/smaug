@@ -400,7 +400,7 @@ Manager note: Agent-tool dispatch for adversary review is not available in this 
 
 ## 11. Completion Record
 
-**LANDED 2026-04-19.** All 20 acceptance criteria satisfied. 7 task groups executed in order (G0 → G1 → G2 → G3 → G4a+G4b → G5 → G6). Commit hash TBD (recorded in CLAUDE.md + CHANGELOG).
+**LANDED 2026-04-19.** All 20 acceptance criteria satisfied. 7 task groups executed in order (G0 → G1 → G2 → G3 → G4a+G4b → G5 → G6). Commit `b504b33`.
 
 ### Task-group outcomes
 
