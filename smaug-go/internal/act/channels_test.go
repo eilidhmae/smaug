@@ -766,3 +766,966 @@ func TestDoChannels_RoundTripPersistsViaSave(t *testing.T) {
 		t.Error("CHANNEL_CHAT deaf bit must survive Save/Load round trip")
 	}
 }
+
+// --- Phase 6 Extra Channels (plan-phase6-channels-extra.md) ---
+//
+// G0 talkChannel helper + G1-G5 wrappers.
+
+// makeMortalPCInRoom is like makeMortalInRoom but also ensures PCData is
+// present (makeTestChar already creates PCData). Keeps intent explicit for
+// the extra-channel tests that exercise PCData-dependent predicates.
+func makeMortalPCInRoom(room *types.RoomIndexData, name string) (*types.CharData, net.Conn) {
+	ch, client := makeMortalInRoom(room, name)
+	if ch.PCData == nil {
+		ch.PCData = &types.PCData{}
+	}
+	return ch, client
+}
+
+// --- G0: talkChannel helper ---
+
+func TestTalkChannel_EmptyArgPrintsVerbWhat(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8000, Name: "Room"}
+	w.Rooms[8000] = room
+	ch, client := makeMortalInRoom(room, "Piper")
+	defer client.Close()
+
+	talkChannel(ch, "", types.CHANNEL_MUSIC, "music", nil)
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Music what?") {
+		t.Errorf("empty arg should yield 'Music what?'; got %q", out)
+	}
+}
+
+func TestTalkChannel_PLRSilenceBlocksSender(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8001, Name: "Room"}
+	w.Rooms[8001] = room
+	sender, sClient := makeMortalInRoom(room, "Piper")
+	defer sClient.Close()
+	sender.Act.Set(types.PLR_SILENCE)
+	listener, lClient := makeMortalInRoom(room, "Ear")
+	defer lClient.Close()
+
+	talkChannel(sender, "la la", types.CHANNEL_MUSIC, "music", nil)
+
+	sOut := readOutput(sender, sClient)
+	if !strings.Contains(sOut, "You can't music") {
+		t.Errorf("silenced sender should see \"You can't music\"; got %q", sOut)
+	}
+	lOut := readOutput(listener, lClient)
+	if strings.Contains(lOut, "la la") {
+		t.Errorf("silenced sender must not broadcast; listener got %q", lOut)
+	}
+}
+
+func TestTalkChannel_DeafSenderBlockedWithoutAutoClear(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8002, Name: "Room"}
+	w.Rooms[8002] = room
+	sender, sClient := makeMortalInRoom(room, "Piper")
+	defer sClient.Close()
+	sender.Deaf.Set(types.CHANNEL_MUSIC)
+	listener, lClient := makeMortalInRoom(room, "Ear")
+	defer lClient.Close()
+
+	talkChannel(sender, "la", types.CHANNEL_MUSIC, "music", nil)
+
+	sOut := readOutput(sender, sClient)
+	if !strings.Contains(strings.ToLower(sOut), "don't have the music channel turned on") {
+		t.Errorf("deaf-sender diagnostic missing; got %q", sOut)
+	}
+	if !sender.Deaf.IsSet(types.CHANNEL_MUSIC) {
+		t.Error("deaf bit must NOT be auto-cleared (C :514 unreachable)")
+	}
+	lOut := readOutput(listener, lClient)
+	if strings.Contains(lOut, "la") {
+		t.Errorf("deaf sender must not broadcast; listener got %q", lOut)
+	}
+}
+
+func TestTalkChannel_DeafSenderWartalkException(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8003, Name: "Room"}
+	w.Rooms[8003] = room
+	sender, sClient := makeMortalInRoom(room, "Warlord")
+	defer sClient.Close()
+	sender.Deaf.Set(types.CHANNEL_WARTALK)
+	listener, lClient := makeMortalInRoom(room, "Ally")
+	defer lClient.Close()
+
+	talkChannel(sender, "strat", types.CHANNEL_WARTALK, "war", nil)
+
+	sOut := readOutput(sender, sClient)
+	if !strings.Contains(sOut, "strat") {
+		t.Errorf("wartalk-deaf sender must NOT be blocked; expected self-echo; got %q", sOut)
+	}
+	if strings.Contains(strings.ToLower(sOut), "don't have the war channel") {
+		t.Errorf("wartalk exception must suppress diagnostic; got %q", sOut)
+	}
+	lOut := readOutput(listener, lClient)
+	if !strings.Contains(lOut, "strat") {
+		t.Errorf("listener should receive the wartalk broadcast; got %q", lOut)
+	}
+}
+
+func TestTalkChannel_DeafSenderYellException(t *testing.T) {
+	// CHANNEL_YELL has the same exception per C's intent (act_comm.c:505-513).
+	// This test is a regression guard for future callers.
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8013, Name: "Room"}
+	w.Rooms[8013] = room
+	sender, sClient := makeMortalInRoom(room, "Yeller")
+	defer sClient.Close()
+	sender.Deaf.Set(types.CHANNEL_YELL)
+	listener, lClient := makeMortalInRoom(room, "Ear")
+	defer lClient.Close()
+
+	talkChannel(sender, "loud", types.CHANNEL_YELL, "yell", nil)
+
+	sOut := readOutput(sender, sClient)
+	if !strings.Contains(sOut, "loud") {
+		t.Errorf("yell-deaf sender must NOT be blocked (exception); got %q", sOut)
+	}
+	lOut := readOutput(listener, lClient)
+	if !strings.Contains(lOut, "loud") {
+		t.Errorf("listener should receive the yell broadcast; got %q", lOut)
+	}
+}
+
+func TestTalkChannel_RoomSilenceBlocksSender(t *testing.T) {
+	w := setupCommWorld()
+	silent := &types.RoomIndexData{Vnum: 8004, Name: "Quiet"}
+	silent.RoomFlags.Set(types.ROOM_SILENCE)
+	w.Rooms[8004] = silent
+	open := &types.RoomIndexData{Vnum: 8005, Name: "Open"}
+	w.Rooms[8005] = open
+
+	sender, sClient := makeMortalInRoom(silent, "Piper")
+	defer sClient.Close()
+	listener, lClient := makeMortalInRoom(open, "Ear")
+	defer lClient.Close()
+
+	talkChannel(sender, "la", types.CHANNEL_MUSIC, "music", nil)
+
+	sOut := readOutput(sender, sClient)
+	if !strings.Contains(sOut, "You can't do that here") {
+		t.Errorf("room-silence diagnostic missing; got %q", sOut)
+	}
+	lOut := readOutput(listener, lClient)
+	if strings.Contains(lOut, "la") {
+		t.Errorf("silenced-room sender must not broadcast; got %q", lOut)
+	}
+}
+
+func TestTalkChannel_ReceiverRoomSilenceSkipped(t *testing.T) {
+	w := setupCommWorld()
+	open := &types.RoomIndexData{Vnum: 8006, Name: "Open"}
+	w.Rooms[8006] = open
+	silent := &types.RoomIndexData{Vnum: 8007, Name: "Quiet"}
+	silent.RoomFlags.Set(types.ROOM_SILENCE)
+	w.Rooms[8007] = silent
+
+	sender, sClient := makeMortalInRoom(open, "Piper")
+	defer sClient.Close()
+	silenced, xClient := makeMortalInRoom(silent, "Mute")
+	defer xClient.Close()
+	hearer, hClient := makeMortalInRoom(open, "Ear")
+	defer hClient.Close()
+
+	talkChannel(sender, "song", types.CHANNEL_MUSIC, "music", nil)
+
+	xOut := readOutput(silenced, xClient)
+	if strings.Contains(xOut, "song") {
+		t.Errorf("listener in ROOM_SILENCE must not receive; got %q", xOut)
+	}
+	hOut := readOutput(hearer, hClient)
+	if !strings.Contains(hOut, "song") {
+		t.Errorf("listener in open room should receive; got %q", hOut)
+	}
+}
+
+func TestTalkChannel_ReceiverDeafSkipped(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8008, Name: "Room"}
+	w.Rooms[8008] = room
+	sender, sClient := makeMortalInRoom(room, "Piper")
+	defer sClient.Close()
+	deaf, dClient := makeMortalInRoom(room, "Deaf")
+	defer dClient.Close()
+	deaf.Deaf.Set(types.CHANNEL_MUSIC)
+	hearer, hClient := makeMortalInRoom(room, "Ear")
+	defer hClient.Close()
+
+	talkChannel(sender, "song", types.CHANNEL_MUSIC, "music", nil)
+
+	dOut := readOutput(deaf, dClient)
+	if strings.Contains(dOut, "song") {
+		t.Errorf("Deaf[MUSIC] listener must not receive; got %q", dOut)
+	}
+	hOut := readOutput(hearer, hClient)
+	if !strings.Contains(hOut, "song") {
+		t.Errorf("non-deaf listener should receive; got %q", hOut)
+	}
+}
+
+func TestTalkChannel_SelfEchoNotBroadcastToSelf(t *testing.T) {
+	// Sender's descriptor is on WorldRef.Descriptors; the vch==ch guard must
+	// prevent a second copy of the line from arriving as a broadcast.
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8009, Name: "Room"}
+	w.Rooms[8009] = room
+	sender, sClient := makeMortalInRoom(room, "Solo")
+	defer sClient.Close()
+
+	talkChannel(sender, "hum", types.CHANNEL_MUSIC, "music", nil)
+	out := readOutput(sender, sClient)
+
+	// Self-echo format: "You music 'hum'". A second broadcast copy would
+	// read "Solo musics 'hum'".
+	if !strings.Contains(out, "You music") {
+		t.Errorf("self-echo missing; got %q", out)
+	}
+	if strings.Contains(out, "Solo musics") {
+		t.Errorf("sender must NOT receive a second broadcast copy; got %q", out)
+	}
+}
+
+func TestTalkChannel_FilterClosureGatesReceivers(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8010, Name: "Room"}
+	w.Rooms[8010] = room
+	sender, sClient := makeMortalInRoom(room, "Speaker")
+	defer sClient.Close()
+	a, aClient := makeMortalInRoom(room, "Rejected")
+	defer aClient.Close()
+	b, bClient := makeMortalInRoom(room, "AlsoRejected")
+	defer bClient.Close()
+
+	// Filter rejects every listener.
+	talkChannel(sender, "hi", types.CHANNEL_MUSIC, "music", func(*types.CharData) bool { return false })
+
+	sOut := readOutput(sender, sClient)
+	if !strings.Contains(sOut, "hi") {
+		t.Errorf("self-echo should still fire; got %q", sOut)
+	}
+	if strings.Contains(readOutput(a, aClient), "hi") {
+		t.Errorf("filter-rejected listener must not receive")
+	}
+	if strings.Contains(readOutput(b, bClient), "hi") {
+		t.Errorf("filter-rejected listener must not receive")
+	}
+}
+
+func TestTalkChannel_TranslateForIsApplied(t *testing.T) {
+	// Matched-language listeners see argument verbatim — asserts threading
+	// through translateFor, not the scrambler itself.
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8011, Name: "Room"}
+	w.Rooms[8011] = room
+	sender, sClient := makeMortalInRoom(room, "Speaker")
+	defer sClient.Close()
+	sender.Speaking = int(types.LANG_COMMON)
+	listener, lClient := makeMortalInRoom(room, "Ear")
+	defer lClient.Close()
+	listener.Speaks = int(types.LANG_COMMON)
+
+	talkChannel(sender, "hello", types.CHANNEL_MUSIC, "music", nil)
+
+	lOut := readOutput(listener, lClient)
+	if !strings.Contains(lOut, "hello") {
+		t.Errorf("matched-language listener should hear verbatim; got %q", lOut)
+	}
+	_ = readOutput(sender, sClient)
+}
+
+// --- G1: DoMusic ---
+
+func TestDoMusic_EmptyArgPrintsMusicWhat(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8100, Name: "Room"}
+	w.Rooms[8100] = room
+	ch, client := makeMortalInRoom(room, "Piper")
+	defer client.Close()
+
+	DoMusic(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Music what?") {
+		t.Errorf("expected 'Music what?'; got %q", out)
+	}
+}
+
+func TestDoMusic_NPCGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8101, Name: "Room"}
+	w.Rooms[8101] = room
+	mob, mClient := makeTestChar("Mob")
+	defer mClient.Close()
+	mob.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+	addPlayingDescriptor(mob)
+
+	DoMusic(mob, "la")
+	out := readOutput(mob, mClient)
+	if !strings.Contains(out, "Huh?") {
+		t.Errorf("NPC should see 'Huh?'; got %q", out)
+	}
+}
+
+func TestDoMusic_PublicBroadcastReachesAllPlayers(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8102, Name: "Room"}
+	w.Rooms[8102] = room
+	sender, sClient := makeMortalInRoom(room, "Piper")
+	defer sClient.Close()
+	l1, l1Client := makeMortalInRoom(room, "Listener1")
+	defer l1Client.Close()
+	l2, l2Client := makeMortalInRoom(room, "Listener2")
+	defer l2Client.Close()
+
+	DoMusic(sender, "song")
+
+	if !strings.Contains(readOutput(sender, sClient), "song") {
+		t.Error("sender should see own echo")
+	}
+	if !strings.Contains(readOutput(l1, l1Client), "song") {
+		t.Error("listener1 should receive")
+	}
+	if !strings.Contains(readOutput(l2, l2Client), "song") {
+		t.Error("listener2 should receive")
+	}
+}
+
+func TestDoMusic_DeafListenerSkipped(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8103, Name: "Room"}
+	w.Rooms[8103] = room
+	sender, sClient := makeMortalInRoom(room, "Piper")
+	defer sClient.Close()
+	deaf, dClient := makeMortalInRoom(room, "Deaf")
+	defer dClient.Close()
+	deaf.Deaf.Set(types.CHANNEL_MUSIC)
+
+	DoMusic(sender, "song")
+	_ = readOutput(sender, sClient)
+	if strings.Contains(readOutput(deaf, dClient), "song") {
+		t.Error("deaf[MUSIC] listener must not receive")
+	}
+}
+
+func TestDoMusic_BootRegistered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8104, Name: "Room"}
+	w.Rooms[8104] = room
+
+	reg := command.NewRegistry()
+	reg.Register(&command.Command{Name: "music", DoFun: DoMusic, Position: types.POS_SLEEPING, Level: 0})
+
+	sender, sClient := makeMortalInRoom(room, "Piper")
+	defer sClient.Close()
+	listener, lClient := makeMortalInRoom(room, "Ear")
+	defer lClient.Close()
+
+	reg.Interpret(sender, "music la la")
+
+	if !strings.Contains(readOutput(sender, sClient), "la la") {
+		t.Error("interpret 'music' should self-echo")
+	}
+	if !strings.Contains(readOutput(listener, lClient), "la la") {
+		t.Error("interpret 'music' should broadcast to listeners")
+	}
+}
+
+// --- G2: DoRacetalk ---
+
+func TestDoRacetalk_EmptyArgPrintsRacetalkWhat(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8200, Name: "Room"}
+	w.Rooms[8200] = room
+	ch, client := makeMortalInRoom(room, "Elf")
+	defer client.Close()
+
+	DoRacetalk(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Racetalk what?") {
+		t.Errorf("expected 'Racetalk what?'; got %q", out)
+	}
+}
+
+func TestDoRacetalk_NPCGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8201, Name: "Room"}
+	w.Rooms[8201] = room
+	mob, mClient := makeTestChar("Mob")
+	defer mClient.Close()
+	mob.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+	addPlayingDescriptor(mob)
+
+	DoRacetalk(mob, "hi")
+	if !strings.Contains(readOutput(mob, mClient), "Huh?") {
+		t.Error("NPC should get Huh?")
+	}
+}
+
+func TestDoRacetalk_SameRaceReceives(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8202, Name: "Room"}
+	w.Rooms[8202] = room
+	sender, sClient := makeMortalInRoom(room, "Elf1")
+	defer sClient.Close()
+	sender.Race = 1
+	listener, lClient := makeMortalInRoom(room, "Elf2")
+	defer lClient.Close()
+	listener.Race = 1
+
+	DoRacetalk(sender, "hi kin")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "hi kin") {
+		t.Error("same-race listener should receive")
+	}
+}
+
+func TestDoRacetalk_DifferentRaceFiltered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8203, Name: "Room"}
+	w.Rooms[8203] = room
+	sender, sClient := makeMortalInRoom(room, "Elf")
+	defer sClient.Close()
+	sender.Race = 1
+	listener, lClient := makeMortalInRoom(room, "Orc")
+	defer lClient.Close()
+	listener.Race = 2
+
+	DoRacetalk(sender, "hi kin")
+	_ = readOutput(sender, sClient)
+	if strings.Contains(readOutput(listener, lClient), "hi kin") {
+		t.Error("different-race listener must NOT receive")
+	}
+}
+
+func TestDoRacetalk_BootRegistered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8204, Name: "Room"}
+	w.Rooms[8204] = room
+	reg := command.NewRegistry()
+	reg.Register(&command.Command{Name: "racetalk", DoFun: DoRacetalk, Position: types.POS_SLEEPING, Level: 0})
+	sender, sClient := makeMortalInRoom(room, "Elf1")
+	defer sClient.Close()
+	sender.Race = 3
+	listener, lClient := makeMortalInRoom(room, "Elf2")
+	defer lClient.Close()
+	listener.Race = 3
+
+	reg.Interpret(sender, "racetalk greetings")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "greetings") {
+		t.Error("interpret 'racetalk' should route to DoRacetalk")
+	}
+}
+
+// --- G3: DoWartalk ---
+
+func TestDoWartalk_EmptyArgPrintsWarWhat(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8300, Name: "Room"}
+	w.Rooms[8300] = room
+	ch, client := makeMortalPCInRoom(room, "Warlord")
+	defer client.Close()
+	ch.PCData.Flags = int(types.PCFLAG_DEADLY)
+
+	DoWartalk(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "War what?") {
+		t.Errorf("expected 'War what?'; got %q", out)
+	}
+}
+
+func TestDoWartalk_NPCGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8301, Name: "Room"}
+	w.Rooms[8301] = room
+	mob, mClient := makeTestChar("Mob")
+	defer mClient.Close()
+	mob.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+	addPlayingDescriptor(mob)
+
+	DoWartalk(mob, "hi")
+	if !strings.Contains(readOutput(mob, mClient), "Huh?") {
+		t.Error("NPC should get Huh?")
+	}
+}
+
+func TestDoWartalk_PeacefulSenderBlocked(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8302, Name: "Room"}
+	w.Rooms[8302] = room
+	ch, client := makeMortalPCInRoom(room, "Peaceful")
+	defer client.Close()
+	// Flags deliberately NOT set — peaceful.
+
+	DoWartalk(ch, "strat")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Peacefuls have no need to use wartalk") {
+		t.Errorf("expected peaceful block message; got %q", out)
+	}
+}
+
+func TestDoWartalk_PkillToPkillReceives(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8303, Name: "Room"}
+	w.Rooms[8303] = room
+	sender, sClient := makeMortalPCInRoom(room, "Warlord")
+	defer sClient.Close()
+	sender.PCData.Flags = int(types.PCFLAG_DEADLY)
+	listener, lClient := makeMortalPCInRoom(room, "Ally")
+	defer lClient.Close()
+	listener.PCData.Flags = int(types.PCFLAG_DEADLY)
+
+	DoWartalk(sender, "attack east")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "attack east") {
+		t.Error("pkill listener should receive wartalk")
+	}
+}
+
+func TestDoWartalk_PkillToPeacefulFiltered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8304, Name: "Room"}
+	w.Rooms[8304] = room
+	sender, sClient := makeMortalPCInRoom(room, "Warlord")
+	defer sClient.Close()
+	sender.PCData.Flags = int(types.PCFLAG_DEADLY)
+	listener, lClient := makeMortalPCInRoom(room, "Peaceful")
+	defer lClient.Close()
+	// listener NOT pkill.
+
+	DoWartalk(sender, "attack east")
+	_ = readOutput(sender, sClient)
+	if strings.Contains(readOutput(listener, lClient), "attack east") {
+		t.Error("peaceful listener must NOT receive wartalk")
+	}
+}
+
+func TestDoWartalk_DeafSenderNotBlocked_WartalkException(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8305, Name: "Room"}
+	w.Rooms[8305] = room
+	sender, sClient := makeMortalPCInRoom(room, "Warlord")
+	defer sClient.Close()
+	sender.PCData.Flags = int(types.PCFLAG_DEADLY)
+	sender.Deaf.Set(types.CHANNEL_WARTALK)
+	listener, lClient := makeMortalPCInRoom(room, "Ally")
+	defer lClient.Close()
+	listener.PCData.Flags = int(types.PCFLAG_DEADLY)
+
+	DoWartalk(sender, "strat")
+	sOut := readOutput(sender, sClient)
+	if !strings.Contains(sOut, "strat") {
+		t.Errorf("wartalk-deaf pkill sender must NOT be blocked; got %q", sOut)
+	}
+	if !strings.Contains(readOutput(listener, lClient), "strat") {
+		t.Error("listener should receive despite sender's wartalk-deaf bit")
+	}
+}
+
+func TestDoWartalk_BootRegistered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8306, Name: "Room"}
+	w.Rooms[8306] = room
+	reg := command.NewRegistry()
+	reg.Register(&command.Command{Name: "wartalk", DoFun: DoWartalk, Position: types.POS_SLEEPING, Level: 0})
+
+	sender, sClient := makeMortalPCInRoom(room, "Warlord")
+	defer sClient.Close()
+	sender.PCData.Flags = int(types.PCFLAG_DEADLY)
+	listener, lClient := makeMortalPCInRoom(room, "Ally")
+	defer lClient.Close()
+	listener.PCData.Flags = int(types.PCFLAG_DEADLY)
+
+	reg.Interpret(sender, "wartalk ready")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "ready") {
+		t.Error("interpret 'wartalk' should broadcast to pkill listener")
+	}
+}
+
+// --- G4: DoCouncilTalk ---
+
+func TestDoCouncilTalk_EmptyArgPrintsCounciltalkWhat(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8400, Name: "Room"}
+	w.Rooms[8400] = room
+	council := &types.CouncilData{Name: "Mages"}
+	ch, client := makeMortalPCInRoom(room, "Mage")
+	defer client.Close()
+	ch.PCData.Council = council
+
+	DoCouncilTalk(ch, "")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Counciltalk what?") {
+		t.Errorf("expected 'Counciltalk what?'; got %q", out)
+	}
+}
+
+func TestDoCouncilTalk_NPCGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8401, Name: "Room"}
+	w.Rooms[8401] = room
+	mob, mClient := makeTestChar("Mob")
+	defer mClient.Close()
+	mob.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+	addPlayingDescriptor(mob)
+
+	DoCouncilTalk(mob, "hi")
+	if !strings.Contains(readOutput(mob, mClient), "Huh?") {
+		t.Error("NPC should get Huh?")
+	}
+}
+
+func TestDoCouncilTalk_NoCouncilGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8402, Name: "Room"}
+	w.Rooms[8402] = room
+	ch, client := makeMortalPCInRoom(room, "Loner")
+	defer client.Close()
+	// ch.PCData.Council is nil.
+
+	DoCouncilTalk(ch, "hello")
+	if !strings.Contains(readOutput(ch, client), "Huh?") {
+		t.Error("no-council sender should get Huh?")
+	}
+}
+
+func TestDoCouncilTalk_SameCouncilReceives(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8403, Name: "Room"}
+	w.Rooms[8403] = room
+	council := &types.CouncilData{Name: "Mages"}
+	sender, sClient := makeMortalPCInRoom(room, "Magus1")
+	defer sClient.Close()
+	sender.PCData.Council = council
+	listener, lClient := makeMortalPCInRoom(room, "Magus2")
+	defer lClient.Close()
+	listener.PCData.Council = council
+
+	DoCouncilTalk(sender, "convene")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "convene") {
+		t.Error("same-council listener should receive")
+	}
+}
+
+func TestDoCouncilTalk_DifferentCouncilFiltered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8404, Name: "Room"}
+	w.Rooms[8404] = room
+	mages := &types.CouncilData{Name: "Mages"}
+	thieves := &types.CouncilData{Name: "Thieves"}
+	sender, sClient := makeMortalPCInRoom(room, "Magus")
+	defer sClient.Close()
+	sender.PCData.Council = mages
+	listener, lClient := makeMortalPCInRoom(room, "Thief")
+	defer lClient.Close()
+	listener.PCData.Council = thieves
+
+	DoCouncilTalk(sender, "convene")
+	_ = readOutput(sender, sClient)
+	if strings.Contains(readOutput(listener, lClient), "convene") {
+		t.Error("different-council listener must NOT receive")
+	}
+}
+
+func TestDoCouncilTalk_NilPCDataListenerSkipped(t *testing.T) {
+	// Safety: NPC listeners (PCData nil) must not panic and must be filtered.
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8405, Name: "Room"}
+	w.Rooms[8405] = room
+	council := &types.CouncilData{Name: "Mages"}
+	sender, sClient := makeMortalPCInRoom(room, "Magus")
+	defer sClient.Close()
+	sender.PCData.Council = council
+
+	mob, _ := makeTestChar("Pet")
+	mob.Act.Set(types.ACT_IS_NPC)
+	mob.PCData = nil
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+	addPlayingDescriptor(mob)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("panicked on nil-PCData listener: %v", r)
+		}
+	}()
+	DoCouncilTalk(sender, "convene")
+	_ = readOutput(sender, sClient)
+}
+
+func TestDoCouncilTalk_BootRegistered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8406, Name: "Room"}
+	w.Rooms[8406] = room
+	reg := command.NewRegistry()
+	reg.Register(&command.Command{Name: "counciltalk", DoFun: DoCouncilTalk, Position: types.POS_SLEEPING, Level: 0})
+
+	council := &types.CouncilData{Name: "Mages"}
+	sender, sClient := makeMortalPCInRoom(room, "Magus1")
+	defer sClient.Close()
+	sender.PCData.Council = council
+	listener, lClient := makeMortalPCInRoom(room, "Magus2")
+	defer lClient.Close()
+	listener.PCData.Council = council
+
+	reg.Interpret(sender, "counciltalk meet")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "meet") {
+		t.Error("interpret 'counciltalk' should broadcast to same-council listener")
+	}
+}
+
+// --- G5: DoGuildTalk + DoNewbieChat ---
+
+func TestDoGuildTalk_NPCGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8500, Name: "Room"}
+	w.Rooms[8500] = room
+	mob, mClient := makeTestChar("Mob")
+	defer mClient.Close()
+	mob.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+	addPlayingDescriptor(mob)
+
+	DoGuildTalk(mob, "hi")
+	if !strings.Contains(readOutput(mob, mClient), "Huh?") {
+		t.Error("NPC should get Huh?")
+	}
+}
+
+func TestDoGuildTalk_NoClanGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8501, Name: "Room"}
+	w.Rooms[8501] = room
+	ch, client := makeMortalPCInRoom(room, "Solo")
+	defer client.Close()
+
+	DoGuildTalk(ch, "hi")
+	if !strings.Contains(readOutput(ch, client), "Huh?") {
+		t.Error("no-clan sender should get Huh?")
+	}
+}
+
+func TestDoGuildTalk_WrongClanTypeGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8502, Name: "Room"}
+	w.Rooms[8502] = room
+	order := &types.ClanData{Name: "Order", ClanType: types.CLAN_ORDER}
+	ch, client := makeMortalPCInRoom(room, "Cleric")
+	defer client.Close()
+	ch.PCData.Clan = order
+
+	DoGuildTalk(ch, "hi")
+	if !strings.Contains(readOutput(ch, client), "Huh?") {
+		t.Error("wrong-clan-type sender should get Huh?")
+	}
+}
+
+func TestDoGuildTalk_SameGuildReceives(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8503, Name: "Room"}
+	w.Rooms[8503] = room
+	guild := &types.ClanData{Name: "Thieves", ClanType: types.CLAN_GUILD}
+	sender, sClient := makeMortalPCInRoom(room, "Thief1")
+	defer sClient.Close()
+	sender.PCData.Clan = guild
+	listener, lClient := makeMortalPCInRoom(room, "Thief2")
+	defer lClient.Close()
+	listener.PCData.Clan = guild
+
+	DoGuildTalk(sender, "meet 12th")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "meet 12th") {
+		t.Error("same-guild listener should receive")
+	}
+}
+
+func TestDoGuildTalk_DifferentClanFiltered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8504, Name: "Room"}
+	w.Rooms[8504] = room
+	thieves := &types.ClanData{Name: "Thieves", ClanType: types.CLAN_GUILD}
+	mages := &types.ClanData{Name: "Mages", ClanType: types.CLAN_GUILD}
+	sender, sClient := makeMortalPCInRoom(room, "Thief")
+	defer sClient.Close()
+	sender.PCData.Clan = thieves
+	listener, lClient := makeMortalPCInRoom(room, "Mage")
+	defer lClient.Close()
+	listener.PCData.Clan = mages
+
+	DoGuildTalk(sender, "meet 12th")
+	_ = readOutput(sender, sClient)
+	if strings.Contains(readOutput(listener, lClient), "meet 12th") {
+		t.Error("different-clan listener must NOT receive")
+	}
+}
+
+func TestDoGuildTalk_BootRegistered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8505, Name: "Room"}
+	w.Rooms[8505] = room
+	reg := command.NewRegistry()
+	reg.Register(&command.Command{Name: "guildtalk", DoFun: DoGuildTalk, Position: types.POS_SLEEPING, Level: 0})
+
+	guild := &types.ClanData{Name: "Thieves", ClanType: types.CLAN_GUILD}
+	sender, sClient := makeMortalPCInRoom(room, "Thief1")
+	defer sClient.Close()
+	sender.PCData.Clan = guild
+	listener, lClient := makeMortalPCInRoom(room, "Thief2")
+	defer lClient.Close()
+	listener.PCData.Clan = guild
+
+	reg.Interpret(sender, "guildtalk heist")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "heist") {
+		t.Error("interpret 'guildtalk' should broadcast to guild listener")
+	}
+}
+
+func TestDoNewbieChat_NPCGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8600, Name: "Room"}
+	w.Rooms[8600] = room
+	mob, mClient := makeTestChar("Mob")
+	defer mClient.Close()
+	mob.Act.Set(types.ACT_IS_NPC)
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+	addPlayingDescriptor(mob)
+
+	DoNewbieChat(mob, "hi")
+	if !strings.Contains(readOutput(mob, mClient), "Huh?") {
+		t.Error("NPC should get Huh?")
+	}
+}
+
+func TestDoNewbieChat_MortalNonNewbieGetsHuh(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8601, Name: "Room"}
+	w.Rooms[8601] = room
+	ch, client := makeMortalPCInRoom(room, "Mort")
+	defer client.Close()
+	// No council set.
+
+	DoNewbieChat(ch, "hi")
+	if !strings.Contains(readOutput(ch, client), "Huh?") {
+		t.Error("non-newbie mortal should get Huh?")
+	}
+}
+
+func TestDoNewbieChat_MortalNewbieCouncilReceives(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8602, Name: "Room"}
+	w.Rooms[8602] = room
+	newbieCouncil := &types.CouncilData{Name: "Newbie Council"}
+	sender, sClient := makeMortalPCInRoom(room, "Newbie1")
+	defer sClient.Close()
+	sender.PCData.Council = newbieCouncil
+	listener, lClient := makeMortalPCInRoom(room, "Newbie2")
+	defer lClient.Close()
+	listener.PCData.Council = newbieCouncil
+
+	DoNewbieChat(sender, "hi all")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "hi all") {
+		t.Error("newbie-council mortal should receive")
+	}
+}
+
+func TestDoNewbieChat_ImmortalReceives(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8603, Name: "Room"}
+	w.Rooms[8603] = room
+	newbieCouncil := &types.CouncilData{Name: "Newbie Council"}
+	sender, sClient := makeMortalPCInRoom(room, "Newbie")
+	defer sClient.Close()
+	sender.PCData.Council = newbieCouncil
+	imm, iClient := makeImmortalInRoom(room, "Zeus")
+	defer iClient.Close()
+	// Immortal has no council — still receives per filter.
+
+	DoNewbieChat(sender, "help please")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(imm, iClient), "help please") {
+		t.Error("immortal should receive newbiechat")
+	}
+}
+
+func TestDoNewbieChat_ImmortalCanSend(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8604, Name: "Room"}
+	w.Rooms[8604] = room
+	imm, iClient := makeImmortalInRoom(room, "Zeus")
+	defer iClient.Close()
+	newbieCouncil := &types.CouncilData{Name: "Newbie Council"}
+	listener, lClient := makeMortalPCInRoom(room, "Newbie")
+	defer lClient.Close()
+	listener.PCData.Council = newbieCouncil
+
+	DoNewbieChat(imm, "welcome")
+	_ = readOutput(imm, iClient)
+	if !strings.Contains(readOutput(listener, lClient), "welcome") {
+		t.Error("newbie listener should receive from immortal sender")
+	}
+}
+
+func TestDoNewbieChat_CaseInsensitiveCouncilName(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8605, Name: "Room"}
+	w.Rooms[8605] = room
+	// Mixed case and different cases both satisfy.
+	lcase := &types.CouncilData{Name: "newbie council"}
+	ucase := &types.CouncilData{Name: "NEWBIE COUNCIL"}
+
+	sender, sClient := makeMortalPCInRoom(room, "Newb1")
+	defer sClient.Close()
+	sender.PCData.Council = lcase
+	listener, lClient := makeMortalPCInRoom(room, "Newb2")
+	defer lClient.Close()
+	listener.PCData.Council = ucase
+
+	DoNewbieChat(sender, "hi")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "hi") {
+		t.Error("case-insensitive match should let upper-case council listener receive")
+	}
+}
+
+func TestDoNewbieChat_BootRegistered(t *testing.T) {
+	w := setupCommWorld()
+	room := &types.RoomIndexData{Vnum: 8606, Name: "Room"}
+	w.Rooms[8606] = room
+	reg := command.NewRegistry()
+	reg.Register(&command.Command{Name: "newbiechat", DoFun: DoNewbieChat, Position: types.POS_SLEEPING, Level: 0})
+
+	newbieCouncil := &types.CouncilData{Name: "Newbie Council"}
+	sender, sClient := makeMortalPCInRoom(room, "Newb1")
+	defer sClient.Close()
+	sender.PCData.Council = newbieCouncil
+	listener, lClient := makeMortalPCInRoom(room, "Newb2")
+	defer lClient.Close()
+	listener.PCData.Council = newbieCouncil
+
+	reg.Interpret(sender, "newbiechat hi")
+	_ = readOutput(sender, sClient)
+	if !strings.Contains(readOutput(listener, lClient), "hi") {
+		t.Error("interpret 'newbiechat' should broadcast")
+	}
+}

@@ -59,7 +59,15 @@ Follow-ups queued from plan-timer-subsystem.md:
 
 Follow-ups queued from plan-channels.md:
 - [ ] Full `do_auction` state machine (list / bid / stop / noauction list / item escrow / gold handling / auction tick in `update.c`). Plan called out as G5; deferred to Phase 6. C refs: `act_obj.c:3775+`, `update.c:2886-3286`. `BroadcastAuction` helper already in place.
-- [ ] `music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk` channel commands — `plan-phase6-channels-extra.md` drafted 2026-04-18 via `phase6-channels-extra` lineage. 6 groups, 18 criteria. Decision taken: factor `talkChannel` helper (new) + 6 thin wrappers (not retrofitted to Tier-9 channels — separate plan). C `||`-bug in wartalk deaf-exception corrected to `&&`. External adversary queued.
+- [x] `music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk` channel commands — **LANDED 2026-04-18 via `plan-phase6-channels-extra.md`.** Shared `talkChannel` helper in `internal/act/channels.go` + 6 thin wrappers. 6 groups, 18 criteria all satisfied, 7 mutation gates verified via `Edit` round-trips. C's `||`-bug in wartalk deaf-exception corrected to `&&` (with both WARTALK and YELL exceptions carried for future callers). Tier 9 channels (`DoImmtalk`/`DoGtell`/`DoClantalk`/`DoAuction`) deliberately not retrofitted — separate plan.
+
+  Follow-ups from plan-phase6-channels-extra.md (all deferred per plan scope cuts):
+  - [ ] Uniform `PLR_WIZINVIS` "(level) " preamble across all 10 channels.
+  - [ ] Uniform `ROOM_LOGSPEECH` file-append across all 10 channels.
+  - [ ] Uniform `is_ignoring` receiver filter (helper needed; `PCData.Ignored []string` exists).
+  - [ ] Uniform `AFLAG_SILENCE` area-flag check (constant exists; no caller today).
+  - [ ] Retrofit Tier 9 channels onto `talkChannel` when a next wave of channels (quest/ask/muse/think/avtalk) lands.
+  - [ ] Per-`AT_` color fidelity for all channel commands — `util.Act` per-call color seam landed Tranche C; channels still use inline `&Y/&G/&D`.
 - [x] Per-AT_ color preservation in `util.Act` — LANDED 2026-04-18 via plan-tranche-c.md G1-G3. `util.Act` now takes a per-call `aType int` that drives `&X` color prefix + `&D` reset; all 33 callers migrated. Channel commands themselves still use inline `&Y`/`&G`/`&D` (call `ch.Send` directly, not `util.Act`) — factor-out is a Phase-6 follow-up when harmonizing channel coloring. `AT_CLANTALK` does NOT exist in C and was NOT added.
 - [ ] Alias prefix-matching (`":hi"` with no space) — `util.OneArgument` splits on whitespace, so a cmdWord of `":hi"` doesn't match the `":"` registration. Deliberate scope cut for P1; a separate interpreter change is required to support intra-token prefix matching.
 - [x] `DoChannels` toggle command — LANDED 2026-04-17 (see Done below + `smaug-go/doc/plan-do-channels.md`).
@@ -293,7 +301,7 @@ Follow-ups queued from plan-dammessage-gaps.md:
 
 - [ ] **Skills not yet ported** (`bloodlet`, `pounce`, `broach`) — `plan-phase6-skills.md` drafted 2026-04-18 via `phase6-skills` lineage. ~200 C LOC total. Three parallel-safe work units. External adversary queued.
 - [ ] **Clan officer commands** (`induct`, `outcast`, `bestow` — `promote`/`demote` don't exist in SMAUG per Wave-C scope correction) — `plan-phase6-clan-officer.md` drafted 2026-04-18 via `phase6-clan-officer` lineage. 5 groups + 1 conditional (optional `setrank`), 14 criteria, 4 open questions. SaveClan bundled as G0. ~478 C LOC actual. External adversary queued.
-- [ ] **Extra channels** (`music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk`) — `plan-phase6-channels-extra.md` drafted 2026-04-18 via `phase6-channels-extra` lineage. 6 groups, 18 criteria. Template exists from Tier 9; plan factors `talkChannel` helper. External adversary queued.
+- [x] **Extra channels** (`music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk`) — **LANDED 2026-04-18 via `plan-phase6-channels-extra.md`.** Shared `talkChannel` helper + 6 thin wrappers; Tier 9 channels not retrofitted (separate plan).
 - [ ] Councils: all commands (not implemented as player-facing yet).
 - [ ] **Deities: full prayer, favor beyond `mpFavor`, deity-specific effects** — `plan-phase6-deity-prayer.md` to draft. ~400 C LOC.
 

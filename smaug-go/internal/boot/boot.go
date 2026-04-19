@@ -413,6 +413,17 @@ func registerCommands() *command.Registry {
 	// `channels` — per-player channel toggle (plan-do-channels.md).
 	reg.Register(&command.Command{Name: "channels", DoFun: act.DoChannels, Position: types.POS_DEAD, Level: 0})
 
+	// Phase 6 extra channels (plan-phase6-channels-extra.md): music /
+	// racetalk / wartalk / counciltalk / guildtalk / newbiechat. All route
+	// through the shared `talkChannel` helper. POS_SLEEPING matches Tier 9
+	// precedent. No aliases (unlike immtalk `:` / gtell `;`).
+	reg.Register(&command.Command{Name: "music", DoFun: act.DoMusic, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "racetalk", DoFun: act.DoRacetalk, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "wartalk", DoFun: act.DoWartalk, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "counciltalk", DoFun: act.DoCouncilTalk, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "guildtalk", DoFun: act.DoGuildTalk, Position: types.POS_SLEEPING, Level: 0})
+	reg.Register(&command.Command{Name: "newbiechat", DoFun: act.DoNewbieChat, Position: types.POS_SLEEPING, Level: 0})
+
 	// Object commands
 	reg.Register(&command.Command{Name: "get", DoFun: act.DoGet, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "drop", DoFun: act.DoDrop, Position: types.POS_RESTING, Level: 0})
@@ -494,6 +505,7 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "hide", DoFun: act.DoHide, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "steal", DoFun: act.DoSteal, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "pick", DoFun: act.DoPick, Position: types.POS_STANDING, Level: 0})
+	reg.Register(&command.Command{Name: "broach", DoFun: act.DoBroach, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "scan", DoFun: act.DoScan, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "aid", DoFun: act.DoAid, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "recall", DoFun: act.DoRecall, Position: types.POS_STANDING, Level: 0})
@@ -505,6 +517,7 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "sting", DoFun: act.DoSting, Position: types.POS_FIGHTING, Level: 0})
 	reg.Register(&command.Command{Name: "tail", DoFun: act.DoTail, Position: types.POS_FIGHTING, Level: 0})
 	reg.Register(&command.Command{Name: "circle", DoFun: act.DoCircle, Position: types.POS_FIGHTING, Level: 0})
+	reg.Register(&command.Command{Name: "pounce", DoFun: act.DoPounce, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "gouge", DoFun: act.DoGouge, Position: types.POS_FIGHTING, Level: 0})
 	reg.Register(&command.Command{Name: "stun", DoFun: act.DoStun, Position: types.POS_FIGHTING, Level: 0})
 	reg.Register(&command.Command{Name: "grapple", DoFun: act.DoGrapple, Position: types.POS_STANDING, Level: 0})
@@ -521,6 +534,7 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "stance", DoFun: act.DoStance, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "mistwalk", DoFun: act.DoMistwalk, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "feed", DoFun: act.DoFeed, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "bloodlet", DoFun: act.DoBloodlet, Position: types.POS_RESTING, Level: 0})
 	reg.Register(&command.Command{Name: "skin", DoFun: act.DoSkin, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "poison", DoFun: act.DoPoisonWeapon, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "fire", DoFun: act.DoFire, Position: types.POS_FIGHTING, Level: 0})

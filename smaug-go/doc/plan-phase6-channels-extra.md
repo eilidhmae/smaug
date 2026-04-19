@@ -554,6 +554,96 @@ Caveats acknowledged:
 
 ---
 
-## Completion record
+## Completion record (2026-04-18)
 
-*(To be filled on landing.)*
+**Status: LANDED.** All 6 task groups shipped (G0 helper + G1-G5 wrappers + G6 docs). 18 acceptance criteria satisfied. `go test -count=3 ./...` green across all 15 packages (including `internal/testclient` full integration suite). 7 mutation gates verified via `Edit` round-trips (banned git commands not used).
+
+### Problem restated
+
+`src/act_comm.c:392-858` ships a single `talk_channel` god-function that 10 C `do_*` wrappers dispatch into. Tier 9 shipped `DoImmtalk` / `DoGtell` / `DoClantalk` / `DoAuction` (stub) open-coded because the four audience predicates diverged too sharply (immortal-only / group-walk / clan-match / broadcast stub) to factor. This tier crosses the "5+" threshold the Tier-9 completion record flagged — six channels (`music`, `racetalk`, `wartalk`, `counciltalk`, `guildtalk`, `newbiechat`) genuinely share the "empty-arg + PLR_SILENCE + deaf-sender + ROOM_SILENCE + self-echo + broadcast + per-channel filter" skeleton. The plan factored a narrow `talkChannel` helper owning the shared skeleton and six thin wrappers supplying per-channel pre-gates and a `recipientFilter` closure.
+
+### Groups shipped
+
+- **G0 — `talkChannel` helper** in `internal/act/channels.go`. Signature: `talkChannel(ch *types.CharData, argument string, channel int, verb string, recipientFilter func(vch *types.CharData) bool)`. Owns: empty-arg `"Verb what?"` with `strings.ToUpper(verb[:1]) + verb[1:]` capitalization; `PLR_SILENCE` sender gate (`"You can't <verb>."`); deaf-sender block with the wartalk/yell exception (C's always-true `||` bug corrected to intent-form `&&`); `ROOM_SILENCE` on sender's room; self-echo; broadcast walk (`WorldRef.Descriptors` → `CON_PLAYING && Character != nil && != ch && !Deaf[channel] && !listener.ROOM_SILENCE && recipientFilter(vch)`); `translateFor(ch, vch, argument)` at each receiver (package-private in `internal/act/comm.go:13` — no import change, same `act` package). Deaf-auto-clear at C `act_comm.c:514` NOT ported (unreachable in C after the `:511` return; DoImmtalk matches this). No PLR_WIZINVIS preamble, no ROOM_LOGSPEECH append, no is_ignoring filter, no AFLAG_SILENCE, no wait-state, no per-AT_ color — all deliberate divergences matching existing Go channel convention, uniform follow-ups queued in TODO.md.
+
+- **G1 — `DoMusic`**. NPC-gate + `talkChannel(ch, argument, CHANNEL_MUSIC, "music", nil)`. Public channel — `nil` filter.
+
+- **G2 — `DoRacetalk`**. NPC-gate + `filter: vch.Race == ch.Race` closure + `talkChannel(..., CHANNEL_RACETALK, "racetalk", filter)`.
+
+- **G3 — `DoWartalk`**. NPC-gate; pkill sender pre-gate `(ch.PCData == nil || Flags&PCFLAG_DEADLY == 0) → "Peacefuls have no need to use wartalk."`; filter applies the same `PCFLAG_DEADLY` predicate to listeners. Verb is `"war"` (matches C `:4619`; produces "You war '...'" / "X wars '...'" — same as C).
+
+- **G4 — `DoCouncilTalk`**. NPC-or-no-council-gate → `"Huh?"`; closes over `council := ch.PCData.Council`; filter returns `vch.PCData != nil && vch.PCData.Council == council` (pointer identity matches C `pcdata->council == pcdata->council`).
+
+- **G5 — `DoGuildTalk` + `DoNewbieChat`**. `DoGuildTalk`: NPC-or-no-clan-or-wrong-ClanType-gate (`ClanType != CLAN_GUILD` rejects, so `CLAN_ORDER` clans return "Huh?"); filter matches on `Clan` pointer identity. `DoNewbieChat`: helper `isNewbieChannelMember(ch)` = `ch.IsImmortal() OR strings.EqualFold(ch.PCData.Council.Name, "Newbie Council")`; used as both the sender pre-gate and the recipient filter. C `NOT_AUTHED` disjunct collapsed into the immortal branch per project convention.
+
+- **Boot registration** — 6 entries appended to `internal/boot/boot.go` after the Tier-9 block (`POS_SLEEPING`, level 0 for all six). No aliases.
+
+- **G6 — Docs** — this completion record + CHANGELOG entry + CLAUDE.md index row flipped to LANDED + TODO.md line item closed.
+
+### Tests added (+37 tests, +~700 LOC in `channels_test.go`)
+
+**Helper (10 tests, cover A1-A9):**
+- `TestTalkChannel_EmptyArgPrintsVerbWhat` — capitalization + literal `"Music what?"` (A2).
+- `TestTalkChannel_PLRSilenceBlocksSender` — sender gate + no broadcast (A3).
+- `TestTalkChannel_DeafSenderBlockedWithoutAutoClear` — diagnostic + bit stays set (A4).
+- `TestTalkChannel_DeafSenderWartalkException` — wartalk-deaf sender NOT blocked (A5).
+- `TestTalkChannel_DeafSenderYellException` — yell-deaf sender NOT blocked (A5 regression guard for future callers).
+- `TestTalkChannel_RoomSilenceBlocksSender` — sender room silence gate (A6).
+- `TestTalkChannel_ReceiverRoomSilenceSkipped` — listener room silence skip (A7).
+- `TestTalkChannel_ReceiverDeafSkipped` — listener deaf-bit skip (A7).
+- `TestTalkChannel_SelfEchoNotBroadcastToSelf` — `vch == ch` guard (A7).
+- `TestTalkChannel_FilterClosureGatesReceivers` — filter predicate applied (A7).
+- `TestTalkChannel_TranslateForIsApplied` — translateFor threaded (A8).
+
+**DoMusic (5 tests, cover A10):** EmptyArg/NPC/PublicBroadcast/DeafListener/BootRegistered.
+**DoRacetalk (5 tests, cover A11):** EmptyArg/NPC/SameRace/DifferentRace/BootRegistered.
+**DoWartalk (7 tests, cover A12):** EmptyArg (yields `"War what?"` from verb "war")/NPC/PeacefulSender/PkillToPkill/PkillToPeaceful/DeafSenderWartalkException/BootRegistered.
+**DoCouncilTalk (7 tests, cover A13):** EmptyArg/NPC/NoCouncil/SameCouncil/DifferentCouncil/NilPCDataListenerNoPanic/BootRegistered.
+**DoGuildTalk (6 tests, cover A14):** NPC/NoClan/WrongClanType/SameGuild/DifferentClan/BootRegistered.
+**DoNewbieChat (7 tests, cover A15):** NPC/MortalNonNewbie/MortalNewbieCouncil/ImmortalReceives/ImmortalCanSend/CaseInsensitive/BootRegistered.
+
+**Regression (A16-A17-A18):** `go test -count=3 ./...` green across all 15 packages. Tier 9 tests (`TestDoImmtalk_*`, `TestDoGtell_*`, `TestDoAuction_*`, `TestBroadcastAuction_*`, `TestDoChannels_*`) unchanged and still passing. `TestDoTell`/`TestDoGossip`/`TestDoYell`/`TestDoShout` `PLR_SILENCE` gate tests still passing.
+
+### Mutation verification summary (7 gates, all via `Edit` round-trips)
+
+| Gate | Mutation | Expected fail | Result |
+|---|---|---|---|
+| Wartalk/Yell deaf exception | Strip `&& channel != WARTALK && channel != YELL` to bare `ch.Deaf.IsSet(channel)` | `TestTalkChannel_DeafSenderWartalkException`, `TestTalkChannel_DeafSenderYellException`, `TestDoWartalk_DeafSenderNotBlocked_WartalkException` | FAIL as expected — all three fail with the diagnostic text visible to sender and listener-gets-empty-output; revert restores green. (NB: the original plan's mutation `&& → \|\|` triggers `go vet`'s suspect-or rule at test compile — stripping the exception entirely is the equivalent semantic mutation vet accepts.) |
+| Self-echo not re-broadcast | Remove `if vch == ch { continue }` guard | `TestTalkChannel_SelfEchoNotBroadcastToSelf` | FAIL — sender received both self-echo AND a second broadcast copy `"Solo musics 'hum'"`; revert. |
+| Recipient filter application | `if recipientFilter != nil && !recipientFilter(vch)` → `if false && ...` | `TestTalkChannel_FilterClosureGatesReceivers`, `TestDoRacetalk_DifferentRaceFiltered`, `TestDoWartalk_PkillToPeacefulFiltered`, `TestDoCouncilTalk_DifferentCouncilFiltered`, `TestDoGuildTalk_DifferentClanFiltered` | FAIL — 5 tests fail; revert. |
+| Pkill sender gate | `& PCFLAG_DEADLY == 0` → `!= 0` | `TestDoWartalk_PeacefulSenderBlocked`, `TestDoWartalk_PkillToPkillReceives` | FAIL — peaceful sender no longer blocked; pkill sender now blocked; revert. |
+| Council pointer equality | `Council == council` → `Council != council` | `TestDoCouncilTalk_SameCouncilReceives` | FAIL — same-council listener no longer receives; revert. |
+| Guild ClanType check | `ClanType != CLAN_GUILD` → `ClanType != CLAN_ORDER` | `TestDoGuildTalk_WrongClanTypeGetsHuh`, `TestDoGuildTalk_SameGuildReceives` | FAIL — CLAN_GUILD sender now rejected; CLAN_ORDER sender now accepted; revert. |
+| Newbie-council case insensitivity | `strings.EqualFold(...)` → `Name == "Newbie Council"` | `TestDoNewbieChat_CaseInsensitiveCouncilName` | FAIL — upper-case council listener no longer matches; revert. |
+
+### Acceptance criteria verdict
+
+- **A1-A9 (G0 helper):** PASS. Signature exact; all behavior assertions covered by 10 helper-level tests above. The wartalk/yell exception (A5) is preserved via the `&& channel != WARTALK && channel != YELL` guard; YELL is carried for future callers and regression-guarded via a dedicated test. Deliberate divergences (A9) are covered by absence-of-behavior in tests plus explicit code comments in the helper.
+- **A10-A15 (G1-G5 wrappers):** PASS. Each wrapper's NPC/gate/filter/boot-registration covered by the test quartet/quintet/sextet listed above.
+- **A16 (`go test -count=3` green):** PASS.
+- **A17 (no Tier-9 regression):** PASS. Tier-9 tests untouched and still green on all 3 iterations.
+- **A18 (no `DoTell`/`DoYell`/`DoShout`/`DoGossip` PLR_SILENCE regression):** PASS.
+
+### Deliberate divergences from C
+
+- **C `||` bug in deaf-sender wartalk exception** (`act_comm.c:511` conditional is `(channel != CHANNEL_WARTALK || channel != CHANNEL_YELL)` — always true). Go port uses the intent form `&&`. Documented in helper comment; pinned by two explicit tests (`DeafSenderWartalkException`, `DeafSenderYellException`) + a wrapper-level test (`TestDoWartalk_DeafSenderNotBlocked_WartalkException`).
+- **No `NOT_AUTHED`** gates anywhere — Go has no auth split. In `DoNewbieChat` the C disjunct `IS_IMMORTAL || NOT_AUTHED || newbie-council-member` collapses to `IS_IMMORTAL || newbie-council-member`.
+- **Verb `"war"` used for wartalk** (matches C `do_wartalk:4619`). Self-echo reads `"You war 'strat'"` and broadcast reads `"Warlord wars 'strat'"` — awkward English, exact C fidelity.
+- **No per-`AT_` color** — uses inline `&Y/&G/&D` like Tier 9. Uniform pass queued.
+- **No `PLR_WIZINVIS` preamble, no `ROOM_LOGSPEECH` append, no `is_ignoring` filter, no `AFLAG_SILENCE`, no wait-state** — none are honored by any existing Go channel command; matched uniform behavior; uniform follow-ups all queued in TODO.md.
+- **Stock data**: `db/councils/council.lst` is empty in stock SMAUG, so `newbiechat` is immortal-only by default in both C and Go with the same data configuration. Servers that explicitly create a council named "Newbie Council" (case-insensitive) unlock it for mortals. `TestDoNewbieChat_MortalNewbieCouncilReceives` constructs the council in-process to exercise the mortal branch.
+- **`vch == ch` self-guard is belt-and-suspenders** for counciltalk/guildtalk — the filter closes over `ch.PCData.Council` / `ch.PCData.Clan` so the sender would match the filter and risk a double-echo without the guard. Covered by `TestTalkChannel_SelfEchoNotBroadcastToSelf`.
+
+### Files touched
+
+- Modified: `internal/act/channels.go` (+1 helper + 6 wrappers + 1 private helper `isNewbieChannelMember`, +~200 LOC).
+- Modified: `internal/act/channels_test.go` (+~700 LOC, +37 tests, +1 test helper `makeMortalPCInRoom`).
+- Modified: `internal/boot/boot.go` (+6 command registrations after the Tier-9 block).
+- Modified: `CHANGELOG.md` (new entry at top of 2026-04-18 section).
+- Modified: `CLAUDE.md` (Phase 6 plans table — channels-extra row flipped to LANDED).
+- Modified: `TODO.md` (check-marked the Tier-9 deferral plus the Phase 6 candidate; queued 6 uniform follow-ups for the scope cuts).
+- Modified: `smaug-go/doc/plan-phase6-channels-extra.md` (this completion record appended).
+
+### Verdict
+
+**LANDED.** All 18 acceptance criteria met. All 7 mutation gates verified via `Edit` round-trips — no `git checkout`, no `git restore`, no `git stash`. Factor-vs-open-code decision validated: helper collapsed ~240 LOC of would-be-duplicated wrapper code to ~80 LOC helper + ~15 LOC per wrapper as predicted.

@@ -145,6 +145,201 @@ func DoGtell(ch *types.CharData, argument string) {
 	}
 }
 
+// talkChannel is the shared skeleton for public/clan-family channels — the
+// six Phase-6 "extra channels" (music, racetalk, wartalk, counciltalk,
+// guildtalk, newbiechat). Callers pass the channel bit, a canonical verb
+// (e.g. "music", "racetalk"), and a recipient-filter predicate that decides
+// whether each receiver's vch receives the broadcast. The helper owns:
+// empty-arg rejection, PLR_SILENCE sender gate, deaf-sender block (with
+// wartalk/yell exception), ROOM_SILENCE, self-echo, and the broadcast walk.
+// Per-wrapper pre-gates (is-in-council, is-in-guild-clan, etc.) run in the
+// wrapper before this helper is called.
+//
+// The deaf-auto-clear at C act_comm.c:514 is unreachable after the :511
+// return and is NOT ported here (matching C semantics and DoImmtalk).
+//
+// AT_ color fidelity is deferred — uses inline &Y/&G/&D per Tier 9
+// convention.
+//
+// Wait-state, PLR_WIZINVIS preamble, ROOM_LOGSPEECH append, AFLAG_SILENCE,
+// and is_ignoring filter are NOT applied here — they are not honored by any
+// current Go channel command; see TODO.md for the uniform follow-up.
+//
+// C reference: act_comm.c:392-858 (`talk_channel`).
+func talkChannel(
+	ch *types.CharData,
+	argument string,
+	channel int,
+	verb string,
+	recipientFilter func(vch *types.CharData) bool,
+) {
+	if argument == "" {
+		// capitalize first rune — guard against empty verb.
+		var cap string
+		if verb == "" {
+			cap = ""
+		} else {
+			cap = strings.ToUpper(verb[:1]) + verb[1:]
+		}
+		ch.Sendf("%s what?\n\r", cap)
+		return
+	}
+	// PLR_SILENCE sender gate (C act_comm.c:500-504).
+	if !ch.IsNPC() && ch.Act.IsSet(types.PLR_SILENCE) {
+		ch.Sendf("You can't %s.\n\r", verb)
+		return
+	}
+	// Deaf-sender block (C act_comm.c:505-513). The C source uses `||` which
+	// always evaluates true and is a typo for `&&` — we port the intent form:
+	// wartalk and yell senders are never blocked by their own deaf bit on
+	// this channel. The deaf bit is NOT auto-cleared — the C xREMOVE_BIT at
+	// :514 is unreachable when the :511 return fires.
+	if ch.Deaf.IsSet(channel) &&
+		channel != types.CHANNEL_WARTALK && channel != types.CHANNEL_YELL {
+		ch.Sendf("You don't have the %s channel turned on. To turn it on, use the Channels command.\n\r", verb)
+		return
+	}
+	// ROOM_SILENCE on sender's room (C act_comm.c:471-476).
+	if ch.InRoom != nil && ch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) {
+		ch.Send("You can't do that here.\n\r")
+		return
+	}
+
+	// Self-echo.
+	ch.Sendf("&YYou %s '&G%s&Y'&D\n\r", verb, argument)
+
+	// Broadcast walk (C act_comm.c:671-848).
+	for _, d := range WorldRef.Descriptors {
+		if d == nil || d.Connected != types.CON_PLAYING || d.Character == nil {
+			continue
+		}
+		vch := d.Character
+		if vch == ch {
+			continue
+		}
+		if vch.Deaf.IsSet(channel) {
+			continue
+		}
+		if vch.InRoom != nil && vch.InRoom.RoomFlags.IsSet(types.ROOM_SILENCE) {
+			continue
+		}
+		if recipientFilter != nil && !recipientFilter(vch) {
+			continue
+		}
+		heard := translateFor(ch, vch, argument)
+		vch.Sendf("&Y%s %ss '&G%s&Y'&D\n\r", ch.Name, verb, heard)
+	}
+}
+
+// DoMusic — public leisure channel. C: `do_music` (act_comm.c:1012-1021).
+// NOT_AUTHED branch from C is dropped (Go has no auth split).
+func DoMusic(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		ch.Send("Huh?\n\r")
+		return
+	}
+	talkChannel(ch, argument, types.CHANNEL_MUSIC, "music", nil)
+}
+
+// DoRacetalk — players of the same race. C: `do_racetalk`
+// (act_comm.c:4624-4632).
+func DoRacetalk(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		ch.Send("Huh?\n\r")
+		return
+	}
+	filter := func(vch *types.CharData) bool {
+		return vch.Race == ch.Race
+	}
+	talkChannel(ch, argument, types.CHANNEL_RACETALK, "racetalk", filter)
+}
+
+// DoWartalk — pkill-only strategy channel. C: `do_wartalk`
+// (act_comm.c:4612-4621). Verb is "war" matching C; produces "You war '...'"
+// and "X wars '...'" — that's how C reads too.
+func DoWartalk(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		ch.Send("Huh?\n\r")
+		return
+	}
+	// Pkill-only sender gate (C act_comm.c:432-436).
+	if ch.PCData == nil || uint32(ch.PCData.Flags)&types.PCFLAG_DEADLY == 0 {
+		ch.Send("Peacefuls have no need to use wartalk.\n\r")
+		return
+	}
+	filter := func(vch *types.CharData) bool {
+		return vch.PCData != nil && uint32(vch.PCData.Flags)&types.PCFLAG_DEADLY != 0
+	}
+	talkChannel(ch, argument, types.CHANNEL_WARTALK, "war", filter)
+}
+
+// DoCouncilTalk — shared-council chat. C: `do_counciltalk`
+// (act_comm.c:975-990). Pointer-identity on PCData.Council.
+func DoCouncilTalk(ch *types.CharData, argument string) {
+	if ch.IsNPC() || ch.PCData == nil || ch.PCData.Council == nil {
+		ch.Send("Huh?\n\r")
+		return
+	}
+	council := ch.PCData.Council
+	filter := func(vch *types.CharData) bool {
+		return vch.PCData != nil && vch.PCData.Council == council
+	}
+	talkChannel(ch, argument, types.CHANNEL_COUNCIL, "counciltalk", filter)
+}
+
+// DoGuildTalk — shared-guild-clan chat. C: `do_guildtalk`
+// (act_comm.c:993-1009). ClanType must be CLAN_GUILD (not CLAN_ORDER).
+func DoGuildTalk(ch *types.CharData, argument string) {
+	if ch.IsNPC() || ch.PCData == nil ||
+		ch.PCData.Clan == nil ||
+		ch.PCData.Clan.ClanType != types.CLAN_GUILD {
+		ch.Send("Huh?\n\r")
+		return
+	}
+	clan := ch.PCData.Clan
+	filter := func(vch *types.CharData) bool {
+		return vch.PCData != nil && vch.PCData.Clan == clan
+	}
+	talkChannel(ch, argument, types.CHANNEL_GUILD, "guildtalk", filter)
+}
+
+// isNewbieChannelMember matches C's newbiechat sender/receiver predicate
+// (act_comm.c:937-944 sender; :717-721 receiver): immortal OR member of a
+// council literally named "Newbie Council" (case-insensitive match).
+// C's NOT_AUTHED branch collapses into the immortal disjunct since Go has
+// no unauthed state.
+//
+// Note: stock SMAUG data ships an empty `db/councils/council.lst`, so the
+// mortal branch only triggers on servers that explicitly create a "Newbie
+// Council". Matches C semantics exactly for the same data configuration.
+func isNewbieChannelMember(ch *types.CharData) bool {
+	if ch.IsImmortal() {
+		return true
+	}
+	if ch.PCData != nil && ch.PCData.Council != nil &&
+		strings.EqualFold(ch.PCData.Council.Name, "Newbie Council") {
+		return true
+	}
+	return false
+}
+
+// DoNewbieChat — chat for newbies plus immortals. C: `do_newbiechat`
+// (act_comm.c:935-947). Receiver filter: immortal or Newbie-Council member.
+func DoNewbieChat(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		ch.Send("Huh?\n\r")
+		return
+	}
+	if !isNewbieChannelMember(ch) {
+		ch.Send("Huh?\n\r")
+		return
+	}
+	filter := func(vch *types.CharData) bool {
+		return isNewbieChannelMember(vch)
+	}
+	talkChannel(ch, argument, types.CHANNEL_NEWBIE, "newbiechat", filter)
+}
+
 // channelEntryLine emits " &G+NAME" when the deaf bit is CLEARED (channel
 // ENABLED) or " &g-name" when the bit is SET. Mirrors the C
 // `!xIS_SET(ch->deaf, BIT) ? " &G+NAME" : " &g-name"` pattern used throughout
