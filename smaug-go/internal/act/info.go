@@ -55,6 +55,17 @@ func DoLook(ch *types.CharData, argument string) {
 		return
 	}
 
+	// `look sky` branch — ports src/act_info.c:1489-1501.
+	// Must be checked before the generic keyword-match loop below.
+	if strings.EqualFold(argument, "sky") {
+		if room.RoomFlags.IsSet(types.ROOM_INDOORS) || room.SectorType == types.SECT_INSIDE {
+			ch.Send("You can't see the sky indoors.\n\r")
+			return
+		}
+		LookSky(ch)
+		return
+	}
+
 	// Look at something specific
 	arg, _ := util.OneArgument(argument)
 
