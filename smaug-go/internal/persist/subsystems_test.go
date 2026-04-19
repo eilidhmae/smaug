@@ -1,11 +1,13 @@
 package persist
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
 
@@ -457,11 +459,14 @@ End
 	if clan.Badge != "[FC]" {
 		t.Errorf("Badge = %q", clan.Badge)
 	}
-	if clan.PKills[0] != 10 {
-		t.Errorf("PKills = %d", clan.PKills[0])
+	// C fread_clan:434-435 stores legacy single-int PKills/PDeaths into
+	// index [6] (the cumulative slot), not [0]. Pre-existing Go bug fixed
+	// 2026-04-19 in G0 of plan-phase6-clan-officer.md.
+	if clan.PKills[6] != 10 {
+		t.Errorf("PKills[6] = %d, want 10", clan.PKills[6])
 	}
-	if clan.PDeaths[0] != 3 {
-		t.Errorf("PDeaths = %d", clan.PDeaths[0])
+	if clan.PDeaths[6] != 3 {
+		t.Errorf("PDeaths[6] = %d, want 3", clan.PDeaths[6])
 	}
 	if clan.IllegalPK != 1 {
 		t.Errorf("IllegalPK = %d", clan.IllegalPK)
@@ -492,6 +497,342 @@ End
 	}
 	if clan.Guard2 != 6002 {
 		t.Errorf("Guard2 = %d", clan.Guard2)
+	}
+}
+
+// --------------- SaveClan + round-trip (G0) ---------------
+
+// TestLoadClan_LegacyPKillsIndex6 pins the C fread_clan:434-435 semantics:
+// the legacy single-int "PKills N" / "PDeaths N" form stores into index [6]
+// (the cumulative "total" slot), not [0]. Pre-existing bug fixed 2026-04-19.
+func TestLoadClan_LegacyPKillsIndex6(t *testing.T) {
+	input := `#CLAN
+Name Legacy~
+Filename legacy.clan~
+PKills 42
+PDeaths 7
+End
+`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "legacy.clan")
+	if err := os.WriteFile(path, []byte(input), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	clan, err := loadClan(path)
+	if err != nil {
+		t.Fatalf("loadClan: %v", err)
+	}
+	if clan.PKills[6] != 42 {
+		t.Errorf("PKills[6] = %d, want 42 (C fread_clan:435 legacy slot)", clan.PKills[6])
+	}
+	if clan.PKills[0] != 0 {
+		t.Errorf("PKills[0] = %d, want 0 (legacy PKills must not target index 0)", clan.PKills[0])
+	}
+	if clan.PDeaths[6] != 7 {
+		t.Errorf("PDeaths[6] = %d, want 7", clan.PDeaths[6])
+	}
+	if clan.PDeaths[0] != 0 {
+		t.Errorf("PDeaths[0] = %d, want 0", clan.PDeaths[0])
+	}
+}
+
+// TestLoadClan_PKillRangeNew_SevenInts exercises the active 7-int block form
+// (C fread_clan:459-469).
+func TestLoadClan_PKillRangeNew_SevenInts(t *testing.T) {
+	input := `#CLAN
+Name Range~
+Filename range.clan~
+PKillRangeNew 1 2 3 4 5 6 7
+PDeathRangeNew 10 20 30 40 50 60 70
+End
+`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "range.clan")
+	if err := os.WriteFile(path, []byte(input), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	clan, err := loadClan(path)
+	if err != nil {
+		t.Fatalf("loadClan: %v", err)
+	}
+	want := [7]int{1, 2, 3, 4, 5, 6, 7}
+	if clan.PKills != want {
+		t.Errorf("PKills = %v, want %v", clan.PKills, want)
+	}
+	wantD := [7]int{10, 20, 30, 40, 50, 60, 70}
+	if clan.PDeaths != wantD {
+		t.Errorf("PDeaths = %v, want %v", clan.PDeaths, wantD)
+	}
+}
+
+// TestLoadClan_PKillRangeLegacy_Discarded verifies the legacy 7-int form
+// consumes seven numbers but doesn't store them (C fread_clan:437-447, 470-479).
+func TestLoadClan_PKillRangeLegacy_Discarded(t *testing.T) {
+	input := `#CLAN
+Name Legacy7~
+Filename legacy7.clan~
+PKillRange 100 200 300 400 500 600 700
+PDeathRange 11 22 33 44 55 66 77
+Score 99
+End
+`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "legacy7.clan")
+	if err := os.WriteFile(path, []byte(input), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	clan, err := loadClan(path)
+	if err != nil {
+		t.Fatalf("loadClan: %v", err)
+	}
+	var zero [7]int
+	if clan.PKills != zero {
+		t.Errorf("PKills = %v, want zeroed (legacy form discards)", clan.PKills)
+	}
+	if clan.PDeaths != zero {
+		t.Errorf("PDeaths = %v, want zeroed (legacy form discards)", clan.PDeaths)
+	}
+	// Next key (Score) must still parse — proves the seven ReadNumber
+	// calls consumed exactly seven ints and did not leak into the next key.
+	if clan.Score != 99 {
+		t.Errorf("Score = %d, want 99 (legacy PKillRange should consume 7 ints exactly)", clan.Score)
+	}
+}
+
+// TestLoadClan_AllExtendedKeys exercises every key added in G0.
+func TestLoadClan_AllExtendedKeys(t *testing.T) {
+	input := `#CLAN
+Name Extended~
+Abbrev Ext~
+Filename extended.clan~
+Leadrank Grand Master~
+Onerank Captain~
+Tworank Lieutenant~
+MemLimit 25
+ClanObjFour 7004
+ClanObjFive 7005
+End
+`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "extended.clan")
+	if err := os.WriteFile(path, []byte(input), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	clan, err := loadClan(path)
+	if err != nil {
+		t.Fatalf("loadClan: %v", err)
+	}
+	if clan.Abbrev != "Ext" {
+		t.Errorf("Abbrev = %q, want %q", clan.Abbrev, "Ext")
+	}
+	if clan.LeadRank != "Grand Master" {
+		t.Errorf("LeadRank = %q", clan.LeadRank)
+	}
+	if clan.OneRank != "Captain" {
+		t.Errorf("OneRank = %q", clan.OneRank)
+	}
+	if clan.TwoRank != "Lieutenant" {
+		t.Errorf("TwoRank = %q", clan.TwoRank)
+	}
+	if clan.MemLimit != 25 {
+		t.Errorf("MemLimit = %d, want 25", clan.MemLimit)
+	}
+	if clan.ClanObj4 != 7004 {
+		t.Errorf("ClanObj4 = %d, want 7004", clan.ClanObj4)
+	}
+	if clan.ClanObj5 != 7005 {
+		t.Errorf("ClanObj5 = %d, want 7005", clan.ClanObj5)
+	}
+}
+
+// TestSaveLoadClan_RoundTrip pins that every field in ClanData survives a
+// SaveClan → readClan cycle with byte-identical values.
+func TestSaveLoadClan_RoundTrip(t *testing.T) {
+	orig := &types.ClanData{
+		Filename:    "test.clan",
+		Name:        "Test Clan",
+		Abbrev:      "TC",
+		Motto:       "Unity.",
+		Description: "A fine clan.",
+		Deity:       "Mota",
+		Leader:      "Alice",
+		Number1:     "Bob",
+		Number2:     "Carol",
+		Badge:       "[TC]",
+		LeadRank:    "Leader Rank",
+		OneRank:     "One Rank",
+		TwoRank:     "Two Rank",
+		PKills:      [7]int{1, 2, 3, 4, 5, 6, 7},
+		PDeaths:     [7]int{8, 9, 10, 11, 12, 13, 14},
+		MKills:      100,
+		MDeaths:     15,
+		IllegalPK:   2,
+		Score:       250,
+		ClanType:    1,
+		Class:       3,
+		Favour:      77,
+		Strikes:     1,
+		Members:     42,
+		MemLimit:    50,
+		Alignment:   1000,
+		Board:       10010,
+		ClanObj1:    5001,
+		ClanObj2:    5002,
+		ClanObj3:    5003,
+		ClanObj4:    5004,
+		ClanObj5:    5005,
+		Recall:      21001,
+		Storeroom:   21002,
+		Guard1:      6001,
+		Guard2:      6002,
+	}
+
+	var buf bytes.Buffer
+	if err := SaveClan(&buf, orig); err != nil {
+		t.Fatalf("SaveClan: %v", err)
+	}
+
+	sc := NewScanner(bytes.NewReader(buf.Bytes()), "test.clan")
+	got, err := readClan(sc)
+	if err != nil {
+		t.Fatalf("readClan: %v", err)
+	}
+
+	if *got != *orig {
+		t.Errorf("round-trip mismatch.\n got=%+v\nwant=%+v", *got, *orig)
+	}
+}
+
+// TestSaveClan_NilRejected pins the nil-clan guard.
+func TestSaveClan_NilRejected(t *testing.T) {
+	var buf bytes.Buffer
+	if err := SaveClan(&buf, nil); err == nil {
+		t.Error("SaveClan(nil) should return error")
+	}
+}
+
+// TestSaveClan_SmashTildeOnStrings ensures player-typed tildes in clan
+// strings are neutralized before write.
+func TestSaveClan_SmashTildeOnStrings(t *testing.T) {
+	c := &types.ClanData{
+		Filename: "smash.clan",
+		Name:     "Tilde~Name",
+		Motto:    "Lots ~~ tildes",
+	}
+	var buf bytes.Buffer
+	if err := SaveClan(&buf, c); err != nil {
+		t.Fatalf("SaveClan: %v", err)
+	}
+	out := buf.String()
+	// Every ~ should be either the terminator at end-of-field or replaced with -.
+	// There should be exactly N field-terminating ~ chars = 13 string fields.
+	tildeCount := strings.Count(out, "~")
+	wantTildes := 13 // 13 string fields each end with a single ~
+	if tildeCount != wantTildes {
+		t.Errorf("tilde count = %d, want %d (SmashTilde should neutralize embedded tildes)", tildeCount, wantTildes)
+	}
+	if !strings.Contains(out, "Tilde-Name") {
+		t.Errorf("expected smashed Name 'Tilde-Name', got: %q", out)
+	}
+}
+
+// TestSaveClan_FormatMatchesGolden pins the byte-for-byte C-parity output
+// (src/clans.c:206-250). A representative clan is serialized and compared
+// against the expected string.
+func TestSaveClan_FormatMatchesGolden(t *testing.T) {
+	c := &types.ClanData{
+		Name:     "Golden",
+		Abbrev:   "GD",
+		Filename: "golden.clan",
+		Motto:    "For Glory",
+		Leader:   "Leader",
+		PKills:   [7]int{0, 0, 0, 0, 0, 0, 5},
+		PDeaths:  [7]int{0, 0, 0, 0, 0, 0, 2},
+		ClanType: 0,
+		Class:    0,
+		Members:  10,
+		MemLimit: 50,
+	}
+	var buf bytes.Buffer
+	if err := SaveClan(&buf, c); err != nil {
+		t.Fatalf("SaveClan: %v", err)
+	}
+	want := "#CLAN\n" +
+		"Name         Golden~\n" +
+		"Abbrev       GD~\n" +
+		"Filename     golden.clan~\n" +
+		"Motto        For Glory~\n" +
+		"Description  ~\n" +
+		"Deity        ~\n" +
+		"Leader       Leader~\n" +
+		"NumberOne    ~\n" +
+		"NumberTwo    ~\n" +
+		"Badge        ~\n" +
+		"Leadrank     ~\n" +
+		"Onerank      ~\n" +
+		"Tworank      ~\n" +
+		"PKillRangeNew   0 0 0 0 0 0 5\n" +
+		"PDeathRangeNew  0 0 0 0 0 0 2\n" +
+		"MKills       0\n" +
+		"MDeaths      0\n" +
+		"IllegalPK    0\n" +
+		"Score        0\n" +
+		"Type         0\n" +
+		"Class        0\n" +
+		"Favour       0\n" +
+		"Strikes      0\n" +
+		"Members      10\n" +
+		"MemLimit     50\n" +
+		"Alignment    0\n" +
+		"Board        0\n" +
+		"ClanObjOne   0\n" +
+		"ClanObjTwo   0\n" +
+		"ClanObjThree 0\n" +
+		"ClanObjFour  0\n" +
+		"ClanObjFive  0\n" +
+		"Recall       0\n" +
+		"Storeroom    0\n" +
+		"GuardOne     0\n" +
+		"GuardTwo     0\n" +
+		"End\n\n" +
+		"#END\n"
+	if buf.String() != want {
+		t.Errorf("SaveClan output mismatch.\n got=%q\nwant=%q", buf.String(), want)
+	}
+}
+
+// TestSaveClanFile_WritesToPath exercises the file-creation path.
+func TestSaveClanFile_WritesToPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	c := &types.ClanData{
+		Filename: "written.clan",
+		Name:     "Written Clan",
+		Members:  3,
+	}
+	if err := SaveClanFile(tmpDir, c); err != nil {
+		t.Fatalf("SaveClanFile: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(tmpDir, "written.clan"))
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(data), "Name         Written Clan~") {
+		t.Errorf("written file missing Name line: %s", data)
+	}
+}
+
+// TestSaveClanFile_EmptyFilenameRejected pins the C src/clans.c:189-194
+// empty-filename guard.
+func TestSaveClanFile_EmptyFilenameRejected(t *testing.T) {
+	if err := SaveClanFile(t.TempDir(), &types.ClanData{Name: "No Filename"}); err == nil {
+		t.Error("SaveClanFile with empty filename should return error")
+	}
+}
+
+// TestSaveClanFile_NilRejected pins the nil-clan guard.
+func TestSaveClanFile_NilRejected(t *testing.T) {
+	if err := SaveClanFile(t.TempDir(), nil); err == nil {
+		t.Error("SaveClanFile(nil) should return error")
 	}
 }
 

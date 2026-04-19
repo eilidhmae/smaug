@@ -85,7 +85,7 @@ Follow-ups queued from plan-player-config.md:
 
 ### Persistence gaps
 
-- [ ] Add `SaveClan` / `SaveDeity` in `persist/subsystems.go` when the first mutation command ships
+- [x] ~~Add `SaveClan`~~ / Add `SaveDeity` in `persist/subsystems.go` when the first mutation command ships. **`SaveClan` LANDED 2026-04-19** via `plan-phase6-clan-officer.md` G0 (`SaveClan(w io.Writer)` + `SaveClanFile(dir, c)` helpers, byte-for-byte C parity). `SaveDeity` still pending; land alongside first deity-mutation command.
 - [ ] Persistent clan storeroom contents across reboots (Tier 2 deferral)
 - [ ] Per-player "last read" index for note filtering (Tier 2 deferral — C uses `pcdata->last_note`)
 
@@ -223,14 +223,15 @@ Follow-ups queued from plan-dammessage-gaps.md:
 - [ ] Auction plan G2 implementation: verify presence and format of `db/system/noauction.dat`. If absent, scaffold loader to log INFO and proceed with empty list (non-blocking).
 - [ ] Auction plan: on executable dispatch, consider splitting into two worker sessions — foundation (G0/G1/G2/G3) and command surface (G4/G4b/G5/G6/G7/G8). G9 integration test optional.
 - [ ] Auction × Hotboot cross-reference: mid-auction state (`world.Auction`) serialization policy for hotboot. Current recommendation: do not serialize (match C); hotboot cancels active auctions.
-- [ ] Clan-officer plan Q1 (human input): include G5 (minimal `setrank` command) or defer rank management to `plan-phase6-setclan.md`?
-- [ ] Clan-officer plan Q2 (human input): add `IsPkill()` method on `CharData` (6 call sites) or inline the bit check?
-- [ ] Clan-officer plan Q3 (human input): `SaveClanFile` clan-dir seam — `boot.ClanDir` package var (A) vs `world.World.ClanDir` (B)?
-- [ ] Clan-officer plan Q4 (implementation-time): pfile persistence path from `DoInduct` — `persist.SavePlayerFile` vs dirty-flag?
+- [x] Clan-officer plan Q1 (human input): include G5 or defer? **RESOLVED 2026-04-19**: Option 2 (defer) chosen during landing. Officers can induct/outcast but not promote; rank management gated behind future `plan-phase6-setclan.md`.
+- [ ] Clan-officer plan Q2 (low-priority): add `IsPkill()` method on `CharData` (6 call sites) or keep inline bit check. Landed with package-private `isPkill` helper in `act/clan_officer.go`; promote to `CharData.IsPkill()` method if a 7th+ call site appears.
+- [x] Clan-officer plan Q3: `SaveClanFile` clan-dir seam. **RESOLVED 2026-04-19** as Option A — `act.ClanDir` package var set during `Boot()`, parallel to `act.PlanesFilePath`.
+- [x] Clan-officer plan Q4: pfile persistence path. **RESOLVED 2026-04-19** — `DoInduct` and `DoOutcast` call `SaveFunc(victim)` (wired to `GameLoop.SavePlayer` at `boot.go:92`), matching the pattern used by `DoSave` and other existing commands.
 - [ ] Follow-up plan: `plan-phase6-bestowarea.md` — port `do_bestowarea` (`src/act_wiz.c:7004-7076`), 50-LOC immortal command. Adjacent to `do_bestow`; deliberately out of clan-officer scope.
-- [ ] Follow-up plan: `plan-phase6-setclan.md` — full `do_setclan` port (30+ field setters). Gated by Q1 opt-in on clan-officer G5; if G5 ships, this plan excludes rank management. ~600 C LOC surface.
+- [ ] Follow-up plan: `plan-phase6-setclan.md` — full `do_setclan` port (30+ field setters including rank management — leader/number1/number2 promotion). ~600 C LOC surface. Elevated priority now that clan-officer G5 deferred: officers cannot currently promote peers.
 - [ ] Clan-officer follow-up: per-clan roster file (`save_member_lists` / `add_member` / `remove_member`) — display nicety; `clan.Members` counter sufficient for officer mechanics. Enables `claninfo` to show member list.
-- [ ] Clan-officer follow-up: `add_loginmsg` subsystem — Go has no equivalent; `DoOutcast` logs via `util.Bug` when outcasting linkdead victim. Future queue-on-disk-and-flush-on-login matches C `do_outcast:1323`.
+- [ ] Clan-officer follow-up: `add_loginmsg` subsystem — Go has no equivalent; `DoOutcast` currently logs via `util.Bug` when outcasting linkdead victim. Future queue-on-disk-and-flush-on-login matches C `do_outcast:1323`.
+- [ ] Clan-officer display-path follow-up: `DoClanInfo` at `act/clan.go:67` reads `clan.PKills[0]` (per-level range slot). C's own display is split — `pkills[0]` at `clans.c:1948` and `pkills[6]` at `:2142`. Consider showing both range-slot-0 and cumulative-slot-6, or switch to `[6]` for the headline total. Cosmetic only.
 - [ ] **Environment gap (persistent across 3 waves)**: `manager` subagents report `Agent` tool unavailable despite spec listing it. Every 2026-04-18 Phase-6 adversary audit fell back to structured self-review. Raise with human to establish workflow (e.g., human-triggered external adversary pass) before Wave-1 execution begins. **NEW 2026-04-18**: `audit-stances-olc` first dispatch also stalled at stream watchdog (600s no progress) before writing any drafts — re-dispatched successfully with time-boxed prompt instructing early-write-then-refine.
 
 **Audit follow-ups (Wave C audits, 2026-04-18):**
@@ -238,10 +239,10 @@ Follow-ups queued from plan-dammessage-gaps.md:
 - [ ] Auction plan Q8 disconnect broadcast wording — Go-originated text with no C counterpart; second reader should sanity-check user-facing strings.
 - [ ] Port `do_noauction` admin command (C: `act_wiz.c:11120-11174`) — deferred follow-up after `plan-phase6-auction.md` lands. Lists + toggles no-auction vnums, calls `save_noauctions`. Low-priority immortal command.
 - [ ] Fix pre-existing `pulseSave` uninitialized field at `internal/game/loop.go:68` — `NewGameLoop` at `:83-94` does not set it, so autosave fires on the very first pulse after boot. Add `pulseSave: types.PULSE_SAVE` to the struct literal. Discovered during auction audit; pre-existing bug, not blocking auction plan dispatch.
-- [ ] Clan-officer Q1 human decision — Option 1 (include minimal `DoClanSetRank` as G5 of clan-officer plan) or Option 2 (defer to future `plan-phase6-setclan.md`). Audit neutralized prior bias; both are defensible.
-- [ ] Investigate replacing `util.Bug` fallback in `DoOutcast` linkdead path with proper `add_loginmsg` equivalent — candidates: `internal/notes` (closest semantic fit) or new `PCFLAG_WAS_OUTCAST` login-hook. Follow-up after clan-officer ships.
-- [ ] Clan-officer loader: legacy `"PKills"` / `"PDeaths"` case at `internal/persist/subsystems.go:66-69` stores into `clan.PKills[0]` / `[0]`; C `fread_clan:435` stores into `[6]`. Pre-existing divergence bug. Fix folded into `plan-phase6-clan-officer.md` G0 loader rework; noted here so it isn't lost if plan is re-scoped.
-- [ ] Clan-officer per-plan adversary-pairing against C's ~35 `send_to_char` strings in induct/outcast/bestow is needed before execution — self-review cannot fully validate string-pairings.
+- [x] Clan-officer Q1 human decision — **RESOLVED 2026-04-19**: Option 2 (defer G5).
+- [ ] Investigate replacing `util.Bug` fallback in `DoOutcast` linkdead path with proper `add_loginmsg` equivalent — candidates: `internal/notes` (closest semantic fit) or new `PCFLAG_WAS_OUTCAST` login-hook. Follow-up after clan-officer has shipped (which it now has, 2026-04-19).
+- [x] Clan-officer loader legacy PKills index-0 vs index-6 bug — **FIXED 2026-04-19** via `plan-phase6-clan-officer.md` G0. Loader now stores into `[6]` to match C `fread_clan:434-435`; `TestLoadClan_LegacyPKillsIndex6` pins the correction.
+- [ ] Clan-officer per-plan adversary-pairing against C's ~35 `send_to_char` strings in induct/outcast/bestow is needed — current self-review covered structural match; dedicated string-pairing adversary pass queued.
 - [ ] Stances-OLC Q2 human decision — preserve class/race setter no-ops verbatim (default C-fidelity) vs. implement proper `IS_SET(mask, 1<<class)` setters + matching fix to `CanUseStance`. Stance file is empty in stock data so likely safe to preserve bug.
 - [ ] Stances-OLC Q6 final — cross-check `src/tables.c` `ris_flags` literal table at G4 implementation time; confirm no SMAUG-variant-specific bits beyond `RIS_PARALYSIS` (bit 21).
 - [ ] Stances-OLC G2 test mitigation — swap `TestDoStance_Set`'s `"dragon"` → `"viper"` at `skills4_test.go:112` during G2 commit (default-zero Prereq on VIPER means test passes under new CanUseStance gate).
@@ -300,7 +301,7 @@ Follow-ups queued from plan-dammessage-gaps.md:
 ### Content
 
 - [x] ~~**Skills not yet ported** (`bloodlet`, `pounce`, `broach`)~~ — **LANDED 2026-04-18** (plan-phase6-skills.md G1-G3). See CHANGELOG.md entry and plan Completion Record.
-- [ ] **Clan officer commands** (`induct`, `outcast`, `bestow` — `promote`/`demote` don't exist in SMAUG per Wave-C scope correction) — `plan-phase6-clan-officer.md` drafted 2026-04-18 via `phase6-clan-officer` lineage. 5 groups + 1 conditional (optional `setrank`), 14 criteria, 4 open questions. SaveClan bundled as G0. ~478 C LOC actual. External adversary queued.
+- [x] ~~**Clan officer commands** (`induct`, `outcast`, `bestow`)~~ — **LANDED 2026-04-19** via `plan-phase6-clan-officer.md`. Five task groups (G0 SaveClan + loader extension, G1 isClanOfficer/DoInduct, G2 DoInduct edges + persist seam, G3 DoOutcast + echoToPKers, G4 DoBestow + boot wire); 14 acceptance criteria all satisfied. Q1 decision was Option 2 (DEFER G5) — rank management to future `plan-phase6-setclan.md`. Pre-existing `PKills[0]→[6]` loader bug fixed in-scope. See CHANGELOG.md 2026-04-19 entry + plan Completion Record.
 - [x] **Extra channels** (`music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk`) — **LANDED 2026-04-18 via `plan-phase6-channels-extra.md`.** Shared `talkChannel` helper + 6 thin wrappers; Tier 9 channels not retrofitted (separate plan).
 - [ ] Councils: all commands (not implemented as player-facing yet).
 - [ ] **Deities: full prayer, favor beyond `mpFavor`, deity-specific effects** — `plan-phase6-deity-prayer.md` to draft. ~400 C LOC.

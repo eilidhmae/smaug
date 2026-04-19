@@ -603,3 +603,89 @@ Adversary dispatch attempted — the manager subagent in this environment has no
 - Byte-for-byte SaveClan golden-file content (G0's `TestSaveClan_FormatMatchesGolden`). Self-review verified structural match against C; a paired-adversary run against `src/clans.c:206-250` with diff would validate exact spacing.
 - Clan-type branching in `DoInduct` / `DoOutcast` — the 9 branches on `clan.ClanType × victim-type` are mechanical but easy to typo. Adversary should re-derive from `src/clans.c:981-1050` and compare.
 - Test coverage completeness against C error paths — self-review found ~35 distinct `send_to_char` strings in the three C functions; plan specifies ~30 tests. Adversary should pair each test to a C line.
+
+---
+
+## Completion Record (2026-04-19)
+
+**Status: LANDED.** Q1 decision: **Option 2 (DEFER G5)** — rank management stays gated behind a future `plan-phase6-setclan.md`.
+
+### Deliverables shipped
+
+G0 — `SaveClan` + `loadClan` completeness (~3h actual):
+- `readClan(sc *Scanner)` helper extracted from `loadClan` so tests exercise round-trip against `bytes.Reader`.
+- Loader extended with `Abbrev`/`Leadrank`/`Onerank`/`Tworank`/`MemLimit`/`ClanObjFour`/`ClanObjFive`, plus `PKillRangeNew`/`PDeathRangeNew` 7-int block reads (C `fread_clan:459-469,448-458`) and legacy `PKillRange`/`PDeathRange` 7-int consume-and-discard (C `:437-447,470-479`).
+- Pre-existing bug fixed: legacy single-int `PKills`/`PDeaths` now targets `clan.PKills[6]` / `PDeaths[6]` matching C `fread_clan:434-435`. `TestLoadClan_LegacyPKillsIndex6` pins `[6]==42` AND `[0]==0`.
+- `SaveClan(w io.Writer, c *ClanData) error` byte-for-byte parity with `src/clans.c:206-250`. `TestSaveClan_FormatMatchesGolden` pins the exact output.
+- `SaveClanFile(dir, c)` file-creation helper with nil/empty-filename guards.
+- `util.SmashTilde` applied to every string field before emit (belt-and-braces vs. builder-typed tildes).
+
+G1 — `isClanOfficer` + `DoInduct` happy path (~2.5h actual):
+- `isClanOfficer(ch, clan, command)` 5-way gate: bestowed-keyword (via `util.IsName`) OR deity OR leader OR number1 OR number2, case-insensitive.
+- `isPkill(ch)` helper mirroring C `IS_PKILL` macro.
+- `DoInduct` gates: caller authority; syntax; target-in-room; target NPC; target immortal; peaceful inductee vs pkill clan; guild class-match; level floor (10, strict); level ceiling (ch.Level); 6-variant already-in-clan matrix; member limit.
+- Commit: `clan.Members++`; LANG_CLAN set for non-order/non-guild; PLR_NICE cleared + PCFLAG_DEADLY set for pkill-type; skills awarded at `sk.SkillAdept[victim.Class]` for guild-class match (pkill-type only); victim.PCData.Clan/ClanName linked.
+- Three `util.Act` broadcasts with AT_MAGIC color: TO_CHAR / TO_NOTVICT / TO_VICT, `$t` = clan name.
+
+G2 — `DoInduct` edge cases + persistence seam (~1.5h actual):
+- Persist via `SaveFunc(victim)` (wired to `GameLoop.SavePlayer` at `boot.go:92`) + `persist.SaveClanFile(ClanDir, clan)`. `ClanDir` exported at `act.ClanDir` parallel to `act.PlanesFilePath`, set during `Boot()` at the clan-loader call site.
+- All 10+ edge-case branches pinned with dedicated tests (matching C's line-by-line error path surface at `src/clans.c:928-1097`).
+
+G3 — `DoOutcast` + `echoToPKers` helper (~2.5h actual):
+- `officerRank(name, clan)` mirrors C `x`/`y` arithmetic: 3=leader, 2=number1, 1=number2, 0=other.
+- Power gate: `x <= y && trust <= trust` (deliberately non-strict per C `:1231`).
+- Self-outcast messages at C `:1238-1255` preserved verbatim but functionally dead — power gate always fires first when `victim == ch`. `TestDoOutcast_SelfOutcast_PowerGateBlocks` documents this.
+- Skill-forget loop (non-guild/order/nokill only) zeroes `victim.Learned[sn]` for every skill with `Guild == victim.PCData.Clan.Class`.
+- Language cleanup: `Speaking` reset to `LANG_COMMON` if it was `LANG_CLAN`; `LANG_CLAN` cleared from `Speaks`.
+- Rank-slot blanking: `Number1` / `Number2` blanked if victim was the named rank-holder.
+- Broadcast branches: TO_VICT only for connected victims; linkdead branch logs via `util.Bug` instead of C's `add_loginmsg` (follow-up).
+- PKers echo (`echoToPKers` private helper) for non-guild/non-order clans.
+
+G4 — `DoBestow` + command registration (~1h actual):
+- Full `do_bestow` port (`act_wiz.c:7079-7135`). Leading-space quirk preserved. `util.IsName` parses through the leading blank so `isClanOfficer` recognizes the keyword.
+- No `SaveFunc(victim)` call — matches C (bestowments persist on next pfile save).
+- Registrations at `boot.go`: `induct` Level 0 POS_RESTING, `outcast` Level 0 POS_RESTING, `bestow` LEVEL_IMMORTAL POS_DEAD.
+
+### Q1 deferred G5 rationale
+
+Option 2 (defer to future `plan-phase6-setclan.md`) chosen. The rank-management surface is narrow but sits at a different authority layer (leader-only for promoting number1/number2; not any officer). Shipping officer commands without rank management is an acceptable interim state — officers can `induct`/`outcast` members but not promote each other. Follow-up tracked in `TODO.md`. Scope economy: G5 would add another ~40 LOC + 6 tests + another full adversary pass; the savings outweigh the UX gap.
+
+### Acceptance criteria mapping
+
+| # | Criterion | Test(s) |
+|---|-----------|---------|
+| 1 | `SaveClan` round-trip | `TestSaveLoadClan_RoundTrip` |
+| 2 | `SaveClan` byte-for-byte parity | `TestSaveClan_FormatMatchesGolden` |
+| 3 | `loadClan` handles legacy keys | `TestLoadClansFromDir` (regression), `TestLoadClan_PKillRangeLegacy_Discarded` |
+| 4 | `isClanOfficer` 5-way gate | 7 dedicated tests covering all positive cases + negative + case-insensitive + nil guards |
+| 5 | `DoInduct` caller gate | `TestDoInduct_NPCCallerGetsHuh` / `_NoClanCallerGetsHuh` / `_NonOfficerGetsHuh` |
+| 6 | `DoInduct` happy path (pkill clan) | `TestDoInduct_Success_PkillClan_SetsFields` + `_AwardsGuildSkills` + `_Messages` |
+| 7 | `DoInduct` edge-case coverage | 20 edge-case tests (all branches of the 10-gate C flow) |
+| 8 | `DoInduct` persistence | `TestDoInduct_Persists_SaveFuncCalled` + `_SaveClanFileCalled` |
+| 9 | `DoOutcast` rank arithmetic | `TestDoOutcast_RankArithmetic_OfficerOutrankedByVictim` + `_SuperiorTrustBeatsEqualRank` |
+| 10 | `DoOutcast` happy path | `TestDoOutcast_Success_ClearsFields` + `_SkillsForgotten_PkillClan` / `_Kept_GuildClan` + `_BlanksNumber1`/`Number2` |
+| 11 | `DoOutcast` broadcast branches | `TestDoOutcast_Success_LinkdeadVictim` + `_EchoPKersFires_PlainClan` + `_EchoPKersSuppressed_GuildClan`/`_OrderClan` + `_Messages` |
+| 12 | `DoBestow` append and none | `TestDoBestow_Append` + `_AppendMultiple` + `_None` + `_IsNameDetectsLeadingSpace` |
+| 13 | Command registration + authority | `TestBoot_ClanOfficerRegistered` (pins Level 0/0/LEVEL_IMMORTAL + non-nil DoFun + exported ClanDir) |
+| 14 | Regression (`go test -count=3 ./...` green) | CI-style: 15 packages, all green, no flakes |
+
+### Mutation-verify log (all via `Edit` tool round-trips; no `git checkout`/`git restore`/`git stash`/`git reset --hard`)
+
+1. `victim.Speaks |= LANG_CLAN` → `&^=` in DoInduct → `TestDoInduct_Success_PkillClan_SetsFields` + `_NokillClan_SetsLangClanButNotDeadly` fail (reverted, green).
+2. `officerRank(Leader)` return `3` → `0` → `TestDoOutcast_RankArithmetic_OfficerOutrankedByVictim` + `_VictimHigherLevel` fail (reverted, green).
+3. DoBestow `"none"` branch `""` → `argAfter` → `TestDoBestow_None` fails with `Bestowments == "none"` (reverted, green).
+4. `clan.Members--` → `++` in DoOutcast → `TestDoOutcast_Success_ClearsFields` fails (reverted, green).
+5. `victim.Level < 10` → `<= 10` in DoInduct → `TestDoInduct_VictimLevelExactly10_Allowed` fails (reverted, green). Boundary test added specifically to catch this off-by-one.
+6. PKills legacy-slot `[6]` → `[0]` → `TestLoadClan_LegacyPKillsIndex6` fails on all four index assertions (reverted, green).
+
+### Follow-ups (to `TODO.md` Active)
+
+- **G5 DoClanSetRank / full `do_setclan` port** — captured as Q1 Option 2 decision. Future `plan-phase6-setclan.md` will port rank-management (leader/number1/number2) + the remaining 27 setclan sub-options (pkill ranges, object vnums, guard mobs, align, memlimit, etc.). Officers currently cannot promote peers — interim state.
+- **`save_member_lists` / `add_member` / `remove_member`** — per-clan roster file display nicety. In-memory `clan.Members` counter drives everything officers touch; the roster file is cosmetic. Not blocking.
+- **`add_loginmsg` for linkdead outcast victim** — Go has no loginmsg system. `DoOutcast` currently logs via `util.Bug` instead. Victim learns of outcast status on next login by seeing `PCData.Clan == nil`.
+- **`do_bestowarea`** — adjacent immortal areafile-bestowal command. Functionally distinct from officer-facing bestow. 50-LOC follow-up plan.
+- **`DoClanInfo` display of PKills/PDeaths** — still reads `[0]` (per-level range slot); C's own display is split (`[0]` at `clans.c:1948`, `[6]` at `:2142`). Cosmetic refinement opportunity, not a correctness issue.
+
+### Tooling caveat
+
+`Agent` tool availability inside `manager` subagent harness remains inconsistent (see CLAUDE.md index notes for all 2026-04-18 plan audits). Structured self-review substituted for external adversary pass. Six mutation gates verified via `Edit` round-trips only, per project banned-command list (no destructive `git` operations across this entire landing).

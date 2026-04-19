@@ -372,6 +372,11 @@ func bootDB(w *world.World, dataDir string) error {
 
 	// Load subsystem data
 	clanDir := filepath.Join(dataDir, "clans")
+	// Export ClanDir so DoInduct/DoOutcast can persist officer changes
+	// via persist.SaveClanFile. Set-at-boot parallel to act.PlanesFilePath
+	// (plan-phase6-clan-officer.md §D6 option A). Read-from-game-loop
+	// only; no synchronization needed.
+	act.ClanDir = clanDir
 	if err := persist.LoadClansFromDir(w, clanDir); err != nil {
 		log.Printf("WARNING: failed to load clans: %v", err)
 	} else if len(w.Clans) > 0 {
@@ -521,6 +526,12 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "leave", DoFun: act.DoClanLeave, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "clandeposit", DoFun: act.DoClanDeposit, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "clanwithdraw", DoFun: act.DoClanWithdraw, Position: types.POS_STANDING, Level: 0})
+	// Clan officer commands — plan-phase6-clan-officer.md §D5. induct/outcast
+	// carry Level 0 because authority is the in-command isClanOfficer gate,
+	// not a trust-level gate. bestow is LEVEL_IMMORTAL.
+	reg.Register(&command.Command{Name: "induct", DoFun: act.DoInduct, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "outcast", DoFun: act.DoOutcast, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "bestow", DoFun: act.DoBestow, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "deities", DoFun: act.DoDeities, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "devote", DoFun: act.DoDevote, Position: types.POS_STANDING, Level: 0})
 	reg.Register(&command.Command{Name: "note", DoFun: act.DoNote, Position: types.POS_RESTING, Level: 0})

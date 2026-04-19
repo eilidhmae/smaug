@@ -88,6 +88,54 @@ func TestBoot_RegistersCommands(t *testing.T) {
 	}
 }
 
+// TestBoot_ClanOfficerRegistered pins induct/outcast/bestow command registration.
+// induct and outcast carry Level 0 (authority is in-command via isClanOfficer);
+// bestow is LEVEL_IMMORTAL. See plan-phase6-clan-officer.md §D5.
+func TestBoot_ClanOfficerRegistered(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	const maxTrust = 65535
+
+	induct := reg.Find("induct", maxTrust)
+	if induct == nil {
+		t.Fatal("induct must be registered")
+	}
+	if induct.Level != 0 {
+		t.Errorf("induct.Level = %d, want 0", induct.Level)
+	}
+	if induct.DoFun == nil {
+		t.Error("induct.DoFun must be non-nil")
+	}
+
+	outcast := reg.Find("outcast", maxTrust)
+	if outcast == nil {
+		t.Fatal("outcast must be registered")
+	}
+	if outcast.Level != 0 {
+		t.Errorf("outcast.Level = %d, want 0", outcast.Level)
+	}
+
+	bestow := reg.Find("bestow", maxTrust)
+	if bestow == nil {
+		t.Fatal("bestow must be registered")
+	}
+	if bestow.Level != types.LEVEL_IMMORTAL {
+		t.Errorf("bestow.Level = %d, want %d (LEVEL_IMMORTAL)",
+			bestow.Level, types.LEVEL_IMMORTAL)
+	}
+
+	// ClanDir must be exported & set to <dataDir>/clans.
+	wantClanDir := filepath.Join(testDataDir, "clans")
+	if act.ClanDir != wantClanDir {
+		t.Errorf("act.ClanDir = %q, want %q", act.ClanDir, wantClanDir)
+	}
+}
+
 func TestBoot_WiresCallbacks(t *testing.T) {
 	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
 	// Reset globals we care about.
