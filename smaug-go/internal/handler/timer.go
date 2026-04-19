@@ -73,6 +73,14 @@ func AddTimer(ch *types.CharData, tType, count int, doFun string, value int) {
 	})
 }
 
+// HasTimer reports whether ch has an active timer of the given type. A
+// thin wrapper over `GetTimer` — true iff the Count is > 0. Mirrors no C
+// function but C callers spell this inline as `get_timer(ch,t) > 0`.
+// Nil-safe on ch. Added by plan-phase6-arena.md §G5.
+func HasTimer(ch *types.CharData, tType int) bool {
+	return GetTimer(ch, tType) > 0
+}
+
 // GetTimer returns the Count of the timer with the given Type, or 0 when
 // no such timer exists. Mirrors C `get_timer` in `handler.c:5160`.
 // Nil-safe on ch.

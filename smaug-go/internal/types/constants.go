@@ -434,6 +434,9 @@ const (
 	ROOM_VNUM_SCHOOL       = 10300
 	ROOM_AUTH_START        = 100
 	ROOM_VNUM_HALLOFFALLEN = 21195
+	// Arena room range — see src/mud.h:2283-2284.
+	ROOM_VNUM_ARENA_MIN = 10366
+	ROOM_VNUM_ARENA_MAX = 10382
 )
 
 // ACT bits for mobs (extended bitvector bit numbers).

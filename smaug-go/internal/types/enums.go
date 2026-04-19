@@ -903,6 +903,7 @@ const (
 	TIMER_PKILLED
 	TIMER_ASUPRESSED
 	TIMER_NUISANCE
+	TIMER_CHALLENGE
 )
 
 // ChannelBit represents channel flags.

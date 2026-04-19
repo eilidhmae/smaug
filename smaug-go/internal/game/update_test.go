@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/eilidhmae/smaug/internal/act"
 	"github.com/eilidhmae/smaug/internal/handler"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
@@ -1408,5 +1409,132 @@ func TestAggrUpdate_SkipsNonStanding(t *testing.T) {
 
 	if mob.Fighting != nil {
 		t.Error("sleeping aggressive mob should not attack")
+	}
+}
+
+// ============================================================
+// Arena challenge-timeout tick — plan-phase6-arena.md §G5
+// C ref: src/update.c:1208-1218
+// ============================================================
+
+// TestCharUpdate_ArenaChallengeTimeout — pre-accept challenger not in
+// arena room, no active timer → flag cleared + message + state flip.
+func TestCharUpdate_ArenaChallengeTimeout(t *testing.T) {
+	w, g := newUpdateTestWorld()
+	room := &types.RoomIndexData{Vnum: 7100, Name: "Non-arena"}
+	w.Rooms[7100] = room
+
+	ch := &types.CharData{
+		Name:     "Challenger",
+		Level:    10,
+		Position: types.POS_STANDING,
+		PermCon:  15, PermInt: 15, PermDex: 15,
+		Hit: 100, MaxHit: 100, Mana: 100, MaxMana: 100, Move: 100, MaxMove: 100,
+		PCData: &types.PCData{Condition: [4]int{0, 48, 48, 0}},
+	}
+	ch.Act.Set(types.ACT_CHALLENGER)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	// Pre-state: no TIMER_CHALLENGE (already expired via
+	// DecrementTimers in an earlier pulse). Set arena-is-challenge
+	// to true via the act.SetArenaIsChallenge seam.
+	act.SetArenaIsChallenge(true)
+	defer act.ResetArenaState()
+
+	g.charUpdate()
+
+	if ch.Act.IsSet(types.ACT_CHALLENGER) {
+		t.Error("ACT_CHALLENGER should be cleared after timeout")
+	}
+	if act.ArenaIsChallenge() {
+		t.Error("arenaState.IsChallenge should be cleared after timeout")
+	}
+}
+
+// TestCharUpdate_ArenaChallengeStillActive — timer still counting; no
+// mutation, no message.
+func TestCharUpdate_ArenaChallengeStillActive(t *testing.T) {
+	w, g := newUpdateTestWorld()
+	room := &types.RoomIndexData{Vnum: 7101, Name: "Non-arena"}
+	w.Rooms[7101] = room
+
+	ch := &types.CharData{
+		Name:     "Challenger",
+		Level:    10,
+		Position: types.POS_STANDING,
+		PermCon:  15, PermInt: 15, PermDex: 15,
+		Hit: 100, MaxHit: 100, Mana: 100, MaxMana: 100, Move: 100, MaxMove: 100,
+		PCData: &types.PCData{Condition: [4]int{0, 48, 48, 0}},
+	}
+	ch.Act.Set(types.ACT_CHALLENGER)
+	handler.CharToRoom(ch, room)
+	w.AddChar(ch)
+	handler.AddTimer(ch, types.TIMER_CHALLENGE, 3, "", 0)
+	act.SetArenaIsChallenge(true)
+	defer act.ResetArenaState()
+
+	g.charUpdate()
+
+	if !ch.Act.IsSet(types.ACT_CHALLENGER) {
+		t.Error("ACT_CHALLENGER should still be set while timer active")
+	}
+	if !act.ArenaIsChallenge() {
+		t.Error("arenaState.IsChallenge should still be true while timer active")
+	}
+}
+
+// TestCharUpdate_ArenaChallengeInArena — challenger now in ROOM_ARENA
+// room (post-accept) → no timeout fires even without timer.
+func TestCharUpdate_ArenaChallengeInArena(t *testing.T) {
+	w, g := newUpdateTestWorld()
+	arena := &types.RoomIndexData{Vnum: 7102, Name: "Arena"}
+	arena.RoomFlags.Set(types.ROOM_ARENA)
+	w.Rooms[7102] = arena
+
+	ch := &types.CharData{
+		Name:     "Fighter",
+		Level:    10,
+		Position: types.POS_STANDING,
+		PermCon:  15, PermInt: 15, PermDex: 15,
+		Hit: 100, MaxHit: 100, Mana: 100, MaxMana: 100, Move: 100, MaxMove: 100,
+		PCData: &types.PCData{Condition: [4]int{0, 48, 48, 0}},
+	}
+	ch.Act.Set(types.ACT_CHALLENGER)
+	handler.CharToRoom(ch, arena)
+	w.AddChar(ch)
+	act.SetArenaIsChallenge(true)
+	defer act.ResetArenaState()
+
+	g.charUpdate()
+
+	if !ch.Act.IsSet(types.ACT_CHALLENGER) {
+		t.Error("ACT_CHALLENGER should be preserved while in arena")
+	}
+}
+
+// TestCharUpdate_ArenaChallengeNPCSkipped — NPCs don't get the timeout
+// treatment (the !ch.IsNPC() guard in charUpdate).
+func TestCharUpdate_ArenaChallengeNPCSkipped(t *testing.T) {
+	w, g := newUpdateTestWorld()
+	room := &types.RoomIndexData{Vnum: 7103, Name: "Non-arena"}
+	w.Rooms[7103] = room
+
+	mob := &types.CharData{
+		Name:     "Mob",
+		Level:    10,
+		Position: types.POS_STANDING,
+		Hit:      100, MaxHit: 100,
+	}
+	mob.Act.Set(types.ACT_IS_NPC)
+	mob.Act.Set(types.ACT_CHALLENGER) // pathological — should not fire
+	handler.CharToRoom(mob, room)
+	w.AddChar(mob)
+	act.SetArenaIsChallenge(true)
+	defer act.ResetArenaState()
+
+	g.charUpdate()
+
+	if !mob.Act.IsSet(types.ACT_CHALLENGER) {
+		t.Error("NPC's ACT_CHALLENGER should be preserved (no timeout)")
 	}
 }

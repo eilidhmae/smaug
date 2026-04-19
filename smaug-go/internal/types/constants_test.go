@@ -92,3 +92,46 @@ func TestATMaxColor(t *testing.T) {
 			AT_MAXCOLOR, AT_TOPCOLOR-AT_COLORBASE)
 	}
 }
+
+// TestTimerChallenge_UniqueTag pins TIMER_CHALLENGE at iota slot 8,
+// distinct from every other TIMER_* constant. Added by
+// plan-phase6-arena.md §G1. If a future insertion reorders the iota
+// block, this test catches the shift so arena pfiles / timer-test
+// harnesses can be migrated deliberately.
+func TestTimerChallenge_UniqueTag(t *testing.T) {
+	all := map[string]int{
+		"TIMER_NONE":        TIMER_NONE,
+		"TIMER_RECENTFIGHT": TIMER_RECENTFIGHT,
+		"TIMER_SHOVEDRAG":   TIMER_SHOVEDRAG,
+		"TIMER_DO_FUN":      TIMER_DO_FUN,
+		"TIMER_APPLIED":     TIMER_APPLIED,
+		"TIMER_PKILLED":     TIMER_PKILLED,
+		"TIMER_ASUPRESSED":  TIMER_ASUPRESSED,
+		"TIMER_NUISANCE":    TIMER_NUISANCE,
+		"TIMER_CHALLENGE":   TIMER_CHALLENGE,
+	}
+	seen := map[int]string{}
+	for name, v := range all {
+		if prior, clash := seen[v]; clash {
+			t.Errorf("TIMER tag collision: %s and %s both == %d", prior, name, v)
+		}
+		seen[v] = name
+	}
+	if TIMER_CHALLENGE != 8 {
+		t.Errorf("TIMER_CHALLENGE = %d, want 8", TIMER_CHALLENGE)
+	}
+}
+
+// TestArenaVnumConstants pins ROOM_VNUM_ARENA_MIN / MAX at the C
+// values from src/mud.h:2283-2284.
+func TestArenaVnumConstants(t *testing.T) {
+	if ROOM_VNUM_ARENA_MIN != 10366 {
+		t.Errorf("ROOM_VNUM_ARENA_MIN = %d, want 10366", ROOM_VNUM_ARENA_MIN)
+	}
+	if ROOM_VNUM_ARENA_MAX != 10382 {
+		t.Errorf("ROOM_VNUM_ARENA_MAX = %d, want 10382", ROOM_VNUM_ARENA_MAX)
+	}
+	if ROOM_VNUM_ARENA_MAX <= ROOM_VNUM_ARENA_MIN {
+		t.Error("ROOM_VNUM_ARENA_MAX must exceed ROOM_VNUM_ARENA_MIN")
+	}
+}

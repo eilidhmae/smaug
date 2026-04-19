@@ -1310,3 +1310,71 @@ func TestSaveLoadAliases(t *testing.T) {
 		}
 	}
 }
+
+// TestSavePlayer_PersistsArenaCounters round-trips AKills/ADeaths through
+// SavePlayer/LoadPlayer. Pins G1 schema: both fields emitted when non-zero,
+// loader consumes them back into the PCData.
+// Plan: plan-phase6-arena.md §G1.
+func TestSavePlayer_PersistsArenaCounters(t *testing.T) {
+	ch := &types.CharData{
+		Name:     "Arenatest",
+		Level:    10,
+		Hit:      100,
+		MaxHit:   100,
+		Position: types.POS_STANDING,
+		PCData: &types.PCData{
+			Pwd:     "secret",
+			AKills:  3,
+			ADeaths: 1,
+		},
+	}
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("AKills     3")) {
+		t.Fatalf("AKills not emitted; save output:\n%s", buf.String())
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("ADeaths    1")) {
+		t.Fatalf("ADeaths not emitted; save output:\n%s", buf.String())
+	}
+	loaded, err := LoadPlayer(bytes.NewReader(buf.Bytes()), "Arenatest")
+	if err != nil {
+		t.Fatalf("LoadPlayer: %v", err)
+	}
+	if loaded.PCData == nil {
+		t.Fatal("PCData nil after load")
+	}
+	if loaded.PCData.AKills != 3 {
+		t.Errorf("AKills = %d, want 3", loaded.PCData.AKills)
+	}
+	if loaded.PCData.ADeaths != 1 {
+		t.Errorf("ADeaths = %d, want 1", loaded.PCData.ADeaths)
+	}
+}
+
+// TestSavePlayer_OmitsZeroArenaCounters confirms that the gated writers
+// skip emitting AKills/ADeaths lines when both are zero (keeps pfiles
+// clean for all non-arena players — the vast majority).
+func TestSavePlayer_OmitsZeroArenaCounters(t *testing.T) {
+	ch := &types.CharData{
+		Name:     "Zeroarena",
+		Level:    5,
+		Hit:      50,
+		MaxHit:   50,
+		Position: types.POS_STANDING,
+		PCData: &types.PCData{
+			Pwd: "secret",
+		},
+	}
+	var buf bytes.Buffer
+	if err := SavePlayer(&buf, ch); err != nil {
+		t.Fatalf("SavePlayer: %v", err)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("AKills")) {
+		t.Errorf("AKills should be omitted when zero; got:\n%s", buf.String())
+	}
+	if bytes.Contains(buf.Bytes(), []byte("ADeaths")) {
+		t.Errorf("ADeaths should be omitted when zero; got:\n%s", buf.String())
+	}
+}

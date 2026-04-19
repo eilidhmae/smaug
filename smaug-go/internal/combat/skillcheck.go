@@ -87,6 +87,13 @@ var (
 	gsnTalonousArms   = -1
 	gsnBludgeons      = -1
 	gsnMissileWeapons = -1
+
+	// Debuff gsns stripped on arena victory (C fight.c:2876-2879).
+	// Plan-phase6-arena.md §G6.
+	gsnPoison    = -1
+	gsnBlindness = -1
+	gsnSleep     = -1
+	gsnCurse     = -1
 )
 
 // ResolveGSNs looks up every gsn name combat cares about via
@@ -116,4 +123,10 @@ func ResolveGSNs() {
 	gsnTalonousArms = LookupSkillSlotHook("talonous arms")
 	gsnBludgeons = LookupSkillSlotHook("bludgeons")
 	gsnMissileWeapons = LookupSkillSlotHook("missile weapons")
+
+	// Arena-debuff gsns (plan-phase6-arena.md §G6).
+	gsnPoison = LookupSkillSlotHook("poison")
+	gsnBlindness = LookupSkillSlotHook("blindness")
+	gsnSleep = LookupSkillSlotHook("sleep")
+	gsnCurse = LookupSkillSlotHook("curse")
 }

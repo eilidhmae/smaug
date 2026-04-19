@@ -238,6 +238,20 @@ func (g *GameLoop) charUpdate() {
 				ch.Hit = 1
 			}
 		}
+
+		// Arena challenge-timeout tick. C: src/update.c:1208-1218 (under
+		// #ifdef ENABLE_ARENA). When a pre-accept challenger has no
+		// active TIMER_CHALLENGE AND is not yet in a ROOM_ARENA room,
+		// the challenge is auto-canceled with the verbatim C message.
+		// See plan-phase6-arena.md §G5.
+		if !ch.IsNPC() && ch.Act.IsSet(types.ACT_CHALLENGER) &&
+			!handler.HasTimer(ch, types.TIMER_CHALLENGE) {
+			if ch.InRoom == nil || !ch.InRoom.RoomFlags.IsSet(types.ROOM_ARENA) {
+				ch.Send("They have not responded challenge canceled.\n\r")
+				ch.Act.Remove(types.ACT_CHALLENGER)
+				act.SetArenaIsChallenge(false)
+			}
+		}
 	}
 }
 

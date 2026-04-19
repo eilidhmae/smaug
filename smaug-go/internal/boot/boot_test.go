@@ -112,6 +112,8 @@ func TestBoot_WiresCallbacks(t *testing.T) {
 	combat.LearnFromSuccessHook = nil
 	combat.LearnFromFailureHook = nil
 	combat.LookupSkillSlotHook = nil
+	combat.ArenaIsBusyFunc = nil
+	combat.DoLookFunc = nil
 	persist.SkillNameLookup = nil
 	persist.SkillGetter = nil
 
@@ -198,6 +200,13 @@ func TestBoot_WiresCallbacks(t *testing.T) {
 	}
 	if combat.LookupSkillSlotHook == nil {
 		t.Error("combat.LookupSkillSlotHook not wired")
+	}
+	// Arena seams (plan-phase6-arena.md §G7).
+	if combat.ArenaIsBusyFunc == nil {
+		t.Error("combat.ArenaIsBusyFunc not wired")
+	}
+	if combat.DoLookFunc == nil {
+		t.Error("combat.DoLookFunc not wired")
 	}
 	if persist.SkillNameLookup == nil {
 		t.Error("persist.SkillNameLookup not wired")
@@ -556,4 +565,111 @@ func TestBoot_WiresPlanesFilePath(t *testing.T) {
 	if act.PlanesFilePath != expected {
 		t.Errorf("PlanesFilePath = %q, want %q", act.PlanesFilePath, expected)
 	}
+}
+
+// TestBoot_RegistersArenaCommands pins the 4 arena commands (plan
+// phase6-arena.md §G7). Level 0 / POS_RESTING is the plan's choice —
+// matching C, which has no explicit command-level trust gate.
+func TestBoot_RegistersArenaCommands(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	const maxTrust = 65535
+	for _, name := range []string{"challenge", "accept", "decline", "withdraw"} {
+		cmd := reg.Find(name, maxTrust)
+		if cmd == nil {
+			t.Errorf("expected %q command to be registered", name)
+			continue
+		}
+		if cmd.Level != 0 {
+			t.Errorf("%q: Level = %d, want 0", name, cmd.Level)
+		}
+		if cmd.Position != types.POS_RESTING {
+			t.Errorf("%q: Position = %d, want POS_RESTING(%d)",
+				name, cmd.Position, types.POS_RESTING)
+		}
+	}
+}
+
+// TestBoot_ArenaRoomsFlaggedInShipped pins the area-data edit from
+// plan-phase6-arena.md §Readiness — all arena-range rooms in the
+// shipped dev-data area file `db/area/newacad.are` must carry the
+// ROOM_ARENA flag (bit 26) so the combat-victory branch can fire.
+//
+// The boot-test harness uses a separate testdata tree without the
+// arena rooms; this test performs a minimal textual scan of the
+// shipped file. That keeps the drift-guard cheap (~5ms) and
+// independent of any loader-test wiring.
+//
+// The test accepts values that have bit 26 set. 3145736 (old) lacks
+// the bit; 70254600 (old | (1<<26)) has it. A future OLC roundtrip
+// that drops the bit would fail the test.
+func TestBoot_ArenaRoomsFlaggedInShipped(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "db", "area", "newacad.are")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("shipped newacad.are not reachable (%v); skipping drift test", err)
+	}
+	// The ROOMS section is bounded by "#ROOMS" and "#$"; within it,
+	// each room starts with "#<vnum>\n", has header text up to a "~"
+	// on its own line, then a flag line of the shape "0 <flags>
+	// <sector>". We locate each arena vnum and verify its flag line
+	// has bit 26 set.
+	section := string(data)
+	roomsStart := regexp.MustCompile(`(?m)^#ROOMS$`).FindStringIndex(section)
+	if roomsStart == nil {
+		t.Fatalf("no #ROOMS marker in %s", path)
+	}
+	roomsEnd := regexp.MustCompile(`(?m)^#\$`).FindStringIndex(section[roomsStart[1]:])
+	if roomsEnd == nil {
+		t.Fatalf("no #$ marker after #ROOMS in %s", path)
+	}
+	body := section[roomsStart[1] : roomsStart[1]+roomsEnd[0]]
+
+	var flagged, total int
+	for v := types.ROOM_VNUM_ARENA_MIN; v <= types.ROOM_VNUM_ARENA_MAX; v++ {
+		pat := regexp.MustCompile(`(?ms)^#` + itoa(v) + `\n.*?^~\n(0 (\d+) \d+)`)
+		m := pat.FindStringSubmatch(body)
+		if m == nil {
+			continue
+		}
+		total++
+		flags := 0
+		for _, c := range m[2] {
+			flags = flags*10 + int(c-'0')
+		}
+		if flags&(1<<types.ROOM_ARENA) != 0 {
+			flagged++
+		}
+	}
+	if total == 0 {
+		t.Fatalf("no rooms loaded in ROOM_VNUM_ARENA range from %s", path)
+	}
+	if flagged != total {
+		t.Errorf("only %d/%d rooms in arena vnum range %d-%d carry ROOM_ARENA; "+
+			"rerun plan-phase6-arena.md area-edit step",
+			flagged, total,
+			types.ROOM_VNUM_ARENA_MIN, types.ROOM_VNUM_ARENA_MAX)
+	}
+}
+
+// itoa formats n as a base-10 ASCII string without importing strconv
+// (keeps the drift-test dependency surface tiny).
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }

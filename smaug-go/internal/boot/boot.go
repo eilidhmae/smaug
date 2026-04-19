@@ -128,6 +128,12 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	combat.LearnFromFailureHook = act.LearnFromFailure
 	combat.LookupSkillSlotHook = act.LookupSkillSlot
 	combat.ResolveGSNs()
+
+	// Arena seams (plan-phase6-arena.md §G6/§G7). ArenaIsBusyFunc
+	// lets combat.ArenaVictoryCheck flip act.arenaState.IsBusy without
+	// a cycle; DoLookFunc gives it the post-teleport auto-look.
+	combat.ArenaIsBusyFunc = act.SetArenaIsBusy
+	combat.DoLookFunc = act.DoLook
 	// Act-side GSN resolution — gsnHide / gsnSneak used by
 	// learnFromSuccess to silence the XP-on-gain message for stealth
 	// skills (matches C src/skills.c:1661).
@@ -441,6 +447,15 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "counciltalk", DoFun: act.DoCouncilTalk, Position: types.POS_SLEEPING, Level: 0})
 	reg.Register(&command.Command{Name: "guildtalk", DoFun: act.DoGuildTalk, Position: types.POS_SLEEPING, Level: 0})
 	reg.Register(&command.Command{Name: "newbiechat", DoFun: act.DoNewbieChat, Position: types.POS_SLEEPING, Level: 0})
+
+	// Phase 6 Arena PvP (plan-phase6-arena.md). No explicit command-level
+	// trust gate (matches C arena.c); the level-5 victim check lives
+	// inside DoChallenge. POS_RESTING per plan (players in combat
+	// cannot issue arena commands).
+	reg.Register(&command.Command{Name: "challenge", DoFun: act.DoChallenge, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "accept", DoFun: act.DoAccept, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "decline", DoFun: act.DoDecline, Position: types.POS_RESTING, Level: 0})
+	reg.Register(&command.Command{Name: "withdraw", DoFun: act.DoWithdraw, Position: types.POS_RESTING, Level: 0})
 
 	// Object commands
 	reg.Register(&command.Command{Name: "get", DoFun: act.DoGet, Position: types.POS_RESTING, Level: 0})

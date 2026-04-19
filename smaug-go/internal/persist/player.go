@@ -249,6 +249,13 @@ func parsePlayerField(ch *types.CharData, word string, sc *Scanner) {
 		ch.PCData.MKills = sc.ReadNumber()
 	case "MDeaths":
 		ch.PCData.MDeaths = sc.ReadNumber()
+	case "AKills":
+		// Arena wins. Not cross-referenced against a C pfile yet
+		// because ENABLE_ARENA was off in Go predecessors; key
+		// name mirrors the Go field, not C's lowercase "Akills".
+		ch.PCData.AKills = sc.ReadNumber()
+	case "ADeaths":
+		ch.PCData.ADeaths = sc.ReadNumber()
 	case "IllegalPK":
 		ch.PCData.IllegalPK = sc.ReadNumber()
 	case "AttrPerm":
@@ -528,6 +535,12 @@ func SavePlayer(w io.Writer, ch *types.CharData) error {
 	fmt.Fprintf(w, "PDeaths    %d\n", p.PDeaths)
 	fmt.Fprintf(w, "MKills     %d\n", p.MKills)
 	fmt.Fprintf(w, "MDeaths    %d\n", p.MDeaths)
+	if p.AKills != 0 {
+		fmt.Fprintf(w, "AKills     %d\n", p.AKills)
+	}
+	if p.ADeaths != 0 {
+		fmt.Fprintf(w, "ADeaths    %d\n", p.ADeaths)
+	}
 	if p.RecentSite != "" {
 		fmt.Fprintf(w, "Site       %s\n", p.RecentSite)
 	}

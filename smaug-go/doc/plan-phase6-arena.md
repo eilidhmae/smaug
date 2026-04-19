@@ -690,3 +690,86 @@ Worker fanout cap: 6 per wave (per `_shared.md`). G2-G6 fits comfortably in one 
 ---
 
 *Adversary verification notes for this plan — to be appended after planning adversary pass.*
+
+---
+
+## Completion Record — 2026-04-19 (commit `9d6d3a9`)
+
+### Summary
+
+All 7 task groups executed. 15/15 acceptance criteria satisfied. First true two-player PvP scenario in the Go port — exercises `QuickLoginTwo` with 3 concurrent-session E2E testclient scenarios. Structured self-review substituted for external adversary pass per documented tooling caveat.
+
+### Acceptance cross-reference
+
+| # | Criterion | Where verified |
+|---|---|---|
+| A1 | `DoChallenge` matches C for all 12 gates + success path | `internal/act/arena_test.go` 15 tests `TestDoChallenge_*` (empty/already/busy/notfound/alreadychallenged/isChallenger/afk/NPCvictim/NPCch/immortal/lowlevel/fighting/self/mirror/success) |
+| A2 | `DoAccept` all 6 gates + success | `TestDoAccept_*` (NPC/empty/notfound/NPCvictim/self/notchallenger/success) |
+| A3 | `DoDecline` all 6 gates + success | `TestDoDecline_*` (empty/nochallenge/busy/notfound/notchallenger/npc-or-self/success) |
+| A4 | `DoWithdraw` all 5 gates + success | `TestDoWithdraw_*` (NPC/notchallenger/notfound/busy/victimNPC/success) |
+| A5 | `TIMER_CHALLENGE` unique; challenge sets count=5; accept extracts | `TestTimerChallenge_UniqueTag` + `TestDoChallenge_Success` + `TestDoAccept_Success` |
+| A6 | `charUpdate` cancels challenge, emits exact message | `TestCharUpdate_ArenaChallengeTimeout` (plus 3 companion tests pin the non-firing cases) |
+| A7 | `ArenaVictoryCheck` teleports + heals + strips + tracks + clears + busy=false | `TestArenaVictory_TeleportAndHeal` + `_AKillsADeathsIncremented` + `_AllFlagsClearedBoth` + `_IsBusyClearedAfter` + `_DebuffsStripped` + `_NoFireIfVictimNotDead`/`_NoFireIfNPC`/`_NoFireIfNotInArena` |
+| A8 | Victory branch fires before corpse creation — no corpse in arena death | `TestArenaVictory_NoCorpseSpawned` (drives real `Damage` → asserts no ITEM_CORPSE_* in arena.Contents) |
+| A9 | AKills/ADeaths persist across save/load | `TestSavePlayer_PersistsArenaCounters` + `TestSavePlayer_OmitsZeroArenaCounters` |
+| A10 | Four commands at POS_RESTING, Level 0 | `TestBoot_RegistersArenaCommands` |
+| A11 | `combat.ArenaIsBusyFunc` non-nil after `boot.Boot` | `TestBoot_WiresCallbacks` gains new arena-seam assertions |
+| A12 | End-to-end testclient scenario drives challenge/accept → verifies exit invariants | `TestArena_ChallengeAndAccept_TeleportsBoth` (plus `_AndDecline` + `_AndWithdraw` for siblings) |
+| A13 | `go test -count=3 ./...` green | Full-suite run 2026-04-19 — all 15 packages PASS |
+| A14 | `go vet ./...` clean | Clean |
+| A15 | `gofmt -l .` reports no changes on arena files | Clean |
+
+### Mutation gates (`Edit` round-trips only — no banned git commands)
+
+| Site | Mutation | Failing test |
+|---|---|---|
+| `act/arena.go` DoChallenge success | Drop `ch.Act.Set(ACT_CHALLENGER)` | `TestDoChallenge_Success` fails on flag assertion |
+| `act/arena.go` DoChallenge level gate | `<=5` → `<5` | `TestDoChallenge_VictimLowLevel` fails (victim slips past) |
+| `game/update.go` charUpdate tick | Drop `ch.Act.Remove(ACT_CHALLENGER)` | `TestCharUpdate_ArenaChallengeTimeout` fails |
+| `combat/arena_victory.go` loser teleport | Swap `ROOM_VNUM_ALTAR` → `ROOM_VNUM_TEMPLE` | `TestArenaVictory_TeleportAndHeal` fails on loser-room assertion |
+| `combat/arena_victory.go` AKills++ | Drop `ch.PCData.AKills++` | `TestArenaVictory_AKillsADeathsIncremented` fails (winner count 4 vs 5) |
+| `combat/combat.go` Damage intercept | Drop `if ArenaVictoryCheck(...) { return rVICT_DIED }` | `TestArenaVictory_NoCorpseSpawned` fails (loser still in arena) |
+
+### Open-Q resolutions applied
+
+1. **`do_decline` C bug** — preserved verbatim. Decliner's `ACT_CHALLENGER` flag clears (wrong target); challenger's flag lingers until 5-tick timeout or victory. C-fidelity over behavioral fix.
+2. **Global `challenge_tme` vs per-player timer** — per-player via `handler.AddTimer(ch, TIMER_CHALLENGE, 5, "", 0)`. `handler.HasTimer` added as 3-line wrapper over `GetTimer`.
+3. **Arena-room vnum range** — Option (b) filter-then-random: `pickArenaRoom` scans MIN..MAX, keeps only rooms with `ROOM_ARENA` flag, returns `nil` if none. `DoAccept` surfaces "arena is not configured on this server." if `nil`.
+4. **Command trust level** — `Level:0` / `POS_RESTING` on all four commands. Matches C (no explicit command-level gate).
+5. **`ROOM_VNUM_ALTAR` fallback** — if altar vnum isn't loaded, loser falls back to `ROOM_VNUM_TEMPLE`. Pinned by `TestArenaVictory_FallbackAltarToTemple`.
+6. **Area-data `ROOM_ARENA` flag** — `db/area/newacad.are` edited to add bit 26 to all 17 rooms in range 10366-10382 (old flags `3145736`/`3145740` → `70254600`/`70254604`). Drift-prevention test in `internal/boot/boot_test.go` regex-scans the shipped file.
+7. **`ArenaVictoryCheck` insertion point** — inside the helper, calls `StopFighting` itself. Caller (`Damage`) does not call StopFighting before the check.
+
+### Deliberate C divergences
+
+- `DoAccept` success path: per plan §G3, C's `do_look(ch)` called a second time after `victim` teleport (instead of `do_look(victim)`) preserved verbatim — accepter sees room twice, victim gets no auto-look. See arena.c:255 comment.
+- `do_decline` flag-clear target bug: plan Q1 resolved as preserve-verbatim; comment cites the bug.
+- `pickArenaRoom` filter-then-random: divergence from C's potentially-crashing `number_range(MIN, MAX)` on a non-arena vnum.
+- `AKills`/`ADeaths` persist only when non-zero (emit-gate): keeps stock pfiles unchanged for non-arena players.
+
+### Scope cuts observed (from plan)
+
+- No `PLR_NORESTORE`.
+- No score-card display of AKills/ADeaths (follow-up).
+- No spectator system.
+- No arena OLC commands (`redit` does the job).
+- No anti-exploit checks.
+- No team/group/clan challenges.
+
+### New tests (approximate)
+
+- `internal/act/arena_test.go`: 37
+- `internal/combat/arena_victory_test.go`: 11
+- `internal/testclient/arena_test.go`: 3
+- `internal/game/update_test.go`: 4 (arena timeout)
+- `internal/persist/player_test.go`: 2
+- `internal/types/constants_test.go`: 2
+- `internal/boot/boot_test.go`: 2
+
+Total: ~61 new test cases.
+
+### Follow-ups deferred
+
+- Score-card AKills/ADeaths display (plan §Scope Cuts).
+- `do_noauction` admin toggle for the arena subsystem — C doesn't ship one either; skip.
+- Spectator mode / `watch` command — not in C.

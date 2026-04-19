@@ -703,6 +703,14 @@ func damageWith(w *world.World, ch, victim *types.CharData, dam, dt int, obj *ty
 
 	// Death check
 	if victim.Position == types.POS_DEAD {
+		// Arena branch: if this is a PvP death in a ROOM_ARENA room,
+		// fire the arena victory path (heal/teleport/no corpse) and
+		// skip the normal death processing. See
+		// plan-phase6-arena.md §G6. C ref: fight.c:2861-2915.
+		if ArenaVictoryCheck(ch, victim) {
+			return rVICT_DIED
+		}
+
 		// Room-prog RDEATH fires before corpse generation / ExtractChar so
 		// the prog sees the victim still in room.People.
 		if DeathRoomHook != nil {
