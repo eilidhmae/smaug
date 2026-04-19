@@ -66,6 +66,7 @@ type GameLoop struct {
 	pulseMobile   int
 	pulseTick     int
 	pulseSave     int
+	pulseAuction  int
 
 	// Internal context for programmatic shutdown (Cancel()).
 	internalCtx    context.Context
@@ -88,6 +89,7 @@ func NewGameLoop(w *world.World, cmdReg *command.Registry, incoming chan *types.
 		pulseViolence:  types.PULSE_VIOLENCE,
 		pulseMobile:    types.PULSE_MOBILE,
 		pulseTick:      types.PULSE_TICK,
+		pulseAuction:   types.PULSE_AUCTION,
 		internalCtx:    ctx,
 		internalCancel: cancel,
 		queryQueue:     make(chan func(), 16),
@@ -175,6 +177,12 @@ func (g *GameLoop) pulse() {
 		g.objUpdate()
 		g.roomRandomUpdate()
 		act.QuestUpdate(g.world)
+	}
+
+	g.pulseAuction--
+	if g.pulseAuction <= 0 {
+		g.pulseAuction = types.PULSE_AUCTION
+		g.auctionUpdate()
 	}
 
 	g.pulseSave--
@@ -873,6 +881,15 @@ func (g *GameLoop) cleanupDescriptors() {
 func (g *GameLoop) closeDescriptor(d *types.DescriptorData) {
 	if d.Character != nil {
 		ch := d.Character
+
+		// Auction defensive clear — catches socket-level disconnects
+		// (peer reset / SIGKILL) that bypass the DoQuit auction gate
+		// ported from C `do_quit` at src/act_comm.c:2883-2890. Runs
+		// BEFORE SavePlayer so the seller-drop branch can deposit the
+		// auction item in their last room before the room reference
+		// is cleared. Plan plan-phase6-auction.md §D8.
+		g.clearAuctionOnDisconnect(ch)
+
 		g.SavePlayer(ch)
 		log.Printf("%s has left the game.", ch.Name)
 

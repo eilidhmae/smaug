@@ -75,8 +75,16 @@ type World struct {
 	TimeInfo    types.TimeInfoData
 	WeatherInfo types.WeatherInfoData
 
-	// Auction
+	// Auction — the live auction state. Initialized to a zero-valued
+	// struct in New() so callers never need a nil-guard before reading
+	// `.Item`, matching C's global `auction` pointer which is malloc'd
+	// once at boot (src/db.c:587) and never reassigned.
 	Auction *types.AuctionData
+
+	// NoAuction — vnums blacklisted from do_auction. Loaded from
+	// db/system/noauction.dat at boot; missing file = empty slice.
+	// Mirrors C's NOAUCTION_DATA linked list walked at src/act_obj.c:4090-4096.
+	NoAuction []int
 
 	// Extraction queues (processed at end of each pulse)
 	ExtractChars []*types.CharData
@@ -102,6 +110,7 @@ func New(dataDir string) *World {
 		MobIndex: make(map[int]*types.MobIndexData),
 		ObjIndex: make(map[int]*types.ObjIndexData),
 		DataDir:  dataDir,
+		Auction:  &types.AuctionData{},
 	}
 }
 

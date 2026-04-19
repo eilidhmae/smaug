@@ -91,14 +91,22 @@ type CmdType struct {
 }
 
 // AuctionData for the auction system.
+//
+// Mirrors C `struct auction_data` at src/mud.h:3611-3622. History is a
+// fixed-size ring of prototype pointers used by do_auction's
+// "auctioned-recently" guard (src/act_obj.c:4125-4134); HistTimer drives
+// the idle-decay that pops the oldest entry once every
+// `6 * AUCTION_MEM` pulses (src/update.c:3190-3204).
 type AuctionData struct {
-	Item     *ObjData
-	Seller   *CharData
-	Buyer    *CharData
-	Bet      int
-	Going    int
-	Pulse    int
-	Starting int
+	Item      *ObjData
+	Seller    *CharData
+	Buyer     *CharData
+	Bet       int
+	Going     int
+	Pulse     int
+	Starting  int
+	History   [AUCTION_MEM]*ObjIndexData
+	HistTimer int
 }
 
 // LiqType for liquid definitions.

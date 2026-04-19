@@ -114,39 +114,10 @@ func TestBroadcastAuction_NilWorldNoPanic(t *testing.T) {
 	BroadcastAuction("nothing")
 }
 
-// --- DoAuction stub ---
+// --- DoAuction state machine ---
 
-// Stub: non-empty arg produces the closed message; nothing broadcasts.
-func TestDoAuction_Stub_ClosedMessage(t *testing.T) {
-	w := setupCommWorld()
-	room := &types.RoomIndexData{Vnum: 7210, Name: "Room"}
-	w.Rooms[7210] = room
-
-	ch, client := makeMortalInRoom(room, "Bidder")
-	defer client.Close()
-	ch.Trust = auctionMinTrust + 5
-
-	// A second trusted listener — must NOT receive a broadcast, because
-	// the stub deliberately does not call BroadcastAuction.
-	listener, lClient := makeMortalInRoom(room, "Listener")
-	defer lClient.Close()
-	listener.Trust = auctionMinTrust + 5
-
-	DoAuction(ch, "list")
-
-	chOut := readOutput(ch, client)
-	if !strings.Contains(chOut, "auction house is currently closed") {
-		t.Errorf("expected 'closed' stub message; got %q", chOut)
-	}
-
-	lOut := readOutput(listener, lClient)
-	if strings.Contains(lOut, "auction") || strings.Contains(lOut, "list") {
-		t.Errorf("stub must NOT broadcast to other players; listener got %q", lOut)
-	}
-}
-
-// NPC caller: no-op (safety — commands table is mortal/immortal only, but
-// belt-and-braces in case of mob-script dispatch).
+// NPC caller: silent return — matches C `do_auction` at
+// src/act_obj.c:3791-3792 (early return on IS_NPC with no message).
 func TestDoAuction_NPCGuard(t *testing.T) {
 	w := setupCommWorld()
 	room := &types.RoomIndexData{Vnum: 7211, Name: "Room"}
@@ -161,7 +132,7 @@ func TestDoAuction_NPCGuard(t *testing.T) {
 
 	DoAuction(mob, "list")
 	out := readOutput(mob, mClient)
-	if !strings.Contains(out, "Huh?") {
-		t.Errorf("NPC caller should see 'Huh?'; got %q", out)
+	if out != "" {
+		t.Errorf("NPC caller should return silently; got %q", out)
 	}
 }

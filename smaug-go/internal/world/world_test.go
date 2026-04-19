@@ -23,6 +23,40 @@ func TestNew_MapsInitialized(t *testing.T) {
 	}
 }
 
+// Auction pointer is non-nil after New(), per plan-phase6-auction.md §D1.
+// Eager init removes nil-guard boilerplate from the command + tick.
+func TestNew_AuctionInitialized(t *testing.T) {
+	w := New("/tmp/testdata")
+	if w.Auction == nil {
+		t.Fatal("Auction is nil after New — expected zero-valued struct")
+	}
+}
+
+// Auction zero-value has no item, no bidder, no state.
+func TestNew_AuctionEmpty(t *testing.T) {
+	w := New("/tmp/testdata")
+	if w.Auction.Item != nil {
+		t.Errorf("Auction.Item should be nil; got %v", w.Auction.Item)
+	}
+	if w.Auction.Bet != 0 {
+		t.Errorf("Auction.Bet = %d, want 0", w.Auction.Bet)
+	}
+	if w.Auction.Going != 0 {
+		t.Errorf("Auction.Going = %d, want 0", w.Auction.Going)
+	}
+	if w.Auction.Pulse != 0 {
+		t.Errorf("Auction.Pulse = %d, want 0", w.Auction.Pulse)
+	}
+}
+
+// NoAuction list starts empty (nil slice is fine; len==0 is the invariant).
+func TestNew_NoAuctionEmpty(t *testing.T) {
+	w := New("/tmp/testdata")
+	if len(w.NoAuction) != 0 {
+		t.Errorf("NoAuction list should be empty; got %v", w.NoAuction)
+	}
+}
+
 func TestGetRoom(t *testing.T) {
 	w := New("/tmp")
 	room := &types.RoomIndexData{}

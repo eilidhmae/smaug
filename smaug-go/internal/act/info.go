@@ -363,6 +363,17 @@ func DoQuit(ch *types.CharData, argument string) {
 		return
 	}
 
+	// Auction gate — mirrors C `do_quit` at src/act_comm.c:2883-2890.
+	// Wording ported verbatim from C; the companion `closeDescriptor`
+	// defensive clear in loop.go catches socket-level disconnects that
+	// bypass this path.
+	if WorldRef != nil && WorldRef.Auction != nil && WorldRef.Auction.Item != nil {
+		if ch == WorldRef.Auction.Seller || ch == WorldRef.Auction.Buyer {
+			ch.Send("Wait until you have bought/sold the item on auction.\n\r")
+			return
+		}
+	}
+
 	// Save the player before quitting
 	if SaveFunc != nil {
 		SaveFunc(ch)

@@ -400,6 +400,17 @@ func bootDB(w *world.World, dataDir string) error {
 	}
 	log.Printf("Loaded %d morphs.", len(w.Morphs))
 
+	// Load auction blacklist from db/system/noauction.dat. Missing
+	// file = empty blacklist, which matches the stock tree (no
+	// noauction.dat shipped). Plan plan-phase6-auction.md §D7.
+	noauctionPath := filepath.Join(dataDir, "system", "noauction.dat")
+	noauction, err := persist.LoadNoAuction(noauctionPath)
+	if err != nil {
+		log.Printf("WARNING: failed to load noauction list: %v", err)
+	}
+	w.NoAuction = noauction
+	log.Printf("Loaded %d noauction entries.", len(w.NoAuction))
+
 	// Wire skill lookups so player save/load persists learned proficiencies.
 	persist.SkillNameLookup = func(name string) int {
 		for i, sk := range w.Skills {

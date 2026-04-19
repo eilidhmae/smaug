@@ -700,3 +700,91 @@ Effort estimate: **G0 (1.5h) + G1 (0.5h) + G2 (0.75h) + G3 (3h) + G4 (1h) + G4b 
 - C: `/home/eilidh/src/smaug/src/act_obj.c:3775-4240`, `/home/eilidh/src/smaug/src/update.c:3183-3326`, `/home/eilidh/src/smaug/src/update.c:2746-2750`, `/home/eilidh/src/smaug/src/bet.h:118-210`, `/home/eilidh/src/smaug/src/mud.h:408`, `/home/eilidh/src/smaug/src/mud.h:3609-3622`, `/home/eilidh/src/smaug/src/mud.h:778-783`.
 - Go new: `/home/eilidh/src/smaug/smaug-go/internal/util/parsebet.go`, `/home/eilidh/src/smaug/smaug-go/internal/util/parsebet_test.go`, `/home/eilidh/src/smaug/smaug-go/internal/util/numpunct.go`, `/home/eilidh/src/smaug/smaug-go/internal/util/numpunct_test.go`, `/home/eilidh/src/smaug/smaug-go/internal/game/update_auction_test.go`.
 - Go modified: `/home/eilidh/src/smaug/smaug-go/internal/types/misc.go` (AuctionData extension), `/home/eilidh/src/smaug/smaug-go/internal/world/world.go` (init + NoAuction slice), `/home/eilidh/src/smaug/smaug-go/internal/game/loop.go` (pulseAuction slot + closeDescriptor defensive clear), `/home/eilidh/src/smaug/smaug-go/internal/game/update.go` (auctionUpdate method), `/home/eilidh/src/smaug/smaug-go/internal/act/auction.go` (stub → state machine), `/home/eilidh/src/smaug/smaug-go/internal/act/auction_test.go` (extend from 8 to ~35 tests), `/home/eilidh/src/smaug/smaug-go/internal/act/info.go` (DoQuit auction gate), `/home/eilidh/src/smaug/smaug-go/internal/persist/subsystems.go` (optional noauction.dat loader).
+
+---
+
+## Completion Record (2026-04-19)
+
+**Status:** LANDED. All 10 task groups (G0-G9 executable; G9 integration promoted to unit-level via disconnect-state tests) and all 23 acceptance criteria satisfied.
+
+### Acceptance-criteria cross-reference
+
+| # | Criterion | Pin-test / location |
+|---|---|---|
+| A1  | Empty arg + no item → "nothing being auctioned" | `TestDoAuction_Empty_NoItem` |
+| A2  | Empty arg + item → bid/short_descr/weight/value/level/wear-loc + per-type info | `TestDoAuction_Empty_WithItem_NoBids` + `_WithBids` + `TestDoAuction_NightHours_ItemExists_Allowed` covers "Damage is" line emission from G4b |
+| A3  | Immortal sees seller/bidder/round; mortal does not | `TestDoAuction_Empty_Immortal_SeesSellerBuyer` + `_Mortal_NoSellerBuyer` |
+| A4  | NPC caller silent | `TestDoAuction_NPCGuard` (rewritten — no-op, no "Huh?") |
+| A5  | Level < 3 refused | `TestDoAuction_LevelTooLow` |
+| A6  | Non-immortal night hours refused | `TestDoAuction_NightHours_MortalBlocked` |
+| A7  | Immortal bypasses time gate | `TestDoAuction_NightHours_ImmortalBypass` + `_ItemExists_Allowed` (item-exists bypass is the same branch) |
+| A8  | `stop` cancels + refunds distinct buyer | `TestDoAuction_Stop_Immortal_Active_ReturnsItem` + `_SameBuyerAndSeller_NoRefund` + `_NoActiveAuction` |
+| A9  | Bid validates all 9 preconditions | `TestDoAuction_Bid_NoItem` / `_ItemLevelTooHigh` / `_SelfBid` / `_NoAmount` / `_BelowStarting` / `_BelowCurrentPlus10k` / `_ExceedsGold` / `_ExceedsMax` / `_WrongKeyword` |
+| A10 | Successful bid refunds prev, debits new, updates state, broadcasts | `TestDoAuction_Bid_Success` + `_RefundsPreviousBuyer` + `_SelfPreviousBidder_NoDoubleRefund` |
+| A11 | Start-new validates carry/noauc/modified/decaying/clan/perm/history/type | `TestDoAuction_Start_NotCarried` / `_InNoAuctionList` / `_ImmortalBypassesNoauc` / `_TypeMismatch` / `_Decaying` / `_ClanObject` / `_Permanent` / `_HistoryCollision` / `_NegativeMinBet` / `_InvalidMinBet` / `_DisallowedItemType` |
+| A12 | Successful start populates Auction + rotates history + broadcasts | `TestDoAuction_Start_HappyPath_Weapon` + `_HistoryRotation` |
+| A13 | Second-start gets "Try again later" + wait-state (mortal only) | `TestDoAuction_Start_WhileInProgress_MortalWaitState` + `_ImmortalNoWaitState` |
+| A14 | `auctionUpdate` advances Going 0→1→2→3 with correct broadcasts | `TestAuctionUpdate_Going1` + `_Going2` + `_Sold_HappyPath` (Going=2 → sold via case 3) |
+| A15 | Sold branch: buyer gets item, seller 90%, area 10% tax, clears | `TestAuctionUpdate_Sold_HappyPath` (pay=9000 / tax=1000 / LowEconomy=1000) |
+| A16 | Unsold branch: item returns to seller, 5% tax on Cost, floor at 0 | `TestAuctionUpdate_NotSold` + `_TaxFloor` |
+| A17 | DoQuit refuses seller OR buyer while auctioning | `TestDoQuit_BlockedWhileAuctioning_Seller` + `_Buyer` + `_NotBlocked_NoActiveAuction` |
+| A18 | closeDescriptor seller-drop cancels + refunds; buyer-drop reverts bet | `TestCloseDescriptor_SellerDropout_CancelsAuction` + `_BuyerDropout_RevertsBet` + `_PreservesHistory` + `_NoAuction_Noop` |
+| A19 | History ring ages out at 6*AUCTION_MEM = 18 idle ticks | `TestAuctionUpdate_NoItem_HistoryDecay` |
+| A20 | ParseBet/Advatoi forms all round-trip | `TestParseBet_*` (6 tests) + `TestAdvatoi_*` (4 tests) |
+| A21 | NumPunct(1234567) = "1,234,567" | `TestNumPunct_Thousand` |
+| A22 | world.New().Auction non-nil zero-valued | `TestNew_AuctionInitialized` + `_AuctionEmpty` |
+| A23 | Full `go test ./...` green, `go vet ./...` clean | `go test -count=3 ./...` passes all 15 packages |
+
+### C fidelity deviations (documented inline)
+
+- **§Q4 carry-weight check omitted** — Go has no `CanCarryW`/`GetObjWeight`/`WeightCap`. Sold item always goes to buyer; unsold always returns to seller. Readiness-vet correction verified in place: anomaly #1 is NOT dead code in C (seller can acquire weight in the 27s auction window), but the Go deferral is documented as TODO `auction-carry-weight-cap` for the future weight-subsystem landing.
+- **§Q7 tax math port-with-fix** — `pay := bet*9/10; tax := bet - pay` preserves the `pay+tax == bet` invariant; C's float cast drifts 1 gold on `bet=11`. Pinned by `TestAuctionUpdate_Sold_OddBet_NoGoldLeak`.
+- **Anomaly #14 `ms_find_obj` no-op** — generalized drunk/mental-state fail-chance at `handler.c:2941` consumed by C's get/drop/put/quaff/recite/eat/drink/auction/pick. Go has not wired mental-state side-effects into any of these; auction stays consistent with the existing omission. Inline `// C: ms_find_obj (no-op)` comment in `auctionStart`.
+- **§D7 `do_noauction` admin CRUD deferred** — C ships the full list/toggle/save command at `act_wiz.c:11120-11174`. Phase 6 ships the load-only path; admin command tracked as TODO.md `auction-do-noauction-admin` follow-up. Load-only is acceptable because the list is rarely mutated in practice.
+- **Anomaly #2 `DoQuit` gate ported verbatim** — C wording at `act_comm.c:2887` `"Wait until you have bought/sold the item on auction.\n\r"` is the literal string emitted. Two-layer defense per §D8: DoQuit refusal + closeDescriptor defensive clear.
+- **§D5 `num_punct` port** — new `util.NumPunct(int) string` centralizes the 5+ call sites in the broadcast/tick paths. Stdlib has no thousands-separator; `golang.org/x/text/message` was considered and rejected as overkill for one formatter.
+- **§D6 `parsebet`/`advatoi` port** — mechanical port of C `bet.h:118-210`. Covered by `TestParseBet_*` + `TestAdvatoi_*` (15 cases).
+- **History ring direction** — C `memmove(dst=history+1, src=history, len=(AUCTION_MEM-1)*sizeof)` shifts RIGHT. Go uses an explicit descending-index loop `for i := AUCTION_MEM-1; i > 0; i--` instead of `copy()` for clarity. Direction-flip mutation verified to fail `TestDoAuction_Start_HistoryRotation`.
+
+### 8 mutation gates (banned-list respected — `Edit` round-trips only)
+
+| # | Mutation site | Failing test |
+|---|---|---|
+| 1 | `auctionMinIncrement 10000→1000` | `TestDoAuction_Bid_BelowCurrentPlus10k` (bid of 5000 now accepted as 5,000-gold broadcast) |
+| 2 | `NumPunct first := len(s) % 3 → 0` | `TestNumPunct_Thousand` (slice OOB panic on 4-digit inputs) |
+| 3 | time-gate `||→&&` | `TestDoAuction_NightHours_MortalBlocked` (hour=20 no longer triggers refusal) |
+| 4 | history rotation direction flip | `TestDoAuction_Start_HistoryRotation` (seeded `[A, B, nil]` + auction C → got `[C, nil, nil]` expected `[C, A, B]`) |
+| 5 | tax split `pay := bet*9/10 → bet/10` | `TestAuctionUpdate_Sold_HappyPath` (seller gets 1000, area gets 9000 — inverted from 9000/1000) |
+| 6 | `clearAuctionOnDisconnect` seller-branch body replaced with bare `return` | `TestCloseDescriptor_SellerDropout_CancelsAuction` (Auction.Item not nil; buyer.Gold still 0; obj not in room.Contents) |
+| 7 | DoQuit gate `Item != nil → Item == nil` | `TestDoQuit_BlockedWhileAuctioning_Seller` + `_Buyer` (both quit proceed to "surroundings begin to fade") |
+| 8 | `LoadNoAuction` 0-sentinel `break → continue` | `TestLoadNoAuction_StopsAtZeroSentinel` (loads `[42, 99]` instead of `[42]`) |
+
+All mutations reverted via corresponding `Edit` — no `git checkout` / `git restore` / `git stash` / `git reset --hard` / `--amend` used.
+
+### Test count delta
+
++86 tests across 7 test files:
+
+- `internal/act/auction_state_test.go` — 42 (new file)
+- `internal/game/update_auction_test.go` — 14 (new file)
+- `internal/util/parsebet_test.go` — 11 (new file)
+- `internal/util/numpunct_test.go` — 4 (new file)
+- `internal/persist/noauction_test.go` — 5 (new file)
+- `internal/types/misc_test.go` — 2 (new file)
+- `internal/world/world_test.go` — 3 (extended existing)
+
+Plus `internal/act/auction_test.go` modified: TestDoAuction_Stub_ClosedMessage DELETED; `TestDoAuction_NPCGuard` rewritten from "Huh?" assertion to silent-return assertion per C `act_obj.c:3791-3792`.
+
+### Gates
+
+- `go build ./...` clean
+- `go vet ./...` clean
+- `gofmt -l` clean on all changed/new files (20 files checked)
+- `go test -count=3 ./...` green across all 15 packages (testclient 206s, cmd/smaug 67s, combat 23s, act 21s, magic 11s, mudprog 9s, rest sub-2s)
+- Structured self-review substituted for external adversary pass per documented tooling caveat
+
+### Follow-ups (added to TODO.md)
+
+- `auction-do-noauction-admin` — port the full `do_noauction` immortal CRUD (`act_wiz.c:11120-11174`). Load-only path shipped here is acceptable because the list is rarely mutated in practice.
+- `auction-carry-weight-cap` — when a weight-cap subsystem lands, restore the C checks at `update.c:3247-3262` (sold branch) and `:3293-3308` (unsold branch). Shimmed to "always give to recipient" today.
+- `economy-helpers-unify` — `mudprog/commands.go` retains package-private `boostEconomy`/`lowerEconomy` helpers next to the new public `handler.BoostEconomy`/`LowerEconomy`. Low-priority consolidation; future-tidy.
