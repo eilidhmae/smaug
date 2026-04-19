@@ -146,6 +146,13 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	act.CopyBufferFunc = game.CopyBuffer
 	act.StopEditingFunc = game.StopEditing
 
+	// Interactive redit menu seam (plan-phase6-olc-redit.md §G3 / §G4).
+	// ReditDispMenu lives in game so the parser can resolve exit vnums
+	// via game.SetWorldRef; act holds only the command entry. Same
+	// cross-package cycle-break pattern as the other OLC seams.
+	act.ReditDispMenuFunc = game.ReditDispMenu
+	game.SetWorldRef(w)
+
 	// TIMER_DO_FUN callback registry (plan-tranche-b.md G2). Registry
 	// is empty today because no Go skill command currently sets a
 	// TIMER_DO_FUN timer. When `do_detrap` / `do_dig` / `do_search` /

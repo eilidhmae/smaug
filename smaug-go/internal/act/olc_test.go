@@ -359,16 +359,71 @@ func TestDoMcreate_DuplicateVnum(t *testing.T) {
 
 // --- DoRedit ---
 
-func TestDoRedit_NoArg(t *testing.T) {
+// TestDoRedit_NoArgEntersMenu — plan §G3 / §A5. With no subcommand,
+// DoRedit opens the interactive menu: sets Connected=CON_REDIT, allocates
+// Olc with the current room as Target, and invokes ReditDispMenuFunc.
+func TestDoRedit_NoArgEntersMenu(t *testing.T) {
 	_ = setupOlcWorld()
 	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 	ch.InRoom = &types.RoomIndexData{Vnum: 7200, Name: "Build Room"}
 
+	// Observe the seam was invoked.
+	called := false
+	prev := ReditDispMenuFunc
+	ReditDispMenuFunc = func(d *types.DescriptorData) { called = true }
+	t.Cleanup(func() { ReditDispMenuFunc = prev })
+
 	DoRedit(ch, "")
-	out := readOutput(ch, client)
-	if !strings.Contains(out, "Redit what?") {
-		t.Errorf("expected 'Redit what?', got: %q", out)
+
+	if ch.Desc.Connected != int(types.CON_REDIT) {
+		t.Errorf("Connected = %d, want CON_REDIT (%d)", ch.Desc.Connected, int(types.CON_REDIT))
+	}
+	if ch.Desc.Olc == nil {
+		t.Fatal("Olc is nil after no-arg DoRedit")
+	}
+	if ch.Desc.Olc.Target != ch.InRoom {
+		t.Error("Olc.Target should be ch.InRoom")
+	}
+	if ch.Desc.Olc.Vnum != 7200 {
+		t.Errorf("Olc.Vnum = %d, want 7200", ch.Desc.Olc.Vnum)
+	}
+	if ch.Desc.Olc.Mode != types.REDIT_MAIN_MENU {
+		t.Errorf("Olc.Mode = %d, want REDIT_MAIN_MENU", ch.Desc.Olc.Mode)
+	}
+	if !called {
+		t.Error("ReditDispMenuFunc was not invoked")
+	}
+}
+
+// TestDoRedit_WithArgKeepsFlatPath — §G3 / §A6. Named subcommand keeps
+// the legacy flat-path: Connected stays at CON_PLAYING and no Olc
+// allocation happens.
+func TestDoRedit_WithArgKeepsFlatPath(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	ch.InRoom = &types.RoomIndexData{Vnum: 7201, Name: "Build Room"}
+
+	// Install a sentinel menu func that should NOT be called.
+	called := false
+	prev := ReditDispMenuFunc
+	ReditDispMenuFunc = func(d *types.DescriptorData) { called = true }
+	t.Cleanup(func() { ReditDispMenuFunc = prev })
+
+	DoRedit(ch, "name The Big Room")
+
+	if called {
+		t.Error("ReditDispMenuFunc should not fire on flat-path subcommand")
+	}
+	if ch.Desc.Connected != types.CON_PLAYING {
+		t.Errorf("Connected = %d, want CON_PLAYING", ch.Desc.Connected)
+	}
+	if ch.Desc.Olc != nil {
+		t.Errorf("Olc should be nil on flat-path; got %+v", ch.Desc.Olc)
+	}
+	if ch.InRoom.Name != "The Big Room" {
+		t.Errorf("room.Name = %q, want 'The Big Room'", ch.InRoom.Name)
 	}
 }
 

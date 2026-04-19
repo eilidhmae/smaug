@@ -72,6 +72,11 @@ type DescriptorData struct {
 	// ColorFunc processes color codes in output before sending to the client.
 	// Set by the server layer. If nil, output is sent as-is.
 	ColorFunc func(text string, ansiEnabled bool) string
+
+	// Olc carries interactive-OLC session state (redit/oedit/medit menus).
+	// Nil when not in CON_REDIT / CON_OEDIT / CON_MEDIT. See types/olc.go.
+	// Allocated on menu entry, cleared by CleanupOlc on Q/quit.
+	Olc *OlcData
 }
 
 // TelnetState tracks telnet protocol negotiation.

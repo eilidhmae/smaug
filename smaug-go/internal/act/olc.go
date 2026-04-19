@@ -27,6 +27,13 @@ var (
 	StopEditingFunc func(ch *types.CharData)
 )
 
+// ReditDispMenuFunc opens the interactive redit menu for a descriptor.
+// Wired from boot (game.ReditDispMenu); act cannot import game directly,
+// so the seam breaks the cycle the same way StartEditingFunc does.
+// Called from DoRedit(ch, "") — the no-arg path enters the menu.
+// Plan plan-phase6-olc-redit.md §G3.
+var ReditDispMenuFunc func(d *types.DescriptorData)
+
 // --- Room editing ---
 
 // DoRedit implements the 'redit' command: edit the current room.
@@ -41,12 +48,26 @@ func DoRedit(ch *types.CharData, argument string) {
 	}
 
 	arg, rest := util.OneArgument(argument)
+	room := ch.InRoom
 	if arg == "" {
-		ch.Send("Redit what? (name, desc, sector, flags, exdesc, exit)\n\r")
+		// No subcommand → enter the interactive menu. Builders who
+		// prefer the flat path keep using `redit name foo` etc.
+		// Plan plan-phase6-olc-redit.md §G3 / §A5.
+		if ch.Desc == nil {
+			ch.Send("No descriptor.\n\r")
+			return
+		}
+		ch.Desc.Olc = &types.OlcData{
+			Mode:   types.REDIT_MAIN_MENU,
+			Vnum:   room.Vnum,
+			Target: room,
+		}
+		ch.Desc.Connected = int(types.CON_REDIT)
+		if ReditDispMenuFunc != nil {
+			ReditDispMenuFunc(ch.Desc)
+		}
 		return
 	}
-
-	room := ch.InRoom
 
 	switch strings.ToLower(arg) {
 	case "name":

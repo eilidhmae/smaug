@@ -262,6 +262,12 @@ func (g *GameLoop) processInput() {
 				if d.Character != nil {
 					EditBuffer(d.Character, line)
 				}
+			case types.CON_REDIT:
+				// Interactive room-editor substate. Mirrors C
+				// src/smaug.c:1641-1652 which routes CON_REDIT
+				// input to redit_parse directly (not nanny).
+				// Plan plan-phase6-olc-redit.md §G2.
+				reditParse(d, line)
 			default:
 				g.nanny(d, line)
 			}

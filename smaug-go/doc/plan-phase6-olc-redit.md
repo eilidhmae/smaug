@@ -402,4 +402,75 @@ _External adversary review completed 2026-04-18 — verdict PASS with minor CONC
 
 ## Completion Record
 
-_To be appended by the implementing lineage upon landing._
+**Landed 2026-04-19.** All 13 task groups executed; all 18 acceptance criteria satisfied. First of three OLC-substate plans; establishes the nanny-dispatch pattern + `OlcData`-on-descriptor + `CON_REDIT` loop arm that `oedit`/`medit` will inherit.
+
+### Group-by-group summary
+
+- **G1** — `OlcData` struct (6 fields: Mode, Vnum, Change, Target, Spare, TempNum) + 24 REDIT_* constants offset `iota+100` to keep clear of CON_* iota space. `DescriptorData.Olc *OlcData` added. Pinned by 4 tests in `internal/types/olc_test.go`: nil-default, struct-literal field shape, mode uniqueness, CON_*-vs-REDIT_* separation.
+- **G2** — `CON_REDIT` arm added to `internal/game/loop.go:252-267` processInput dispatch switch. Mutation swap `CON_REDIT`→`CON_OEDIT` caught by E2E test (drops to nanny default → "Unexpected state. Disconnecting.").
+- **G3** — `DoRedit(ch, "")` extended to open the menu: allocate `ch.Desc.Olc`, set `Connected=CON_REDIT`, invoke `ReditDispMenuFunc` seam. Flat path (`redit name foo` etc.) untouched. `TestDoRedit_NoArgEntersMenu` + `TestDoRedit_WithArgKeepsFlatPath` pin both branches; obsolete `TestDoRedit_NoArg` expecting "Redit what?" removed.
+- **G4** — Menu renderers in new `internal/game/redit_menu.go`: ReditDispMenu (main), reditDispFlagMenu, reditDispSectorMenu, reditDispExitMenu, reditDispExitEdit, reditDispExitFlagMenu, reditDispExitDirs, reditDispExtradescMenu, reditDispExtradescChoice. Source tables ported verbatim: `r_flags[]` from `src/build.c:92-105` (41 labels, matching overland-code conditional removed — stock build has no overland); sector labels from `redit_disp_menu` switch at `src/oredit.c:430-446`; `sectorKeywords` from `sector_names[]` at `:391-396`; direction names; exitFlagLabels (29 bits up to MAX_EXFLAG=28 per `constants.go:625`, with reserved slots EX_RES1/EX_RES2/EX_PORTAL skipped in UI). ANSI screen-clear sequence deliberately omitted per §Open Q1.
+- **G5** — `reditParse` core + REDIT_MAIN_MENU branch in new `internal/game/redit_parse.go`. Q → `cleanupOlc` + "Exiting editor." (wording corrected per readiness-vet: C `cleanup_olc` discards, no "Room saved." emitted). `2` → EditorSave closure that re-sets `Connected = CON_REDIT` AFTER `StopEditing` (wording-verified: `/s` handler at `game/editor.go:163-172` transitions to CON_PLAYING BEFORE invoking closure). Mirror C `do_redit_reset` at `src/oredit.c:493-535`. Mutation: drop CON_REDIT re-set → `TestReditParse_DescEditorCallback_ReturnsToConRedit` fails.
+- **G6** — REDIT_NAME / REDIT_SECTOR / REDIT_TUNNEL / REDIT_TELEDELAY / REDIT_TELEVNUM branches. Tunnel URANGE-clamped [0, 1000]; televnum clamped [1, MAX_VNUM]; sector validator rejects SECT_DUNNO + out-of-range (mirrors C `oredit.c:685-696`). Names pass through `util.SmashTilde`. Mutations: flip tunnel upper 1000→100; drop SECT_DUNNO guard — both caught.
+- **G7** — REDIT_FLAGS branch: whole-input integer `0` returns to main; `1..32` toggles 1-indexed bit; non-numeric treated as space-separated word list dispatched through `getRoomFlagBit`. Mutation: Toggle→Set breaks the "toggle-off" test.
+- **G8** — Exit sub-machine: REDIT_EXIT_MENU / EDIT / ADD / ADD_VNUM / DELETE / VNUM / KEY / KEYWORD / DESC / FLAGS. All 10 modes handled. **REDIT_EXIT_VNUM C-bug fix**: Go updates both `pexit.Vnum` AND `pexit.ToRoom` (C at `src/oredit.c:860-875` sets only vnum, leaving ToRoom stale). Pinned by `TestReditParse_ExitVnum_SetsBothFields`. Add-vnum path validates the destination exists via `worldRoomLookup` (seam to `world.GetRoom`). Direction input accepts both numeric (0..DIR_SOMEWHERE) and word-prefix forms; duplicate direction detected and rejected with menu redisplay.
+- **G9** — Extradesc sub-machine: REDIT_EXTRADESC_MENU / CHOICE / KEY / DESCRIPTION / DELETE. Matches C junk-on-Q-if-empty branch at `oredit.c:941-949`. Description path reuses the same EditorSave + restore-CON_REDIT pattern from G5.
+- **G10** — `cleanupOlc` helper: nulls Olc, sets Connected=CON_PLAYING, clears Substate=SUB_NONE. Idempotent (second call no-op). Mutation: swap CON_PLAYING→CON_REDIT caught by Quit + cleanup tests.
+- **G11** — `olcLog` ports C `olc_log` at `src/oredit.c:171-210` with the ROOM(vnum) prefix only (OBJ/MOB branches deferred to future oedit/medit plans). Routes through `util.LogStringPlus` tagged `types.LOG_BUILD` + the character's trust. Format verified by observation in test output.
+- **G12** — testclient E2E in new `internal/testclient/redit_test.go`: (1) `TestTestclient_ReditMenuEntryAndQuit` — immortal types `redit`, reads menu (match on "Enter choice" since no `> ` sentinel, per G12 readiness-vet note), types Q, sees "Exiting editor."; (2) `TestTestclient_ReditMenuSetName` — `redit`, `1`, text, verify redisplay contains new name; (3) `TestTestclient_ReditInvalidChoiceRedisplays` — bad input produces "Invalid choice!" and the menu redisplays (no CON_REDIT drop). All 3 green. Mutation: swap CON_REDIT arm in loop.go → first test fails with "Unexpected state. Disconnecting." (nanny default fired instead of parser).
+- **G13** — CLAUDE.md row flipped to **LANDED 2026-04-19**; CHANGELOG.md 2026-04-19 entry prepended; TODO.md item #6 updated; this Completion Record appended.
+
+### Mutation matrix (≥8 required per A18)
+
+9 `Edit`-round-trip mutations verified — no `git checkout` / `git restore` / `git stash` / `git reset --hard` / `git commit --amend` used at any point in this lineage:
+
+1. Drop `d.Desc.Connected = CON_REDIT` in DoRedit → `TestDoRedit_NoArgEntersMenu` fails (Connected=0).
+2. Swap CON_PLAYING→CON_REDIT in `cleanupOlc` → `TestReditParse_Quit_CleansUpAndReturnsToPlaying` + `TestCleanupOlc_ResetsDescriptorAndCharacter` both fail.
+3. Flip tunnel URANGE upper 1000→100 → `TestReditParse_Tunnel_Clamps` fails on 9999 case.
+4. Replace `Toggle(bit)` with `Set(bit)` in flag-number branch → `TestReditParse_Flags_NumberToggle` fails (can't un-set).
+5. Drop `n == types.SECT_DUNNO` guard → `TestReditParse_Sector_RejectsDunno` fails.
+6. Drop `pexit.ToRoom = target` Go-bug-fix in REDIT_EXIT_VNUM → `TestReditParse_ExitVnum_SetsBothFields` fails (this is the C-bug-reproducing mutation).
+7. Disable extradesc empty-junk branch → `TestReditParse_Extradesc_AddKeyQuitJunksIfEmpty` fails.
+8. Swap `case CON_REDIT:` → `case CON_OEDIT:` in loop.go dispatch → `TestTestclient_ReditMenuEntryAndQuit` E2E fails.
+9. Drop CON_REDIT re-set in main-menu-`2` EditorSave closure → `TestReditParse_DescEditorCallback_ReturnsToConRedit` fails.
+
+### Test count delta
+
+43 new tests — 4 types (olc_test.go), 34 game (redit_parse_test.go), 2 act (olc_test.go), 3 testclient (redit_test.go). Added to the pre-existing suite: `go test -count=3 ./...` green across all 15 packages.
+
+### Deferrals honored (plan §Scope Cuts)
+
+- **REDIT_CONFIRM_SAVESTRING flow** — constant reserved; C already skips via commented-out block at `oredit.c:580-586`.
+- **`redit_setup_new`** — new-room creation partially covered by Phase 4b `DoRdig`; the C path in this file (prototype at :66 without definition) is unused.
+- **Double-edit guard** — world-wide descriptor scan deferred until oedit/medit generalize the lookup shape.
+- **`OLC_CHANGE` dirty-bit consumer** — field allocated on `OlcData`; no path reads it yet.
+- **Persisted build-log file** — `olcLog` writes via `util.LogStringPlus` only; dedicated `build.log` file deferred.
+- **Fine-grained `can_rmodify`** — current `GetTrust() >= LEVEL_IMMORTAL` check retained; full area-ownership + level-range logic deferred to admin-plan.
+
+### Open Q resolutions
+
+- **Q1** (screen-clear omitted): retained the plan recommendation. No testclient breakage; cosmetic-only behavior change.
+- **Q2** (Olc on Descriptor vs Char): retained — Olc on Descriptor, reuse existing `Substate`/`EditorSave` on Char. Consistent with Tier 12 precedent.
+- **Q3** (color codes): retained — menu emits `&g`/`&w`/`&O` tags; the existing descriptor `ColorFunc` processes at flush.
+- **Q4** (REDIT_EXIT_VNUM C bug): fix-in-Go applied; both `pexit.Vnum` and `pexit.ToRoom` now updated. CHANGELOG cites the bug.
+- **Q5** (olcLog destination): ported minimally via `util.LogStringPlus` with `LOG_BUILD` tag. Persistence deferred.
+- **Q6** (field-set branch menu redisplay): explicit call at the end of each branch. No defers; clearer control flow.
+
+### Downstream readiness
+
+Nanny-dispatch pattern + `OlcData`-on-descriptor + `CON_REDIT` loop arm are **ready for `oedit`/`medit` to inherit**:
+
+- `internal/types/olc.go` defines the shared struct with `Target any` so `*ObjIndexData` / `*MobIndexData` type-assertions just work.
+- `internal/game/loop.go` dispatch switch needs one new case per future editor (`CON_OEDIT` / `CON_MEDIT` → respective parser).
+- `internal/boot/boot.go` wires the menu seam; future editors will register `act.OeditDispMenuFunc = game.OeditDispMenu` etc.
+- `internal/game/redit_parse.go` demonstrates the EditorSave restore-CON_REDIT contract for line-editor round-trips — same pattern applies for any descriptor-editing mode.
+- `internal/testclient/redit_test.go` shows the E2E pattern (match on menu-text substrings, not `> ` sentinel).
+- `CharData.Substate` sub-state constants for OEDIT / MEDIT already exist; future plans fill in the analogous editor dispatch.
+
+### Tooling caveat
+
+`Agent` tool remained unavailable in the `manager` subagent harness across this lineage — structured self-review substituted for an external adversary pass. Plan audit (2026-04-18, PASS with minor CONCERNS) informed all design decisions; the 2 readiness-vet corrections from the orchestrator (G5 wording, G12 prompt-tracking) were applied in-place before execution.
+
+### Commit
+
+`bafc1a4` (hash filled in after landing). See CHANGELOG.md 2026-04-19 entry for the exhaustive file list.
