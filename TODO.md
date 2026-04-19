@@ -16,13 +16,22 @@ The four 2026-04-17 audit plans (`plan-combat-depth.md`, `plan-dammessage-gaps.m
 
 6. **Interactive OLC substates** (P2): `CON_OEDITING` / `CON_MEDITING`. **`CON_REDIT` LANDED 2026-04-19** (`plan-phase6-olc-redit.md`) — nanny-dispatch pattern + `OlcData`-on-descriptor allocation + loop CON_REDIT arm are now proven and ready for `oedit`/`medit` to inherit. Remaining work: `plan-phase6-olc-oedit.md` + `plan-phase6-olc-medit.md` (unauthored — soft-blocked on olc-redit which has now landed, so these can be drafted).
 7. **`DoBio` / `DoDescription`** (P2): **Unblocked** now that `plan-editor-save.md` landed — wire via the `EditorSave` callback pattern demonstrated in `DoRedit desc` / `ed`.
-8. **Hotboot/copyover** (P2, infrastructure): Q1 resolved 2026-04-19 — Linux/Unix only with `//go:build !windows` guard. Executable rewrite of `plan-phase6-hotboot.md` unblocked; Windows stub deferred until demand signal.
+8. ~~**Hotboot/copyover** (P2, infrastructure): Q1 resolved 2026-04-19 — Linux/Unix only with `//go:build !windows` guard.~~ **LANDED 2026-04-19** via `plan-phase6-hotboot.md`. 8 task groups (pre-G0.a/b + G0–G7), all 18 acceptance criteria satisfied, 16 mutation gates verified, 57 new tests including `TestHotboot_EndToEnd` integration (~9.4s measured real hotboot pause). 6 Windows stubs keep `GOOS=windows go build ./...` clean (pinned by new `make windows-build-check` target in `smaug-go/Makefile`). Windows-native hotboot remains out of scope; dedicated `plan-phase6-hotboot-windows.md` tracked if demand emerges. See `smaug-go/doc/plan-phase6-hotboot.md` §Completion Record for per-criterion test citations.
 9. **Marriage**: DEFERRED 2026-04-19 (human decision — park; revisit on player demand signal). Q2 vnum-100/101 collision not worth forcing a resolution without a use case. **Note:** when marriage is revisited it will be a **rewrite** per `smaug-go/doc/post-phase6-vision.md` §2 (poly-capable, per-coupling agency), not a port of the C two-person `Spouse` field.
 10. **Big optional systems** (P3): overland, housing, polymorph, archery, arena, dragon flight, planes, holidays, star maps. Each is large and self-contained; pick by demand signal, not order.
 
 ---
 
 ## Active
+
+### Post-hotboot adversary review follow-ups (2026-04-19)
+
+Deferred from `plan-phase6-hotboot.md` §Post-Execution Adversary Review — non-blocking for Phase 6 closure but actionable:
+
+- [ ] **Pre-existing race in `TestBio_RoundTripThroughEditor`** (`internal/testclient/bio_test.go:61`). Test goroutine reads `ch.PCData.Bio` while the game loop's `DoBio` `EditorSave` closure writes the same field. Caught by `go test -race -count=1 ./internal/testclient/`. Default `go test -count=3 ./...` is clean; race only surfaces with `-race`. Fix shape: add a `sync.Mutex` guard on `PCData.Bio` access, OR read from a snapshot the test explicitly requests. Not introduced by hotboot — surfaces any time the testclient package runs under `-race`.
+- [ ] **Supervisor / Docker deployment notes** for `smaug-go/doc/plan.md` — `systemd Type=exec` recommended, `--hotboot-recover` must NOT be passed by operator restart scripts, PID-1 container caveats. Ops adversary flagged as LOW-severity doc gap.
+- [ ] **`/proc/<pid>/cmdline` threat-model note** — argv FD integers are world-readable on Linux during the ~10s recovery window; same-UID-only attack surface. Documentation entry in `smaug-go/doc/plan.md` security section.
+- [ ] **`os.Executable()` → `syscall.Exec` TOCTOU** — symlink swap between `EvalSymlinks` resolution and `syscall.Exec` execution. Mitigated in practice by binary-directory write permissions; worth a deployment-note mention. LOW.
 
 ### High-impact combat gaps (from 2026-04-17 audit — P0)
 
@@ -275,7 +284,7 @@ Follow-ups queued from plan-dammessage-gaps.md:
 
 ### Infrastructure
 
-- [ ] **Hotboot / copyover** (854 C LOC) — design doc landed 2026-04-18 (`plan-phase6-hotboot.md`). Executable plan is a follow-up rewrite once adversary-reviewed and Open-Q1 resolves. C ref: `src/hotboot.c`.
+- [x] **Hotboot / copyover** (854 C LOC) — **LANDED 2026-04-19** via `plan-phase6-hotboot.md`. C ref: `src/hotboot.c`. See `plan-phase6-hotboot.md` §Completion Record; CHANGELOG 2026-04-19 entry.
 - [ ] DNS resolution — `net.LookupAddr` for host display (out of Phase 6)
 - [ ] Web status page — embedded HTTP server (out of Phase 6)
 - [ ] MXP protocol parsing — C `protocol.c` has it; Go has no equivalent (out of Phase 6)

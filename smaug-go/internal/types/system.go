@@ -88,6 +88,9 @@ type SystemData struct {
 	Wizlock        bool
 	MagicHell      bool
 
+	// Hotboot
+	HotbootInProgress bool
+
 	// Timezone overrides
 	SecPerTick     int
 	PulsePerSec    int

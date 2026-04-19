@@ -1,4 +1,4 @@
-.PHONY: build test test-v test-race clean run vet lint fmt check install-hooks
+.PHONY: build test test-v test-race clean run vet lint fmt check install-hooks windows-build-check
 
 BINARY  := smaug-go
 PORT    := 4000
@@ -46,6 +46,11 @@ fmt-check:
 
 # All checks: vet + test + format check
 check: vet fmt-check test
+
+# Cross-compile smoke for Windows stubs (hotboot build-tag guard verification, pins A17
+# of plan-phase6-hotboot.md — //go:build !windows sources + //go:build windows stubs).
+windows-build-check:
+	GOOS=windows go build ./...
 
 # Install the git pre-commit hook for this clone
 install-hooks:

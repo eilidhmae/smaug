@@ -65,6 +65,7 @@ func resetMobile(w *world.World, reset *types.ResetData, lastMob **types.CharDat
 
 	mob := CreateMobile(w, idx)
 	CharToRoom(mob, room)
+	SetSentinelHome(mob, room)
 
 	*lastMob = mob
 	*lastRoom = room

@@ -250,4 +250,24 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Goal:** Ship the large self-contained systems deferred from Phase 5 (hotboot, overland, housing, polymorph, archery, dragon flight, arena, stances OLC, planes, holidays, star maps, marriage), plus interactive OLC substates (`CON_OEDIT` / `CON_MEDIT` / `CON_REDIT`), plus remaining Phase-5 content follow-ups (full auction state machine, extra communication channels, clan officer commands, missing skills, deity prayer).
 
-See `phase6-roadmap.md` for the full inventory with per-system C LOC, dependencies, proposed plan filenames, and wave-based execution ordering.
+**Landed (2026-04-19 snapshot):**
+
+| System | Plan | Status |
+|---|---|---|
+| Arena PvP | `plan-phase6-arena.md` | LANDED 2026-04-19 |
+| Star maps | `plan-phase6-starmap.md` | LANDED 2026-04-18 |
+| Holidays | `plan-phase6-holidays.md` | LANDED 2026-04-19 |
+| Planes | `plan-phase6-planes.md` | LANDED 2026-04-19 |
+| Channels (extra) | `plan-phase6-channels-extra.md` | LANDED 2026-04-18 |
+| Skills (bloodlet/pounce/broach) | `plan-phase6-skills.md` | LANDED 2026-04-18 |
+| Combat stances OLC | `plan-phase6-stances-olc.md` | LANDED 2026-04-19 |
+| Auction (full state machine) | `plan-phase6-auction.md` | LANDED 2026-04-19 |
+| Clan officer commands | `plan-phase6-clan-officer.md` | LANDED 2026-04-19 |
+| OLC `redit` substate | `plan-phase6-olc-redit.md` | LANDED 2026-04-19 |
+| Polymorph | `plan-phase6-polymorph.md` | LANDED 2026-04-19 |
+| Archery | `plan-phase6-archery.md` | LANDED 2026-04-19 |
+| **Hotboot / copyover** | `plan-phase6-hotboot.md` | **LANDED 2026-04-19** (Linux/Unix only via `//go:build !windows`; ~9.4s measured hotboot pause; 18/18 acceptance criteria + `TestHotboot_EndToEnd` integration) |
+
+**Pending (authored, not yet landed):** `plan-phase6-housing.md`, `plan-phase6-overland-loader.md`, `plan-phase6-overland-builder.md`. **Deferred:** `plan-phase6-marriage.md` (human decision 2026-04-19 — park; poly-capable rewrite when revisited). **Unauthored:** `plan-phase6-olc-oedit.md`, `plan-phase6-olc-medit.md`, `plan-phase6-olc-mpedit.md`, `plan-phase6-dragonflight.md`, `plan-phase6-deity-prayer.md`, `plan-phase6-foldarea.md`.
+
+See `phase6-roadmap.md` for the full inventory with per-system C LOC, dependencies, proposed plan filenames, and wave-based execution ordering. See also the table in `CLAUDE.md`'s documentation index for per-plan completion-record pointers.

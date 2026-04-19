@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"log"
 	gonet "net"
+	"sync"
 
 	"github.com/eilidhmae/smaug/internal/types"
 )
@@ -14,6 +15,16 @@ type Server struct {
 	listener gonet.Listener
 	Incoming chan *types.DescriptorData
 	done     chan struct{}
+	// doneMu guards the close/recreate cycle on done across Stop and
+	// the hotboot pause/resume seam so concurrent callers don't
+	// double-close. Normal steady-state operation never contends.
+	doneMu sync.Mutex
+	// acceptWG tracks the accept goroutine so ResumeFromPause can wait
+	// for the prior acceptLoop to exit before rewriting s.listener.
+	// Without this, the rewrite and the old goroutine's s.listener read
+	// race (go test -race catches it deterministically under
+	// TestResumeFromPause_RestartsAccept).
+	acceptWG sync.WaitGroup
 }
 
 // NewServer creates a new Server ready to be started.
@@ -29,13 +40,32 @@ func NewServer() *Server {
 // Ownership of ln transfers to the server — Stop will close it.
 func (s *Server) StartOnListener(ln gonet.Listener) error {
 	s.listener = ln
+	s.acceptWG.Add(1)
 	go s.acceptLoop()
 	return nil
 }
 
+// Addr returns the listener's network address, or nil if the server has
+// not been started yet. Used by hotboot recovery tests to confirm the
+// inherited FD maps to the expected port.
+func (s *Server) Addr() gonet.Addr {
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
+}
+
 // Stop shuts down the server by closing the done channel and the listener.
+// Idempotent: a second Stop (including after PauseForHotboot) is a no-op.
 func (s *Server) Stop() {
-	close(s.done)
+	s.doneMu.Lock()
+	select {
+	case <-s.done:
+		// already closed (hotboot pause or earlier Stop)
+	default:
+		close(s.done)
+	}
+	s.doneMu.Unlock()
 	if s.listener != nil {
 		s.listener.Close()
 	}
@@ -44,6 +74,7 @@ func (s *Server) Stop() {
 // acceptLoop runs in its own goroutine, accepting new TCP connections
 // until the server is stopped.
 func (s *Server) acceptLoop() {
+	defer s.acceptWG.Done()
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {

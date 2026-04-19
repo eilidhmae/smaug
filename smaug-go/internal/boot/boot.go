@@ -757,6 +757,10 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "opstat", DoFun: act.DoOpstat, Position: types.POS_DEAD, Level: types.LEVEL_TRUEIMM})
 	reg.Register(&command.Command{Name: "rpstat", DoFun: act.DoRpstat, Position: types.POS_DEAD, Level: types.LEVEL_TRUEIMM})
 
+	// Hotboot (plan-phase6-hotboot.md §G3). Trust gate lives in the
+	// command body; Level here is just a coarse filter.
+	reg.Register(&command.Command{Name: "hotboot", DoFun: act.DoHotboot, Position: types.POS_DEAD, Level: types.LEVEL_ASCENDANT})
+
 	// OLC commands
 	reg.Register(&command.Command{Name: "redit", DoFun: act.DoRedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "ocreate", DoFun: act.DoOcreate, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})

@@ -100,6 +100,19 @@ func CreateMobile(w *world.World, idx *types.MobIndexData) *types.CharData {
 	return mob
 }
 
+// SetSentinelHome records the placement room on sentinel mobs so hotboot
+// recovery can restore them to their original spawn room even if an in-game
+// event (mudprog, teleport) has since moved them. Called by resetMobile after
+// CharToRoom during area reset. No-op for non-sentinel mobs or nil inputs.
+func SetSentinelHome(mob *types.CharData, room *types.RoomIndexData) {
+	if mob == nil || room == nil {
+		return
+	}
+	if mob.Act.IsSet(types.ACT_SENTINEL) {
+		mob.HomeVnum = room.Vnum
+	}
+}
+
 // CreateObject instantiates an object from its index template.
 // Equivalent to C create_object() in db.c.
 func CreateObject(w *world.World, idx *types.ObjIndexData, level int) *types.ObjData {

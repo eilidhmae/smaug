@@ -264,6 +264,11 @@ func parsePlayerField(ch *types.CharData, word string, sc *Scanner) {
 		ch.PCData.MKills = sc.ReadNumber()
 	case "MDeaths":
 		ch.PCData.MDeaths = sc.ReadNumber()
+	case "Hotboot":
+		// Hotboot flag — set by DoHotboot pre-exec, carried through the
+		// pfile, cleared post-recovery by BootRecover. See
+		// plan-phase6-hotboot.md §Chosen Design step 4.
+		ch.PCData.Hotboot = sc.ReadNumber() != 0
 	case "AKills":
 		// Arena wins. Not cross-referenced against a C pfile yet
 		// because ENABLE_ARENA was off in Go predecessors; key
@@ -550,6 +555,12 @@ func SavePlayer(w io.Writer, ch *types.CharData) error {
 	fmt.Fprintf(w, "PDeaths    %d\n", p.PDeaths)
 	fmt.Fprintf(w, "MKills     %d\n", p.MKills)
 	fmt.Fprintf(w, "MDeaths    %d\n", p.MDeaths)
+	if p.Hotboot {
+		// Hotboot flag — carried across the pfile save/exec/load cycle
+		// so BootRecover can clear it after the welcome. Only emitted
+		// when true so non-hotboot saves don't bloat pfiles.
+		fmt.Fprintf(w, "Hotboot    1\n")
+	}
 	if p.AKills != 0 {
 		fmt.Fprintf(w, "AKills     %d\n", p.AKills)
 	}

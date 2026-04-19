@@ -268,6 +268,22 @@ smaug-go/
 9. **MUD prog tests** (Phase 3) — Test `.are` files with known triggers, verify behavior
 10. **Stress tests** (Phase 4) — 100+ concurrent telnet connections, measure memory and latency
 
+### Opt-in Integration Tests
+
+A separate class of tests spawns the real `cmd/smaug` binary as a child
+process to validate end-to-end behavior that cannot be exercised in the
+in-process `testclient` harness (e.g. hotboot, which uses `syscall.Exec`).
+These are guarded by the `integration` build tag so `go test ./...` stays
+fast by default. Run them explicitly:
+
+```
+go test -tags integration -count=1 ./internal/testclient/...
+```
+
+Integration tests live in `internal/testclient/*_integration_test.go` with
+`//go:build integration && !windows` — the `!windows` guard reflects the
+hotboot platform constraint documented in `plan-phase6-hotboot.md`.
+
 ### Mutation Verification
 
 When backfilling tests for existing code, always verify by:

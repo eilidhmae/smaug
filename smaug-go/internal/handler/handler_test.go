@@ -116,6 +116,85 @@ func TestCreateMobile_HitDice(t *testing.T) {
 	}
 }
 
+// Pre-G0.a for plan-phase6-hotboot.md — ACT_SENTINEL mobs record their spawn
+// room on HomeVnum so hotboot recovery restores them to the original location
+// even if an in-game event (e.g. mudprog) has since moved them.
+func TestSetSentinelHome_SentinelRecordsVnum(t *testing.T) {
+	room := newTestRoom(3001)
+	mob := &types.CharData{}
+	mob.Act.Set(types.ACT_SENTINEL)
+
+	SetSentinelHome(mob, room)
+
+	if mob.HomeVnum != 3001 {
+		t.Errorf("sentinel HomeVnum = %d, want 3001", mob.HomeVnum)
+	}
+}
+
+func TestSetSentinelHome_NonSentinelUnchanged(t *testing.T) {
+	room := newTestRoom(3001)
+	mob := &types.CharData{HomeVnum: 99}
+
+	SetSentinelHome(mob, room)
+
+	if mob.HomeVnum != 99 {
+		t.Errorf("non-sentinel HomeVnum = %d, want preserved 99", mob.HomeVnum)
+	}
+}
+
+func TestSetSentinelHome_NilSafe(t *testing.T) {
+	// Defensive: must not panic on nil mob or nil room.
+	SetSentinelHome(nil, newTestRoom(3001))
+	SetSentinelHome(&types.CharData{}, nil)
+}
+
+func TestResetMobile_SentinelHomeVnumWired(t *testing.T) {
+	// End-to-end: resetMobile calls SetSentinelHome after CharToRoom so the
+	// sentinel's HomeVnum reflects the room it was placed in.
+	w := newTestWorld()
+	idx := newTestMobIndex(5001, 10)
+	idx.Act.Set(types.ACT_SENTINEL)
+	w.MobIndex[idx.Vnum] = idx
+	room := newTestRoom(3001)
+	w.Rooms[room.Vnum] = room
+
+	reset := &types.ResetData{Command: 'M', Arg1: 5001, Arg2: 1, Arg3: 3001}
+	var lastMob *types.CharData
+	var lastRoom *types.RoomIndexData
+	mobLevel := 0
+
+	resetMobile(w, reset, &lastMob, &lastRoom, &mobLevel)
+
+	if lastMob == nil {
+		t.Fatal("resetMobile did not create mob")
+	}
+	if lastMob.HomeVnum != 3001 {
+		t.Errorf("sentinel mob HomeVnum = %d, want 3001", lastMob.HomeVnum)
+	}
+}
+
+func TestResetMobile_NonSentinelHomeVnumZero(t *testing.T) {
+	w := newTestWorld()
+	idx := newTestMobIndex(5002, 10) // no ACT_SENTINEL
+	w.MobIndex[idx.Vnum] = idx
+	room := newTestRoom(3002)
+	w.Rooms[room.Vnum] = room
+
+	reset := &types.ResetData{Command: 'M', Arg1: 5002, Arg2: 1, Arg3: 3002}
+	var lastMob *types.CharData
+	var lastRoom *types.RoomIndexData
+	mobLevel := 0
+
+	resetMobile(w, reset, &lastMob, &lastRoom, &mobLevel)
+
+	if lastMob == nil {
+		t.Fatal("resetMobile did not create mob")
+	}
+	if lastMob.HomeVnum != 0 {
+		t.Errorf("non-sentinel mob HomeVnum = %d, want 0", lastMob.HomeVnum)
+	}
+}
+
 func TestCreateMobile_NoDice(t *testing.T) {
 	w := newTestWorld()
 	idx := newTestMobIndex(1002, 10)
@@ -1767,8 +1846,8 @@ func TestResetPut_IntoContainer(t *testing.T) {
 
 	area := &types.AreaData{
 		Resets: []*types.ResetData{
-			{Command: 'O', Arg1: 2210, Arg3: 5012},           // place chest in room
-			{Command: 'P', Arg1: 2211, Arg2: 1, Arg3: 2210},  // put gem in chest
+			{Command: 'O', Arg1: 2210, Arg3: 5012},          // place chest in room
+			{Command: 'P', Arg1: 2211, Arg2: 1, Arg3: 2210}, // put gem in chest
 		},
 	}
 
@@ -1802,7 +1881,7 @@ func TestResetPut_UsesLastObj(t *testing.T) {
 
 	area := &types.AreaData{
 		Resets: []*types.ResetData{
-			{Command: 'O', Arg1: 2212, Arg3: 5013}, // place bag in room (sets lastObj)
+			{Command: 'O', Arg1: 2212, Arg3: 5013},       // place bag in room (sets lastObj)
 			{Command: 'P', Arg1: 2213, Arg2: 1, Arg3: 0}, // put scroll in lastObj (bag)
 		},
 	}
@@ -2132,7 +2211,7 @@ func TestResetHide_UsesLastObj(t *testing.T) {
 	area := &types.AreaData{
 		Resets: []*types.ResetData{
 			{Command: 'O', Arg1: 2241, Arg3: 5041}, // sets lastObj
-			{Command: 'H', Arg1: 0},                  // use lastObj
+			{Command: 'H', Arg1: 0},                // use lastObj
 		},
 	}
 

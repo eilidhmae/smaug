@@ -77,6 +77,12 @@ type DescriptorData struct {
 	// Nil when not in CON_REDIT / CON_OEDIT / CON_MEDIT. See types/olc.go.
 	// Allocated on menu entry, cleared by CleanupOlc on Q/quit.
 	Olc *OlcData
+
+	// ResumedFromHotboot is a diagnostic flag set by BootRecover on each
+	// descriptor restored across a hotboot. Purely informational — used by
+	// tests and any code path that wants to special-case the first pulse
+	// after recovery. See plan-phase6-hotboot.md §G4.
+	ResumedFromHotboot bool
 }
 
 // TelnetState tracks telnet protocol negotiation.
