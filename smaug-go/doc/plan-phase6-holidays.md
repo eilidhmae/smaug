@@ -693,7 +693,7 @@ C `src/timezone.c:617-631` broadcasts `day->announce` via `echo_to_all(AT_IMMORT
 Total: **55 new tests**. Runs green on `go test -count=3 ./...` across all 15 packages.
 
 ### Commit
-Single landing commit — see `git log --oneline` for hash.
+Single landing commit `04366ad` (Phase 6 Holidays: holidays/saveholiday/setholiday + month_name + DoTime suffix). Follow-up hash-fill commit updates the CLAUDE.md / CHANGELOG.md / plan Completion Record to carry the hash inline.
 
 
 ---
