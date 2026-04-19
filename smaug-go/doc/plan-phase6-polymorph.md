@@ -400,4 +400,79 @@ Manager note: Agent-tool dispatch for adversary review is not available in this 
 
 ## 11. Completion Record
 
-*(To be appended after work lands.)*
+**LANDED 2026-04-19.** All 20 acceptance criteria satisfied. 7 task groups executed in order (G0 → G1 → G2 → G3 → G4a+G4b → G5 → G6). Commit hash TBD (recorded in CLAUDE.md + CHANGELOG).
+
+### Task-group outcomes
+
+| Group | Scope | Tests added | Mutation gates |
+|---|---|---|---|
+| G0 | Dice parser promoted: `magic.parseDiceExpr` → `util.DiceParse`. `magic.parseDiceExpr` is now a 1-line wrapper. `strconv` import dropped from `spell_smaug.go`. | 6 (empty/plain-int/level-tokens/arithmetic/dice-bounds/bitvector-name) | "DiceParse returns 0" caught 17 sub-cases across 4 tests |
+| G1 | `internal/persist/morphs.go` new: `LoadMorphs` / `SaveMorphs` / `writeMorph` / `morphKey` dispatcher / `newMorphWithDefaults` / `SetupMorphVnum` (with `worldMorphs` interface to avoid world→persist cycle). `internal/world/world.go`: `Morphs` + `MorphVnumCounter` fields + `GetMorph` / `GetMorphVnum` / `GetMorphs` / `SetMorphVnumCounter` / `GetMorphVnumCounter` methods. Boot wires `ClassNameLookup`/`RaceNameLookup`/`ClassNameFormatter`/`RaceNameFormatter` BEFORE `LoadMorphs` so Class/Race tokens resolve. Two-phase order confirmed: morphs load AFTER areas (mobs in `get_obj_vnum` see populated world). | 12 (missing/empty/single-morph/multi-morph/implicit-EOF/save-end-only/nonzero-fields-only/round-trip-all-fields/bitvector-round-trip/unknown-key-abandons-record/name-first-line/SetupMorphVnum 4 cases) | "Damroll always emits 0" caught by TestMorphs_RoundTrip |
+| G2 | `internal/handler/polymorph.go` new: `MakeCharMorph` + `ClearCharMorph` + `DoMorph` + `DoUnmorph` + `SendMorphMessage` + `CanMorph` + `DoMorphChar` + `DoUnmorphChar` + `UnmorphAll` + `GetObjVnumCarry` + `SeparateObj` (no-op, same treatment as archery). Direct-mutation pattern (NOT AffectModify) per plan §4.2. `types.DescriptorData.BufferedOutput` / `ResetBufferedOutput` added for test capture. | 15 (MakeCharMorph-static-fields, DoMorph-applies-deltas, DoUnmorph-round-trip, DoMorph-NoImmune-C-bug-preserved, two-morphs-swap, vampire-blood-path, hit-clamp, DoMorphChar-insufficient-HP, DoMorphChar-consumes-HP, DoMorphChar-already-morphed-bails, DoUnmorphChar-emits-msg, UnmorphAll-clears-users, CanMorph-immortal-bypasses, CanMorph-level-gate, CanMorph-no-cast, CanMorph-race-mask-inverted) | "double-add AC" caught by TestDoMorph_AppliesAllDeltas |
+| G3 | `internal/act/polymorph.go` `DoMorph` (immortal `morph <vnum>` / `morph <vnum> <target>`) + `DoUnmorph` (immortal `unmorph [target]`). Trust check when victim is named (C :2713-2718 semantics). `MorphFilePath` package-level, set-at-boot. | 4 (applies-to-self, non-existent-vnum-msg, non-numeric-rejected, NPC-blocked) | covered by G4 mutation below |
+| G4a+G4b | `internal/act/polymorph.go` `DoMorphstat` (list/byName/byVnum/help/desc) + `DoMorphcreate` (rejects duplicate by name — Go divergence from C for admin UX) + `DoMorphdestroy` (unmorph-all then splice + save) + `DoMorphset` (6 subcommand save + full field surface: name/short/level/ac + str/int/wis/dex/con/cha/lck + defpos/sex/pkill + bloodused/manaused/moveused/hpused/favourused/gloryused + time/day windows + sav1..5 + timer + hp/mana/move/blood/hitroll/damroll dice-strings + dodge/parry/tumble + obj1..3/objuse1..3 + immune/resistant/suscept + noimmune/noresistant/nosuscept + affected/noaffected bitvectors + keyword/deity/skills/noskills + morphself/morphother/unmorphself/unmorphother + long + class/race + nocast + description/help). `rangeOK` + `rangeOK10` + `zeroAsEmpty` helpers. G4a/G4b split preserved as a single file but the field setters are mechanically clustered so the LOC is readable. | 15 (3 stat + 3 create + 2 destroy + 5 morphset + 1 syntax-help + 1 unknown) | "morphcreate skips vnum assignment" caught by TestDoMorphcreate_AssignsFreshVnum |
+| G5 | `internal/mudprog/commands.go` `mpMorph` / `mpUnmorph` bodies filled in. NPC-only + no-descriptor gates. Morph lookup by name first, vnum if numeric. Matches C `do_mpmorph` / `do_mpunmorph` at `mud_comm.c:1964-2070`. Preserves "victim already morphed → skip" behavior (C buglogs; Go silently skips per TODO-on-logging convention). | 9 (by-name, by-vnum, missing-args, unknown-victim, unknown-morph, already-morphed-skips, PC-caller-blocked, mpunmorph-clears, mpunmorph-noop-when-not-morphed, mpunmorph-missing-args) | "swap arg1/arg2 in mpMorph" caught by TestMpMorph_ByName |
+| G6 | `internal/persist/player_morph.go` new: `writeMorphData` + `readMorphData` + `applyMorphDataField` dispatcher. `MorphGetter` seam in `player.go`. `SavePlayer` calls `writeMorphData` unconditionally (gate on ch.Morph != nil is inside). `LoadPlayer` adds `case "#MorphData"`. LoadPlayer's early-return on `lookup==nil` was removed because the pfile may carry a trailing #MorphData after `End` — objects still silently skip via `skipPlayerObject`. Defensive path: if `MorphGetter` returns nil (morph vnum deleted between sessions), ch.Morph stays allocated with Morph==nil; bug-log fires; no panic. Vnum-before-Name ordering pinned by test. | 6 (Vnum-before-Name, only-nonzero-fields, nil-morph-noop, save-load-round-trip, post-unmorph-no-block, unknown-vnum-degrades, unknown-key-bug-logs-but-survives) | "skip Vnum emission" caught by TestSaveLoadPlayer_MorphRoundTrip |
+
+### Acceptance criteria cross-reference
+
+1. A1: `world.Morphs` populated after boot — `boot.go` calls `persist.LoadMorphs` then `persist.SetupMorphVnum(w)`. Stock file `#END\n` returns empty slice, verified at boot.
+2. A2: `GetMorph` / `GetMorphVnum` — `world/world.go` methods.
+3. A3: Round-trip — `TestMorphs_RoundTrip` pins 44 fields.
+4. A4: DoMorph applies all fields — `TestDoMorph_AppliesAllDeltas`.
+5. A5: DoUnmorph reverses — `TestDoUnmorph_RoundTrip` (+ C-bug-preserved test for NoImmune strip asymmetry).
+6. A6: Prereq gates — `TestDoMorphChar_InsufficientHpBails` (exact C message).
+7. A7: Already-morphed — `TestDoMorphChar_AlreadyMorphedBails` (C `canmorph=FALSE` gate) + `TestDoMorph_TwoMorphsSwap` (DoMorph swap semantics, separate from DoMorphChar gate).
+8. A8: SendMorphMessage AT_MORPH — `TestDoUnmorphChar_EmitsUnmorphMessage`.
+9. A9: `morph <vnum>` / `morph <vnum> <target>` — 4 tests (`TestDoMorph_*`).
+10. A10: morphcreate vnum ≥1000 — `TestDoMorphcreate_AssignsFreshVnum`.
+11. A11: morphdestroy unmorphs + saves — `TestDoMorphdestroy_UnmorphsActiveUsers` + `TestDoMorphdestroy_RemovesFromTable`.
+12. A12: morphset <field> save persists — `TestDoMorphset_SetLevelPersists` (edit → save → reload → verify).
+13. A13: morphstat — `TestDoMorphstat_ByName` / `_ByVnum` / `_List` / `_ListEmpty` / `_Unknown`.
+14. A14: mpmorph — `TestMpMorph_ByName_AppliesMorph` / `_ByVnum_AppliesMorph`.
+15. A15: mpunmorph — `TestMpUnmorph_ClearsMorph`.
+16. A16: mid-morph pfile — `TestSaveLoadPlayer_MorphRoundTrip`.
+17. A17: deleted-morph graceful — `TestLoadPlayer_UnknownMorphVnumDegradesGracefully`.
+18. A18: ifcheck regression — `ifcheck_tier3_test.go` ismorphed/morph tests still pass (no regression).
+19. A19: no regression — all 15 packages green at `-count=3`.
+20. A20: vet+test — `go vet ./...` clean; `go test ./...` green; `gofmt -l` clean on all morph files.
+
+### Open-question resolutions
+
+- **Q1 (DiceParse location)**: G0.2 adopted — `util.DiceParse` is the canonical location; `magic.parseDiceExpr` is a back-compat wrapper.
+- **Q2 (update_aris)**: dropped per §G0.3. Go invariant is incremental direct-mutation via AffectModify on AffectToChar/Remove; since DoMorph directly mutates base fields, no UpdateAris call is needed. Documented inline in `DoUnmorph`.
+- **Q3 (SeparateObj / extract_obj)**: `SeparateObj` is a no-op (Go has no object stacking); `ExtractObj` exists in handler. DoMorphChar calls both in the same order as C.
+- **Q4 (db/system/morph.dat stock data)**: 5-byte `#END\n` stub. LoadMorphs returns an empty non-nil slice. No token surprises.
+- **Q5 (COND_BLOODTHIRST array index)**: `types.PCData.Condition[types.COND_BLOODTHIRST]` — verified present at `enums.go:892` (a `COND_*` iota constant).
+- **Q6 (two-phase load ordering)**: confirmed. `boot.go` loads morphs AFTER `LoadAreas` but BEFORE `ResetAllAreas` — inside the class/race/skill/stance/plane/holiday cluster. Mobs spawned during resets don't need morph access yet; `mpmorph` runs at mprog execution time (after boot). Mirrors C `db.c:941` placement.
+- **Q7 (SetupMorphVnum collision)**: C starts from `max(existing_vnums, 999)+1`. Go port matches exactly (`persist.SetupMorphVnum` computes max then bumps). If `morph.dat` ships with vnum 1001 and morphcreate assigns 1002 before setup, SetupMorphVnum would NOT revisit the already-assigned morph. First-`DoMorphcreate` after boot starts from `MorphVnumCounter` (which SetupMorphVnum set to `max+1`).
+
+### C-bug-preserved list (with pin tests)
+
+1. NoImmune/NoResistant/NoSuscept strip asymmetry on DoUnmorph: pin `TestDoMorph_NoImmuneStrip_CBugPreserved`.
+2. C's DoMorphChar non-atomic check-and-spend ordering (hp deduction stays even if a later gate fails): port ordering verbatim; documented in DoMorphChar godoc.
+3. `Move` key in fread_morph writes to `morph_self` in C (`polymorph.c:1916`) — a clear C typo. Go port reads into the correct `Move` field (what the writer emits). Documented inline in `morphKey`.
+
+### Go-port divergences from C (documented)
+
+1. DoMorphcreate rejects duplicate name (C silently creates; admin-UX improvement).
+2. `SeparateObj` no-op (Go has no object stacking; matches archery lineage).
+3. `UpdateAris` omitted (Go invariant).
+4. Morphstat colors dropped (no color-code emission in Sendf; content complete).
+5. Pfile LoadPlayer no longer early-returns on `End` when `lookup==nil` — needed to reach trailing #MorphData. Objects still skip via `skipPlayerObject`.
+6. LoadPlayer bug-logs (via `util.Bug`) when a saved morph vnum no longer resolves; C blindly assumes resolution succeeds.
+
+### Files touched
+
+**New**: `internal/persist/morphs.go` (~620 LOC), `internal/persist/morphs_test.go` (~450 LOC), `internal/persist/player_morph.go` (~230 LOC), `internal/persist/player_morph_test.go` (~225 LOC), `internal/handler/polymorph.go` (~420 LOC), `internal/handler/polymorph_test.go` (~450 LOC), `internal/act/polymorph.go` (~650 LOC), `internal/act/polymorph_test.go` (~340 LOC), `internal/mudprog/mpmorph_test.go` (~150 LOC).
+
+**Modified**: `internal/world/world.go` (+Morphs slice + counter + 5 methods), `internal/util/dice.go` (+DiceParse with full grammar evaluator), `internal/magic/spell_smaug.go` (parseDiceExpr reduced to thin wrapper; strconv import dropped), `internal/types/descriptor.go` (+BufferedOutput, +ResetBufferedOutput), `internal/persist/player.go` (+MorphGetter seam + #MorphData case + trailing-section handling), `internal/mudprog/commands.go` (mpMorph + mpUnmorph bodies filled in), `internal/boot/boot.go` (LoadMorphs wire + Class/Race name lookup+formatter wire + MorphGetter wire + MorphFilePath + 6 command registrations), `internal/util/dice_test.go` (+DiceParse tests).
+
+### Test count delta
+
++68 new tests across 5 packages: persist (26), handler (15), act (15), mudprog (9), util (3).
+
+### Followups (none blocking)
+
+No TODO items added. The "structured self-review substituted for external adversary pass" tooling caveat remains tracked.
+

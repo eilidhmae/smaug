@@ -213,3 +213,73 @@ func TestNumberFuzzy_NeverBelowOne(t *testing.T) {
 }
 
 // UMIN/UMAX/URANGE tests are in strings_test.go
+
+// ---------------------------------------------------------------------------
+// DiceParse — promoted from magic.parseDiceExpr for the polymorph subsystem.
+// Plan plan-phase6-polymorph.md §G0.2.
+// ---------------------------------------------------------------------------
+
+func TestDiceParse_Empty(t *testing.T) {
+	if got := DiceParse("", 30); got != 0 {
+		t.Errorf("DiceParse(\"\") = %d, want 0", got)
+	}
+	if got := DiceParse("   ", 30); got != 0 {
+		t.Errorf("DiceParse(\"   \") = %d, want 0", got)
+	}
+}
+
+func TestDiceParse_PlainInt(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"0", 0},
+		{"12", 12},
+		{"-3", -3},
+		{"+5", 5},
+	}
+	for _, c := range cases {
+		if got := DiceParse(c.in, 30); got != c.want {
+			t.Errorf("DiceParse(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDiceParse_LevelTokens(t *testing.T) {
+	for _, ident := range []string{"l", "L", "level", "Level", "i", "I"} {
+		if got := DiceParse(ident, 7); got != 7 {
+			t.Errorf("DiceParse(%q, 7) = %d, want 7", ident, got)
+		}
+	}
+}
+
+func TestDiceParse_Arithmetic(t *testing.T) {
+	if got := DiceParse("l+25", 10); got != 35 {
+		t.Errorf("DiceParse(l+25, 10) = %d, want 35", got)
+	}
+	if got := DiceParse("l/2", 10); got != 5 {
+		t.Errorf("DiceParse(l/2, 10) = %d, want 5", got)
+	}
+	if got := DiceParse("(l*3)+25", 10); got != 55 {
+		t.Errorf("DiceParse((l*3)+25, 10) = %d, want 55", got)
+	}
+}
+
+func TestDiceParse_Dice_Bounds(t *testing.T) {
+	// "2d4+1" → [2*1+1, 2*4+1] = [3, 9]
+	for i := 0; i < 200; i++ {
+		v := DiceParse("2d4+1", 30)
+		if v < 3 || v > 9 {
+			t.Fatalf("DiceParse(2d4+1) = %d, out of bounds [3,9]", v)
+		}
+	}
+}
+
+func TestDiceParse_BitvectorNamesReturnZero(t *testing.T) {
+	// Non-arithmetic identifiers (bitvector names) fall through to 0.
+	for _, s := range []string{"sanctuary", "blind", "haste"} {
+		if got := DiceParse(s, 30); got != 0 {
+			t.Errorf("DiceParse(%q) = %d, want 0 (bitvector name)", s, got)
+		}
+	}
+}

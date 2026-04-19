@@ -23,6 +23,13 @@ var SkillNameLookup func(name string) int
 // when the gsn is out of range. Set at boot after skills are loaded.
 var SkillGetter func(gsn int) *types.SkillType
 
+// MorphGetter, if non-nil, resolves a morph vnum to its MorphData pointer.
+// Set at boot after morphs are loaded; consumed by readMorphData so the
+// pfile's #MorphData block can re-attach ch.Morph.Morph. Returns nil when
+// the morph does not exist (e.g. vnum was deleted between sessions — Go
+// degrades gracefully per plan §G6 defensive path).
+var MorphGetter func(vnum int) *types.MorphData
+
 // LoadPlayer reads a player character from a SMAUG player save file.
 // Objects in the file are skipped (use LoadPlayerWithWorld to load objects).
 func LoadPlayer(r io.Reader, filename string) (*types.CharData, error) {
@@ -58,9 +65,11 @@ func LoadPlayerWithWorld(r io.Reader, filename string, lookup ObjIndexLookup) (*
 
 		if word == "End" && !playerDone {
 			playerDone = true
-			if lookup == nil {
-				return ch, nil
-			}
+			// Do NOT early-return on lookup==nil: the pfile may still
+			// carry a trailing #MorphData block (plan-phase6-polymorph
+			// §G6) that binds to ch.Morph rather than ch.Carrying.
+			// Object sections (#OBJECT / #CORPSE) handle the nil case
+			// via skipPlayerObject.
 			continue
 		}
 
@@ -75,6 +84,12 @@ func LoadPlayerWithWorld(r io.Reader, filename string, lookup ObjIndexLookup) (*
 					obj.CarriedBy = ch
 				}
 			}
+		case "#MorphData":
+			// Morph subsystem — plan-phase6-polymorph.md §G6. Parse
+			// the attached CharMorph block, re-linking ch.Morph.Morph
+			// via MorphGetter. C fread_morph_data at
+			// src/polymorph.c:2487-2590.
+			readMorphData(ch, sc)
 		case "Affect":
 			if !playerDone {
 				aff := readAffect(sc)
@@ -602,6 +617,15 @@ func SavePlayer(w io.Writer, ch *types.CharData) error {
 	}
 
 	fmt.Fprintf(w, "End\n\n")
+
+	// #MorphData block — plan-phase6-polymorph.md §G6. Emitted
+	// unconditionally on ch.Morph != nil (mirrors C save.c:287-288).
+	// Stat deltas are already baked into base stats, so the pfile
+	// stores the player "mid-morph"; DoUnmorphChar on return subtracts
+	// the delta stored on this block.
+	if err := writeMorphData(w, ch); err != nil {
+		return err
+	}
 
 	// Save carried/equipped objects (after End, matching C format)
 	for _, obj := range ch.Carrying {

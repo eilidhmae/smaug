@@ -48,6 +48,15 @@ type World struct {
 	// DoTime's holiday-today suffix, and DoSetHoliday CRUD.
 	Holidays []*types.HolidayData
 
+	// Morphs — polymorph templates loaded from db/system/morph.dat
+	// (plan-phase6-polymorph.md §4.1). Read by GetMorph/GetMorphVnum
+	// in handler/polymorph.go; persisted via SaveMorphs on morphset
+	// save / morphcreate / morphdestroy. MorphVnumCounter tracks the
+	// next available vnum handed out by SetupMorphVnum — mirrors C
+	// morph_vnum at src/polymorph.c:49.
+	Morphs           []*types.MorphData
+	MorphVnumCounter int
+
 	// Shops
 	Shops   []*types.ShopData
 	Repairs []*types.RepairData
@@ -139,6 +148,66 @@ func (w *World) RemoveObj(obj *types.ObjData) {
 			return
 		}
 	}
+}
+
+// GetMorphs returns the morph slice. Satisfies persist.worldMorphs so
+// SetupMorphVnum can touch the morph table without an import cycle.
+func (w *World) GetMorphs() []*types.MorphData { return w.Morphs }
+
+// SetMorphVnumCounter updates the vnum counter after SetupMorphVnum.
+func (w *World) SetMorphVnumCounter(v int) { w.MorphVnumCounter = v }
+
+// GetMorphVnumCounter returns the current vnum counter.
+func (w *World) GetMorphVnumCounter() int { return w.MorphVnumCounter }
+
+// GetMorph returns the morph with the given case-insensitive name, or
+// nil. Mirrors C get_morph at src/polymorph.c:1205-1216.
+func (w *World) GetMorph(name string) *types.MorphData {
+	if name == "" {
+		return nil
+	}
+	for _, m := range w.Morphs {
+		if m != nil && equalFold(m.Name, name) {
+			return m
+		}
+	}
+	return nil
+}
+
+// GetMorphVnum returns the morph with the given vnum, or nil. Mirrors
+// C get_morph_vnum at src/polymorph.c:1243-1254.
+func (w *World) GetMorphVnum(vnum int) *types.MorphData {
+	if vnum < 1 {
+		return nil
+	}
+	for _, m := range w.Morphs {
+		if m != nil && m.Vnum == vnum {
+			return m
+		}
+	}
+	return nil
+}
+
+// equalFold is a light shim over strings.EqualFold to keep this file
+// free of a strings import solely for one helper; the caller uses it
+// twice.
+func equalFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		ca, cb := a[i], b[i]
+		if ca >= 'A' && ca <= 'Z' {
+			ca += 32
+		}
+		if cb >= 'A' && cb <= 'Z' {
+			cb += 32
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
 }
 
 // FixExits resolves exit vnum fields to actual room pointers after all

@@ -146,6 +146,25 @@ func (d *DescriptorData) HasOutput() bool {
 	return len(d.outBuf) > 0
 }
 
+// BufferedOutput returns a copy of the pending output as a string without
+// consuming it. Intended for tests that need to inspect emitted act()
+// messages; production code should call FlushOutput, which atomically
+// drains the buffer to the connection.
+func (d *DescriptorData) BufferedOutput() string {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	return string(d.outBuf)
+}
+
+// ResetBufferedOutput clears the pending output buffer. Test-only helper
+// to reset between steps of a multi-phase test (e.g. verify morph msg
+// fires, then clear, then verify unmorph msg fires without re-scanning).
+func (d *DescriptorData) ResetBufferedOutput() {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	d.outBuf = d.outBuf[:0]
+}
+
 // WriteToPager appends text to the pager buffer.
 func (d *DescriptorData) WriteToPager(text string) {
 	d.outMu.Lock()

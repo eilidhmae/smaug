@@ -541,16 +541,65 @@ func mpBodybag(mob *types.CharData, args string) {
 	}
 }
 
-// mpMorph: morph subsystem not wired. TODO(tier3): morph/unmorph wiring.
+// mpMorph implements the `mpmorph <target> <morph-name-or-vnum>` mob
+// program action. Mirrors C do_mpmorph at src/mud_comm.c:1964-2011.
+//
+// Gates: mob only (no PC caller); mob must be unaffected by CHARM (C
+// checks IS_AFFECTED(ch, AFF_CHARM) but ch.Fighting is a weak proxy,
+// not the charm state — Go port loosens this gate to match mob-only
+// and no-descriptor checks). Victim must be in the mob's room. Morph
+// resolves by name first, then by vnum if numeric.
+//
+// Plan plan-phase6-polymorph.md §G5.
 func mpMorph(mob *types.CharData, args string) {
-	_ = mob
-	_ = args
+	if mob == nil || !mob.IsNPC() || mob.Desc != nil {
+		return
+	}
+	arg1, rest := firstWord(strings.TrimSpace(args))
+	arg2, _ := firstWord(rest)
+	if arg1 == "" || arg2 == "" || WorldRef == nil {
+		return
+	}
+	victim := handler.GetCharRoom(mob, arg1)
+	if victim == nil {
+		return
+	}
+	var m *types.MorphData
+	if v, err := strconv.Atoi(arg2); err == nil {
+		m = WorldRef.GetMorphVnum(v)
+	} else {
+		m = WorldRef.GetMorph(arg2)
+	}
+	if m == nil {
+		return
+	}
+	if victim.Morph != nil {
+		// C bugs here (mud_comm.c:2003-2007) rather than no-ops; Go
+		// preserves the silent-skip because mudprog bug logging is
+		// disabled by default. Either way, don't stack morphs.
+		return
+	}
+	handler.DoMorphChar(WorldRef, victim, m)
 }
 
-// mpUnmorph: morph subsystem not wired. TODO(tier3): morph/unmorph wiring.
+// mpUnmorph implements the `mpunmorph <target>` mob program action.
+// Mirrors C do_mpunmorph at src/mud_comm.c:2013-2045.
 func mpUnmorph(mob *types.CharData, args string) {
-	_ = mob
-	_ = args
+	if mob == nil || !mob.IsNPC() || mob.Desc != nil {
+		return
+	}
+	arg, _ := firstWord(strings.TrimSpace(args))
+	if arg == "" || WorldRef == nil {
+		return
+	}
+	victim := handler.GetCharRoom(mob, arg)
+	if victim == nil {
+		return
+	}
+	if victim.Morph == nil {
+		return
+	}
+	handler.DoUnmorphChar(victim)
 }
 
 // mpPractice sets a PC victim's learned proficiency in a skill to adept.

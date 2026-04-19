@@ -350,6 +350,56 @@ func bootDB(w *world.World, dataDir string) error {
 	act.HolidayFilePath = holidayPath
 	log.Printf("Loaded %d holidays.", len(w.Holidays))
 
+	// Load morph table from db/system/morph.dat. Missing file is non-fatal
+	// (matches C load_morphs at src/polymorph.c:1757-1814). Stock file is
+	// `#END\n` only (5 bytes) so LoadMorphs returns an empty non-nil slice
+	// on a clean tree. Wire Class/Race name lookups BEFORE load so morph
+	// records with Class/Race tokens resolve against the class/race tables
+	// that were loaded earlier in this function. Plan
+	// plan-phase6-polymorph.md §G1. Two-phase ordering (§Open-Q6): morphs
+	// load AFTER area load so get_obj_vnum lookups inside do_morph_char
+	// see a fully populated world.
+	persist.ClassNameLookup = func(name string) int {
+		for i, c := range w.Classes {
+			if c != nil && strings.EqualFold(c.WhoName, name) {
+				return i
+			}
+		}
+		return -1
+	}
+	persist.RaceNameLookup = func(name string) int {
+		for i, r := range w.Races {
+			if r != nil && strings.EqualFold(r.Name, name) {
+				return i
+			}
+		}
+		return -1
+	}
+	persist.ClassNameFormatter = func(idx int) string {
+		if idx < 0 || idx >= len(w.Classes) || w.Classes[idx] == nil {
+			return ""
+		}
+		return w.Classes[idx].WhoName
+	}
+	persist.RaceNameFormatter = func(idx int) string {
+		if idx < 0 || idx >= len(w.Races) || w.Races[idx] == nil {
+			return ""
+		}
+		return w.Races[idx].Name
+	}
+	morphPath := filepath.Join(dataDir, "system", "morph.dat")
+	morphs, err := persist.LoadMorphs(morphPath)
+	if err != nil {
+		log.Printf("WARNING: failed to load morphs: %v", err)
+	}
+	w.Morphs = morphs
+	act.MorphFilePath = morphPath
+	persist.SetupMorphVnum(w)
+	persist.MorphGetter = func(vnum int) *types.MorphData {
+		return w.GetMorphVnum(vnum)
+	}
+	log.Printf("Loaded %d morphs.", len(w.Morphs))
+
 	// Wire skill lookups so player save/load persists learned proficiencies.
 	persist.SkillNameLookup = func(name string) int {
 		for i, sk := range w.Skills {
@@ -725,6 +775,17 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "plist", DoFun: act.DoPlist, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "pstat", DoFun: act.DoPstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "pset", DoFun: act.DoPset, Position: types.POS_DEAD, Level: types.LEVEL_GREATER})
+
+	// Polymorph — plan-phase6-polymorph.md §G3 + §G4. Immortal-only;
+	// C registers do_imm_morph / do_imm_unmorph at LEVEL_IMMORTAL
+	// (tables.c); the admin set (morphset/morphstat/morphcreate/
+	// morphdestroy) is same tier.
+	reg.Register(&command.Command{Name: "morph", DoFun: act.DoMorph, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "unmorph", DoFun: act.DoUnmorph, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "morphstat", DoFun: act.DoMorphstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "morphcreate", DoFun: act.DoMorphcreate, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "morphdestroy", DoFun: act.DoMorphdestroy, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "morphset", DoFun: act.DoMorphset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 
 	// Holidays — calendar CRUD (plan-phase6-holidays.md). `holidays` is
 	// player-visible (Level 0); saveholiday/setholiday gate at
