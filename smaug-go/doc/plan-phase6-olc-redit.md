@@ -473,4 +473,4 @@ Nanny-dispatch pattern + `OlcData`-on-descriptor + `CON_REDIT` loop arm are **re
 
 ### Commit
 
-`bafc1a4` (hash filled in after landing). See CHANGELOG.md 2026-04-19 entry for the exhaustive file list.
+`f678e8a`. See CHANGELOG.md 2026-04-19 entry for the exhaustive file list.
