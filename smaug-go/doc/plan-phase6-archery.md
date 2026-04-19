@@ -397,6 +397,10 @@ Mechanically verifiable end-to-end conditions. The plan is done when:
 
 **Q11 — Fixture creation for tests.** New test helpers will need bow/quiver/arrow object fixtures, plus exit/room chains for the scan-for-victim walker. Reuse `QuickLoginTwo` from Tier 9 where possible for two-char tests; most archery logic is single-char-to-NPC-target, so simpler fixtures suffice.
 
+**Q12 — `mob_fire` value-index asymmetry.** `src/archery.c:1352` (inside `mob_fire`, deferred from scope) reads the ammo-match gate as `bow->value[4] != arrow->value[5]`, while `do_fire:1295` uses `bow->value[5] != arrow->value[4]`. The two indices are transposed between mob and PC fire paths. One of them is almost certainly a C bug. **Recommendation:** since `mob_fire` is deferred (Scope Cuts), port `DoFire` with `[5]!=[4]` verbatim (matches shipping PC behavior). When `mob_fire` eventually ports (follow-up plan), reconcile the discrepancy — preserve `[4]!=[5]` verbatim for fidelity OR fix to match `DoFire`. Flagged so the `mob_fire` follow-up author has the asymmetry on record. No action required in this plan. Tracked in CLAUDE.md Wave D follow-ups.
+
+**Q13 — Lodged-arrow `remove` bypass.** A victim with a lodged arrow (wearing it in `WEAR_LODGE_RIB/_ARM/_LEG`) can call `remove arrow` to unequip it exactly like any other worn item — the standard `DoRemove` path honors `ITEM_NOREMOVE` but C does NOT set that flag on arrows at lodge time (`src/archery.c:455-460` equip path uses plain `equip_char`). The intended interaction is `DoDislodge` (self-damage + remove); `DoRemove` is a no-damage bypass. **Recommendation:** port verbatim (no `ITEM_NOREMOVE` set at equip time). A policy question for builders is whether to set `ITEM_NOREMOVE` in Go to close the bypass — that would be new gameplay, out of scope here. Flag as a UX gap for future review. Tracked in CLAUDE.md Wave D follow-ups.
+
 ---
 
 ## Risk Analysis

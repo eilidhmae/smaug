@@ -540,6 +540,10 @@ Save subcommand:
   - `DoSetHoliday month 1` accepted (same C bug) — pinned by `TestDoSetHoliday_MonthAcceptsOne`.
   - `DoSetHoliday create` stores `TimeInfo.Month + 1` (C bug stores unshifted 0-indexed value in 1-indexed file slot) — pinned by `TestDoSetHoliday_CreateAddsToList`.
 
+**A14.** `GetHoliday(month, day int) *HolidayData` defined — one-liner lookup against `WorldRef.Holidays`; returns the first-matching entry or `nil`. Matches C `src/holidays.c` lookup semantics. Pinned by `TestGetHoliday_NewYearsDay` and `TestGetHoliday_NonHolidayReturnsNil`. (Q6 resolution, part A.)
+
+**A15.** `DoTime` appends a holiday-today line formatted as `"&wIt's a holiday today:&W <name>&D\n\r"` when `GetHoliday(TimeInfo.Month, TimeInfo.Day)` returns non-nil. Mirrors C `src/timezone.c:528` (guarded by `#ifdef ENABLE_HOLIDAYS`; Go ports it unconditionally). Pinned by `TestDoTime_EmitsHolidaySuffix` + `TestDoTime_NoSuffixOnNonHoliday`. Season-tick auto-broadcast (C `src/timezone.c:617-631`) is **deferred** — no Go-side `season_update` equivalent exists today; the loop `weatherUpdate` at `internal/game/update.go:135-154` advances hour/day and fires mudprog triggers but has no `echo_to_all` hook. Tracked as TODO (`Q6` resolution, part C). (Q6 resolution, parts A+B.)
+
 ---
 
 ## Scope Cuts / Deferrals

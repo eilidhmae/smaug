@@ -543,7 +543,7 @@ Unexported (lowercase). Lives in `internal/act/planes.go` — the only consumer.
 ## Acceptance Criteria
 
 **G1 (loader / saver / CheckPlanes):**
-- A1. `persist.LoadPlanes("/home/eilidh/src/smaug/db/system/planes.dat")` returns `(nil, nil)` on the shipped stub file; missing-file returns `(nil, nil)` without bug log.
+- A1. `persist.LoadPlanes("/home/eilidh/src/smaug/db/system/planes.dat")` on the shipped `#END\n`-only stub file returns a non-nil empty slice (`len(list) == 0`, `list != nil`, `err == nil`) — the stub parses cleanly as "terminator reached at first letter." Missing-file returns `(nil, nil)` (distinct case: nil slice AND nil error, no bug log). The D3 test `TestLoadPlanes_EmptyFileReturnsEmpty` pins the empty-slice branch; a sibling `TestLoadPlanes_MissingFileReturnsNil` pins the missing-file branch. These two cases must be distinguishable by callers because `CheckPlanes` keys its default-seed decision on the empty-AND-non-nil branch (stub loaded cleanly, no data) vs the nil branch (file absent, treat as first-boot).
 - A2. `persist.SavePlanes` round-trips a slice of plane names through load → save → load identically, including multi-word names and tilde-terminated output.
 - A3. `persist.CheckPlanes(w, nil)` guarantees at least one plane exists and `room.Plane != nil` for every room in `w.Rooms`.
 - A4. `persist.CheckPlanes(w, deleted)` reassigns every room pointing at `deleted` to `w.Planes[0]` without nil-deref even when `deleted` is the last plane.
