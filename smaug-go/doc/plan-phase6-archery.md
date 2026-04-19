@@ -424,7 +424,7 @@ Mechanically verifiable end-to-end conditions. The plan is done when:
 
 ## Completion Record
 
-**Landed 2026-04-19.** Commit hash: filled in follow-up commit.
+**Landed 2026-04-19.** Commit: `66cc205`.
 
 ### Acceptance cross-reference
 
