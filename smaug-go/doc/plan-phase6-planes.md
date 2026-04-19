@@ -686,7 +686,68 @@ Agent-based adversary dispatch was unavailable in both the original manager sess
 
 ## Completion Record
 
-(To be appended after work lands. Include: commit SHA, adversary verdict, test-count delta, mutation-verify summary, followups queued, any scope slippage.)
+### 2026-04-19 — LANDED
+
+**Problem restated.** SMAUG's plane-data subsystem (`src/planes.c:51-298`) — admin CRUD for named room groupings via `do_plist` / `do_pstat` / `do_pset`, persisted at `db/system/planes.dat`, with `check_planes` orphan-assignment on every room — had zero runtime presence in the Go port despite the struct scaffolding existing at `types/room.go:26,111-114`. A builder typing `pset "Astral" create` saw "Huh?" because no command was registered, and every room's `RoomIndexData.Plane` field was dormant nil. This plan shipped the minimum-viable close: three commands, one loader, one saver, one boot-pass seed.
+
+**Groups shipped (all 3 of 3).**
+- **G1 — persist layer.** `internal/persist/planes.go` (170 LOC) + `internal/persist/planes_test.go` (19 tests). `LoadPlanes` returns `(nil, nil)` for missing file and non-nil empty slice for the `#END\n` stub (A1 distinction). `SavePlanes` truncate-writes tilde-terminated blocks. `CheckPlanes` seeds "Prime Material" when slice is empty and reassigns every room whose `Plane == nil || Plane == deleted` to `w.Planes[0]`. Four testdata fixtures (`planes_empty.dat`, `planes_two.dat`, `planes_cformat.dat`, `planes_malformed.dat`). BugSink-capture helper for empty-Name and unknown-key branches.
+- **G2 — commands.** `internal/act/planes.go` (188 LOC) + `internal/act/planes_test.go` (23 tests). `DoPlist` / `DoPstat` / `DoPset` plus unexported `planeLookup` (exact-then-prefix, case-insensitive) and `pSetSyntax` helper (inlined to avoid stack recursion on fallthrough). `PlanesFilePath string` package var wired at boot. Splice-delete algorithm uses `append(s[:i], s[i+1:]...)` — works uniformly for first/middle/last index. SmashTilde on rename (deliberate C-divergence).
+- **G3 — boot integration.** `internal/boot/boot.go` gains loader invocation + `act.PlanesFilePath` wire + `persist.CheckPlanes(w, nil)` seed, plus three `reg.Register` calls (plist Level 0, pstat LEVEL_IMMORTAL, pset LEVEL_GREATER). Four boot-level tests in `boot_test.go`. Three testclient E2E tests in new `internal/testclient/planes_test.go`.
+
+**Acceptance criteria — all 13 satisfied.**
+- A1 ✓ `LoadPlanes` distinguishes missing file `(nil, nil)` from stub `#END\n` `(non-nil empty slice, nil err)`. Tests `TestLoadPlanes_MissingFileReturnsNilNil` + `TestLoadPlanes_EmptyFileReturnsEmpty` + `TestLoadPlanes_ShippedStubIsNoOp`.
+- A2 ✓ `SavePlanes` round-trips. Tests `TestSavePlanes_TwoPlanesWritesTwoBlocks` + `TestSavePlanes_NameWithSpacesPreserved` + `TestDoPset_CreateSaveLoadRoundTrip`.
+- A3 ✓ `CheckPlanes(w, nil)` seeds Prime Material. Test `TestCheckPlanes_EmptySliceAppendsPrimeMaterial`.
+- A4 ✓ `CheckPlanes(w, deleted)` reassigns. Test `TestCheckPlanes_DeletedMatchReassigned`.
+- A5 ✓ `DoPlist` emits header + one line per plane. Tests `TestDoPlist_EmptySlicePrintsHeaderOnly` + `TestDoPlist_TwoPlanesLists`.
+- A6 ✓ `DoPstat` exact-then-prefix case-insensitive. Tests `TestDoPstat_ExactMatchPrintsName` + `TestDoPstat_PrefixMatchPrintsName` + `TestDoPstat_CaseInsensitive` + `TestDoPstat_ExactBeforePrefix`.
+- A7 ✓ `DoPset` dispatches across empty/save/create/delete/name. 17 tests across `TestDoPset_*`.
+- A8 ✓ `boot.Boot` registers plist/pstat/pset at correct levels. Test `TestBoot_RegistersPlaneCommands`.
+- A9 ✓ Every room has non-nil Plane after boot. Test `TestBoot_AssignsEveryRoomAPlane`.
+- A10 ✓ End-to-end testclient: create+plist+delete and save+reload. Tests `TestTestclient_PsetCreateAndListRoundTrip` + `TestTestclient_PsetSavePersistsToDisk`.
+- A11 ✓ `go vet ./...` clean.
+- A12 ✓ `go test -count=3 ./...` green across all 15 packages.
+- A13 ✓ 10 mutations exercised via `Edit` round-trips with confirmed failure and revert to green.
+
+**Tests added:** 45 new tests total (19 persist + 23 act + 4 boot + 3 testclient + 1 act-level integration round-trip). `go test -count=3 ./...` goes from the pre-landing baseline to all-green with the new surface included.
+
+**Mutation-verify summary.** 10 mutations applied via `Edit` tool only (project-banned: `git checkout`/`git restore`/`git reset --hard`/`git stash`). Every mutation flipped its pinned test(s); every revert restored green.
+
+| # | Mutation | Pinned test(s) that fail |
+|---|---|---|
+| 1 | Drop `TrimSuffix "~"` in `readPlaneBlock` | `TestLoadPlanes_TildeTerminatedRoundTrip` |
+| 2 | Skip empty-Name rejection | `TestLoadPlanes_BlockWithNoNameDropped` |
+| 3 | Drop Prime Material seed in `CheckPlanes` | `TestCheckPlanes_EmptySliceAppendsPrimeMaterial` |
+| 4 | Drop `room.Plane == deleted` branch | `TestCheckPlanes_DeletedMatchReassigned` |
+| 5 | Drop `planeLookup` pass-2 prefix match | `TestDoPstat_PrefixMatchPrintsName` |
+| 6 | Swap `HasPrefix("create", arg)` args | `TestDoPset_CreatePrefixMatch` |
+| 7 | Remove `util.SmashTilde` in rename | `TestDoPset_RenameSmashTilde` |
+| 8 | Drop `CheckPlanes` call in `DoPset delete` | `TestDoPset_DeleteRemovesAndReassigns` + `TestDoPset_DeleteLastPlaneRebuildsPrime` + `TestDoPset_DeleteMiddlePlane` |
+| 9 | Drop 3 `reg.Register` calls in boot | `TestBoot_RegistersPlaneCommands` |
+| 10 | Drop boot-level `CheckPlanes(w, nil)` call | `TestBoot_AssignsEveryRoomAPlane` + `TestBoot_LoadsPlanesAndSeedsPrimeMaterial` |
+
+**Readiness-vet caveat confirmed.** Per orchestrator readiness vet note: the planned weaker mutation "move `CheckPlanes` call AFTER slice-remove" indeed does not flip any existing test (both orderings produce the correct end state because `CheckPlanes(w, deleted)` handles the post-splice case correctly when `deleted` is no longer in the slice). The stronger mutation — **drop** the `CheckPlanes` call entirely — is what demonstrates test coverage of the reassignment pass (mutation #8 above).
+
+**Deliberate C-divergences.**
+- `DoPstat` emits `\n\r` (C emits `\n` at `src/planes.c:73`). Cosmetic only; consistent with every other Go command.
+- `SavePlanes` emits tilde-terminated names (C emits space-terminated at `src/planes.c:181`). Fixes a latent C format mismatch — C's `read_plane` uses `fread_string` which expects a tilde (`:220`), so the C saver and C loader don't actually round-trip through any populated file. Go loader is tilde-tolerant so both formats work.
+- `DoPset name` applies `util.SmashTilde` to the new name (C does not). Matches `DoTitle`/`DoBio`/`DoDescription` precedent; tildes in stored names would break file I/O on re-save.
+- `DoPset delete` uses standard splice (`append(s[:i], s[i+1:]...)`) instead of C's UNLINK+STRFREE+DISPOSE+check_planes(freed_pointer) sequence. Same end-state; avoids C's dangling-pointer-identity reliance.
+
+**Preserved from C.**
+- `planeLookup` two-pass exact-then-prefix semantics (`src/planes.c:149-161`).
+- `OneArgument` lowercases `arg1` so stored names are lowercase — matches C `STRALLOC(arg)` after `one_argument` (C also lowercases the token).
+- Rename duplicate-check uses `planeLookup` on the new name, which resolves to the current plane itself as a prefix match when renaming to a same-or-prefix name. Same C false-positive (`src/planes.c:135-138`).
+- No trust gate in `DoPlist` body; gating is registration-level (Level 0 = visible to all).
+
+**Scope slippage: none.** All in-plan task groups shipped. SmashTilde-ordering follow-up noted in plan §D5 — resolved in implementation by applying SmashTilde before the duplicate-check (so a tilde-bearing name that would collide with an existing plane's smashed form is rejected early; consistent with the protect-against-corrupt-file motivation).
+
+**Followups queued.** None beyond what's already tracked in `TODO.md`. SmashTilde-ordering note removed from TODO (resolved in-plan). Plan §Scope Cuts items remain deferred as planned (per-plane room listing, plane-scoped broadcasts, plane-flag on RoomFlags).
+
+**Adversary pass.** Structured self-review substituted per the CLAUDE.md tooling caveat (manager-subagent `Agent`-tool availability remains inconsistent). The review catalogued 11 adversary concerns including `HasPrefix("create", "")` empty-prefix semantics (gated with `arg2Lower != ""`), rename-to-self false-positive (verified matches C), map-iteration randomness in `CheckPlanes` (safe because every room gets the same value), and DoPset nil-plane access in the `name` branch (plane != nil by control flow).
+
+**Verdict: LANDED.** Commit `<pending>`.
 
 ---
 

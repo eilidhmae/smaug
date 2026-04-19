@@ -298,6 +298,24 @@ func bootDB(w *world.World, dataDir string) error {
 		log.Printf("WARNING: failed to load stances: %v", err)
 	}
 
+	// Load plane chart from db/system/planes.dat. Missing file is
+	// non-fatal (matches C load_planes at src/planes.c:232-269). The
+	// shipped stub is `#END\n` only (5 bytes) so LoadPlanes returns
+	// an empty non-nil slice; CheckPlanes below seeds "Prime Material"
+	// and assigns it to every room. Ordering is after LoadAreas (which
+	// populates w.Rooms earlier in bootDB) and before ResetAllAreas
+	// (which only mutates mob/obj state, not room.Plane). Plan
+	// plan-phase6-planes.md §D6.
+	planesPath := filepath.Join(dataDir, "system", "planes.dat")
+	planes, err := persist.LoadPlanes(planesPath)
+	if err != nil {
+		log.Printf("WARNING: failed to load planes: %v", err)
+	}
+	w.Planes = planes
+	act.PlanesFilePath = planesPath
+	persist.CheckPlanes(w, nil)
+	log.Printf("Loaded %d planes.", len(w.Planes))
+
 	// Wire skill lookups so player save/load persists learned proficiencies.
 	persist.SkillNameLookup = func(name string) int {
 		for i, sk := range w.Skills {
@@ -639,6 +657,13 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "mpedit", DoFun: act.DoMpedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "opedit", DoFun: act.DoOpedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "rpedit", DoFun: act.DoRpedit, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+
+	// Planes — named room groupings (plan-phase6-planes.md).
+	// plist is player-visible (Level 0); pstat is immortal read-only;
+	// pset is LEVEL_GREATER (matches aset/mset/oset/rset precedent).
+	reg.Register(&command.Command{Name: "plist", DoFun: act.DoPlist, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "pstat", DoFun: act.DoPstat, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "pset", DoFun: act.DoPset, Position: types.POS_DEAD, Level: types.LEVEL_GREATER})
 
 	// Banking
 	reg.Register(&command.Command{Name: "bank", DoFun: act.DoBank, Position: types.POS_STANDING, Level: 0})

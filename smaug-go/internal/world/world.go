@@ -38,6 +38,11 @@ type World struct {
 	Councils []*types.CouncilData
 	Deities  []*types.DeityData
 
+	// Planes — named groupings of rooms (src/planes.c:48). Written by
+	// DoPset / SavePlanes; read by DoPlist / DoPstat + CheckPlanes
+	// orphan-assignment on every room.Plane back-reference.
+	Planes []*types.PlaneData
+
 	// Shops
 	Shops   []*types.ShopData
 	Repairs []*types.RepairData

@@ -1,0 +1,9 @@
+#PLANE
+Name      Astral~
+Garbage   this should be skipped
+End
+
+#BOGUS
+should not be reached
+
+#END

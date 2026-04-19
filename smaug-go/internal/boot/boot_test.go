@@ -472,3 +472,88 @@ func TestMainGoHasNoCallbackWires(t *testing.T) {
 		}
 	}
 }
+
+// --- Phase 6 Planes integration pins (plan-phase6-planes.md G3) --------
+
+func TestBoot_RegistersPlaneCommands(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	// plist must resolve at mortal trust (Level 0).
+	if reg.Find("plist", 0) == nil {
+		t.Error("expected 'plist' to be registered at Level 0")
+	}
+	// pstat is immortal-only.
+	if reg.Find("pstat", types.LEVEL_IMMORTAL) == nil {
+		t.Error("expected 'pstat' to resolve at LEVEL_IMMORTAL")
+	}
+	if reg.Find("pstat", 0) != nil {
+		t.Error("pstat should NOT resolve at mortal trust=0")
+	}
+	// pset is LEVEL_GREATER.
+	if reg.Find("pset", types.LEVEL_GREATER) == nil {
+		t.Error("expected 'pset' to resolve at LEVEL_GREATER")
+	}
+	if reg.Find("pset", types.LEVEL_IMMORTAL) != nil {
+		t.Error("pset should NOT resolve at LEVEL_IMMORTAL (below LEVEL_GREATER)")
+	}
+}
+
+func TestBoot_LoadsPlanesAndSeedsPrimeMaterial(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+
+	_, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if len(w.Planes) != 1 {
+		t.Fatalf("expected 1 plane after boot (Prime Material fallback); got %d", len(w.Planes))
+	}
+	if w.Planes[0].Name != "Prime Material" {
+		t.Errorf("expected 'Prime Material'; got %q", w.Planes[0].Name)
+	}
+}
+
+func TestBoot_AssignsEveryRoomAPlane(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+
+	_, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if len(w.Rooms) == 0 {
+		t.Skip("no rooms loaded from testdata; nothing to verify")
+	}
+	for vnum, room := range w.Rooms {
+		if room == nil {
+			continue
+		}
+		if room.Plane == nil {
+			t.Errorf("room vnum %d has nil Plane after boot", vnum)
+		}
+	}
+}
+
+func TestBoot_WiresPlanesFilePath(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+
+	_, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	expected := filepath.Join(testDataDir, "system", "planes.dat")
+	if act.PlanesFilePath != expected {
+		t.Errorf("PlanesFilePath = %q, want %q", act.PlanesFilePath, expected)
+	}
+}
