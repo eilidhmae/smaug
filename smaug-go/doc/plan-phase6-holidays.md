@@ -1,6 +1,6 @@
 # Plan: Phase 6 — Holidays
 
-**Status:** Planned (2026-04-18). Adversary-verified research: to be filled after plan adversary pass.
+**Status:** Planned (2026-04-18). Audited by `audit-holidays` lineage 2026-04-18 (self-review fallback — no `Agent` tool available); 3 material corrections applied (get_holiday callers, do_load claim, Q6 new). See `.claude/drafts/audit-holidays/audit-findings.md` for full report.
 **Priority:** Wave 1 Phase 6. Small self-contained port (416 C LOC); no hard blockers; bundles the `month_name[]` port per the roadmap's Soft-Blocker note.
 **Scope:** New files `internal/types/holiday.go`, `internal/types/months.go` (`month_name[]` + `MonthName()` helper), `internal/persist/holidays.go` + `internal/persist/holidays_test.go`, `internal/act/holidays.go` + `internal/act/holidays_test.go`. Modifications to `internal/world/world.go` (new `Holidays []*types.HolidayData` slice), `internal/boot/boot.go` (loader wire + command registration + `SysData.MaxHoliday` default), `internal/types/system.go` (no field additions — `MaxHoliday` already exists at :109). No changes to combat or any already-shipped subsystem.
 
@@ -22,7 +22,7 @@ Consequence: a feature that area builders and immortals expect to have on any SM
 
 ### What is NOT in scope (C also doesn't have it)
 
-- **Announce-on-time-tick** — `get_holiday(month, day)` is defined at `src/holidays.c:56-63` but is **never called** by any C source. Verified via `grep -rn get_holiday /home/eilidh/src/smaug/src` — zero callers. Holiday.announce is loaded and saved but displayed only on the `holidays` listing (via the `%-21s` template), never auto-broadcast. Go port must match: port the field, port the CRUD, do NOT synthesize an announce-tick mechanism that C lacks.
+- **Announce-on-time-tick — CORRECTED (audit-holidays 2026-04-18).** Previous draft claimed `get_holiday` has zero callers. **This is wrong.** `src/timezone.c:528` (inside `do_time`, guarded by `#ifdef ENABLE_HOLIDAYS`) appends `"It's a holiday today: <name>"` to the time output, and `src/timezone.c:617-631` (`season_update`, same guard) auto-broadcasts `day->announce` via `echo_to_all(AT_IMMORT, day->announce, ECHOTAR_ALL)` when `time_info.hour == 0` on a holiday day. That IS a real announce-on-time-tick mechanism. The cross-compile unit that houses these calls (`src/timezone.c`) is a SMAUG 2.0 / AFKMud extension; stock SMAUG 1.4 uses `src/act_info.c:2459-2498` for `do_time` WITHOUT `get_holiday` integration — so the behavior is compile-flag dependent. **Scope decision for Go port:** (a) port `GetHoliday(month, day) *HolidayData` as a one-liner lookup (field is already defined on `HolidayData`); (b) wire `DoTime` to consult it and append "&wIt's a holiday today:&W <name>" line; (c) wire the game-tick (`game.PulseUpdate` / seasonal tick — whichever layer handles `season_update`-equivalent today) to `echo_to_all` the announce on hour-0 of a holiday day. **All three gates require locating the Go-side equivalent of `season_update`**; if no such gate exists yet in the port, the announce-tick becomes a follow-up TODO and only (a) + (b) land in this plan. Open Q6 captures this decision.
 
 ### Sysdata-configurable ceiling
 
@@ -132,7 +132,7 @@ struct holiday_data {
   ```
   Runs once during `boot_db`.
 
-- **`do_load` runtime reload** — verified in `src/act_wiz.c`. Grep `do_load` returns immortal-command path `do_load holiday` that calls `load_holidays()` at runtime. (The current Go port has no `DoLoad` equivalent at all — a separate gap. This plan registers the three holiday commands but does NOT add a `DoLoad` umbrella command; the `save` subcommand of `do_setholiday` + the dedicated `do_saveholiday` already cover the write half, and the load half is handled at boot. A future plan can introduce `DoLoad` if other admin-reload paths (skills.dat, races, etc.) accumulate. Noted as a scope cut.)
+- **`do_load` runtime reload — CORRECTED (audit-holidays 2026-04-18).** Previous draft claimed `do_load holiday` exists in `src/act_wiz.c` as an immortal runtime-reload path. **This is wrong.** Grepping C for `do_load` returns only `do_loadarea` (`src/build.c:7955`) and `do_loadup` (`src/act_wiz.c:6745`) — neither reloads the holiday chart. There is NO runtime-reload command for holidays in stock C. Admins wanting to re-read `holidays.dat` after a manual edit must either `saveholiday` (which emits the in-memory state) or copyover/hotboot. Scope cut stands (Go port does not add an umbrella `DoLoad` in this plan), but the rationale is corrected: we are matching the C gap, not papering over an existing C capability.
 
 ---
 
@@ -544,7 +544,7 @@ Save subcommand:
 
 ## Scope Cuts / Deferrals
 
-- **`get_holiday(month, day)` function.** C defines at `src/holidays.c:56-63` but has ZERO callers (verified via grep). No announce-on-time-tick machinery exists in C either. Go port **does not** include `get_holiday` — porting an unreachable function is dead code. If a future plan adds calendar event-broadcasting (e.g., `check_holiday` hook in the game-tick loop), it can land `GetHoliday` as a one-liner lookup at that time.
+- **`get_holiday(month, day)` function — CORRECTED (audit-holidays 2026-04-18).** Previous draft claimed zero callers. Wrong — see "What is NOT in scope" section above: `src/timezone.c:528` (`do_time` holiday-today suffix) and `src/timezone.c:622` (`season_update` hour-0 announce) both call `get_holiday`, guarded by `#ifdef ENABLE_HOLIDAYS`. Decision moved to Open Q6: either port `GetHoliday` + `DoTime` suffix + season-tick announce as part of this plan, or explicitly defer the timezone-integration pieces to a follow-up. Recommended path: port `GetHoliday` + `DoTime` suffix in this plan (local, cheap); defer the season-tick announce unless a season-update equivalent already exists Go-side. Audit action: grep Go for `season_update` / tick / pulse infrastructure before deciding.
 
 - **`DoLoad` umbrella admin command.** C `do_load holiday` (in `src/act_wiz.c`) provides runtime reload of the holiday chart separate from boot-time load. Go port doesn't register `DoLoad` anywhere today, and the three holiday commands + boot-time load cover the common paths. `DoLoad` is a Phase-6 general admin-reload subsystem (potentially covering skills, races, holidays together) — out of this plan's scope.
 
@@ -585,6 +585,10 @@ Save subcommand:
 **Q5.** Should the `do_holidays` listing match C's exact byte output (including tab characters, `&` color codes, `\r\n`)?
 
 **Recommended answer:** Yes, byte-for-byte. Players and automated test harnesses can rely on predictable output. Pin via `TestDoHolidays_SingleHolidayRendersRow` asserting the full output string including the `\t` between name and month name.
+
+**Q6 — NEW (audit-holidays 2026-04-18).** `get_holiday` has two live callers in `src/timezone.c` (guarded by `#ifdef ENABLE_HOLIDAYS`): the `do_time` holiday-today suffix (`:528`) and the `season_update` hour-0 announce (`:622`). Which of these should land in this plan vs defer?
+
+**Recommended answer:** Land (A) `GetHoliday(month, day int) *HolidayData` as a one-liner range over `WorldRef.Holidays` checking `h.Month == month+1 && h.Day == day+1` — trivial, matches the 0-indexed TimeInfo → 1-indexed HolidayData translation visible at C `holidays.c:60`. Land (B) `DoTime` suffix: append `"&wIt's a holiday today:&W <name>\n\r"` when `GetHoliday(TimeInfo.Month, TimeInfo.Day)` returns non-nil — small diff to `internal/act/info2.go:95-126`. Defer (C) season-tick announce (`echo_to_all` on hour-0) unless a Go-side pulse/tick hook for season-update already exists — grep required before landing. If (C) defers, mark as TODO; do not block the plan on it. Add acceptance criteria A14 (`GetHoliday` defined), A15 (`DoTime` emits holiday-today suffix when applicable), and a scope-cut entry for (C) pending the tick-hook grep.
 
 ---
 

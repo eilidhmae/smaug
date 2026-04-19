@@ -1,6 +1,6 @@
 # Plan: Phase 6 — Starmap (`look sky`)
 
-**Status:** Planned (2026-04-18). Adversary-verified: to be filled after plan adversary pass.
+**Status:** Audited 2026-04-18 (external adversary pass; verdict PASS with 3 fidelity corrections applied in-place). Ready to execute.
 **Priority:** Phase 6 Wave 1 — small self-contained. Pure-render; no persistence; no mutation.
 **Scope:** New files `internal/act/starmap.go` + `internal/act/starmap_test.go`. Modifications to `internal/act/info.go` (`DoLook` branch for `"sky"`). No boot registration change (already registered as `look`). No persistence change. No new package.
 
@@ -29,7 +29,7 @@ Confirmed facts against the Go tree (verified 2026-04-18 via `Read` + `Grep`):
 - `WorldRef.TimeInfo` (`types/system.go:112-121`) has `Hour`, `Day`, `Month`, `Year`, `Season`, `Sunlight` — all required fields shipped.
 - `ch.InRoom.Area.Weather` (`types/area.go:52-62`) is `*WeatherData`; `WeatherData.Precip` at `types/area.go:78` is `int`. Per-area precipitation, matching C.
 - `weath_unit` C global at `src/db.c:108,600` — value is `10`. NOT present in Go. Needs to be added (as either a constant or a field — see Design below).
-- `ROOM_INDOORS` flag (`types/enums.go:698`) + `SECT_INSIDE` sector (`types/enums.go:550`) both shipped; `DoWeather` already uses the flag at `info.go:264`. The "indoors" check needs to match the established Go helper: flag-or-sector. See `spell_unique.go:281` / `ifcheck.go:640-643` for the canonical two-part test.
+- `ROOM_INDOORS` flag (`types/enums.go:698`) + `SECT_INSIDE` sector (`types/enums.go:550`) both shipped; `DoWeather` uses the flag alone at `info.go:264`. The canonical flag-OR-sector two-part test lives in `internal/magic/spell_unique.go:281-282` and `internal/mudprog/ifcheck.go:640-643`; the starmap branch should adopt that pattern.
 - Color codes: Go `DescriptorData.ColorFunc` processes `&Y` / `&W` / `&G` / etc. before writing to the wire (`descriptor.go:72-74`). `CharData.Send` / `Sendf` (`character.go:396-407`) emit through the buffer pipeline. No pager equivalent — C's `pager_printf_color` in Go is just `ch.Sendf`.
 
 ### Why "the table IS the gameplay"
@@ -90,7 +90,7 @@ if (precip > 1)
   }
 ```
 
-`weath_unit = 10` (`src/db.c:108,600`). So `precip = (raw + 29) / 10` — classic ceiling-divide-by-10 after a +29 offset. For the starmap, `precip > 1` gate. Real values: raw precip is bounded roughly `[-3*weath_unit, +3*weath_unit]` = `[-30, +30]` per weather vector cycle (`src/update.c:3377-3378` sets bounds). Sample mapping:
+`weath_unit = 10` (`src/db.c:108,600`). So `precip = (raw + 29) / 10` — classic ceiling-divide-by-10 after a +29 offset. For the starmap, `precip > 1` gate. Real values: raw precip is bounded roughly `[-3*weath_unit, +3*weath_unit]` = `[-30, +30]` per weather vector cycle (`src/update.c:3446-3452` sets bounds). Sample mapping:
 
 | Raw precip | Bucket | Visible? |
 |---|---|---|
@@ -182,7 +182,7 @@ After the inner loop, `strcat(buf, "\n\r"); pager_printf_color(ch, buf);`. Port 
 "O.O. O.              c.  G..G.           W:      B*                   Y."
 "     O.    c.     c.                     W. W.                  r*    Y."
 "     O.c.     c.      G.             P..     W.        p.      Y.   Y:  "
-"        C*                    G*    P.  P.           p.  p:     Y.   Y. "
+"        c.                    G*    P.  P.           p.  p:     Y.   Y. "
 "                 b*             P.: P*                 p.p:             "
 ```
 
@@ -199,7 +199,7 @@ Constellation legend (src/starmap.c:70-74 comment — informational, no function
 - Row 6 (line 66): `"        c.                    G*    P.  P.           p.  p:     Y.   Y. "`
 - Row 7 (line 67): `"                 b*             P.: P*                 p.p:             "`
 
-Note that `b*` (lowercase, dark-blue bright-star) appears on row 7 col 17, NOT row 6. Some SMAUG forks place other variants here; use HEAD byte-for-byte. Go port's final `var starMap = []string{...}` must match these 8 lines exactly, each exactly 72 bytes.
+Note that `b*` (lowercase, dark-blue bright-star) appears on row 7 col 17, NOT row 6. Row 6 starts with lowercase `c.` at col 8, not the earlier-draft `C*` — a transcription error caught by external adversary 2026-04-18 (see §Adversary Verification Notes item 8). Some SMAUG forks place other variants here; use HEAD byte-for-byte. Go port's final `var starMap = []string{...}` must match these 8 lines exactly, each exactly 72 bytes.
 
 `src/starmap.c:75-79` — sun 3x5 glyph:
 
@@ -238,7 +238,7 @@ Verified 2026-04-18 against `internal/` tree.
 - **Entry point:** `internal/act/info.go:DoLook` has no `sky` keyword — falls through to "You do not see that here."
 - **Calendar:** `WorldRef.TimeInfo.Hour` / `.Day` / `.Month` populated from system.dat at boot; advanced by `game/update.go:weatherUpdate` each hour-boundary tick.
 - **Per-area weather:** `ch.InRoom.Area.Weather.Precip` shipped; populated by `AreaData` loader and `game/update.go` per-area weather tick.
-- **Indoor/outdoor check:** canonical pattern is `RoomFlags.IsSet(ROOM_INDOORS) || SectorType == SECT_INSIDE` (`spell_unique.go:281`, `ifcheck.go:640-643`, `info3_test.go:391`).
+- **Indoor/outdoor check:** canonical flag-OR-sector pattern at `internal/magic/spell_unique.go:281-282` and `internal/mudprog/ifcheck.go:640-643`. NB: `DoWeather` at `info.go:264` uses flag-only (not flag-OR-sector); it predates the convention.
 - **`weath_unit`:** not defined anywhere in Go. Adding as a package constant is uncontroversial.
 - **Color rendering:** `&Y` / `&W` / `&G` / etc. pass through `DescriptorData.ColorFunc` to become ANSI escapes (when color is enabled) or be stripped (when disabled). Tests typically inspect the raw-buffer output and match on the `&X` form (see `readOutput` in `internal/act/*_test.go`).
 - **Output width:** tests read what `ch.Send` wrote. No auto-wrapping. The plan's rendered lines will be exactly 72 color-coded cells + `\n\r`.
@@ -489,7 +489,7 @@ Test fixtures required:
 
 **Q1 — Should the indoor check use flag-only or flag-OR-sector?**
 C `IS_OUTSIDE` is flag-only (`!IS_SET(ROOM_INDOORS)`). Go's convention since `phase5-tier3-completed.md` A1 is flag-OR-sector (covers rooms that forgot to set the flag on a SECT_INSIDE sector).
-**Recommended:** use flag-OR-sector (matches `DoWeather` at `info.go:264` + the canonical `ifcheck.go:640-643` pattern). Strict C fidelity is a loss here — the canonical Go pattern is intentionally more permissive and has been the convention since Tier 3. Tests cover both forms.
+**Recommended:** use flag-OR-sector (matches the canonical pattern at `internal/mudprog/ifcheck.go:640-643` and `internal/magic/spell_unique.go:281-282`). NB: `DoWeather` at `info.go:264` is flag-only (not flag-OR-sector) — the Go port's canonical pattern is established only in the two cited call sites. Strict C fidelity is a loss here since the sector is a superset. Tests cover both forms.
 
 **Q2 — Package-private constants vs exported `types.WEATH_UNIT`?**
 No other subsystem reads `weath_unit` today. Exporting it hoists package surface for zero benefit.
@@ -566,9 +566,21 @@ Findings caught and fixed in-session:
 
 7. **Transcription guard strength.** Plan v1 proposed a "first-10-char prefix" pinning test for starMap rows; self-review judged that too weak (middle-byte transcription errors slip through). Upgraded to full-string equality per row (Q6).
 
+### External adversary pass (2026-04-18, audit-starmap lineage)
+
+Lineage dispatched after Wave A authoring; this is the first external audit of this plan.
+
+8. **CRITICAL — Row-6 transcription error in the §C Reference fenced block.** Plan's first fenced block at §C Reference line ~186 listed row 6 as `"        C*    ..."` (capital C, star) while the adjacent per-row cite block (line ~199) correctly listed row 6 as `"        c.    ..."` (lowercase c, period). Source `src/starmap.c:66` confirms `c.`. An executing worker copying from the first block would have produced a non-verbatim Go table. Fixed in-place: the fenced block row-6 now matches the per-row cite block and both match `starmap.c:66`.
+
+9. **Citation error: precip bounds.** Plan cited `src/update.c:3377-3378` as the precip bound site. Actual bounds are at `src/update.c:3446-3452` (`URANGE(-limit, precip, limit)` with `limit = 3*weath_unit`). Domain claim `[-30, +30]` is correct. Fixed in-place.
+
+10. **`DoWeather` pattern misdescribed.** Plan claimed `DoWeather` at `info.go:264` uses flag-OR-sector. Read-verification shows it uses flag-only (`ch.InRoom.RoomFlags.IsSet(types.ROOM_INDOORS)`). The flag-OR-sector pattern IS the canonical convention — established at `internal/magic/spell_unique.go:281-282` and `internal/mudprog/ifcheck.go:640-643` — but `DoWeather` predates that convention. Fixed in-place (§Go Current State, §Q1).
+
+External adversary verdict: **PASS with corrections applied.** Three fidelity-impacting factual errors corrected (one critical transcription, one citation, one pattern-precedent claim). All hand-computed math re-verified and found correct (position formulas at hour=0/hour=12/day=18/day=20; precip bucket at raw=-19/0/10/-30; row lengths all 72 bytes; b* position at row 7 col 17). Plan is executable as-is after these edits.
+
 Unresolved items requiring external adversary verification:
 
-- The `precipBucket` hand-computation domain claim (that raw precip is bounded `[-30, 30]` per `src/update.c:3377-3378`). Plan spot-checked the citation but did not hand-verify the bounds.
+- The `precipBucket` hand-computation domain claim (that raw precip is bounded `[-30, 30]` per `src/update.c:3446-3452`). Plan spot-checked the citation but did not hand-verify the bounds.
 - The eclipse-at-noon behavior (`sunpos == moonpos && hour == 12`) edge case. Plan pins it via `TestRenderStarmap_EclipseAtNoonRendersMoon` but the exact expected output row-by-row was not hand-computed — tests assert the presence of `&W@` in the output, not a full row's bytes. An external adversary may want to demand stricter pins here.
 - The claim that `ColorFunc` passthrough preserves `&X` codes in test buffers. Plan relies on the default nil `ColorFunc` in test fixtures — if a test fixture elsewhere installs a stripping `ColorFunc`, this plan's assertions would fail. Spot-check by grep would confirm.
 
