@@ -173,18 +173,18 @@ func TestOeditDispExtradescMenu_ShowsListAndAR(t *testing.T) {
 	}
 }
 
-// --- Wave-2 value-menu stubs ---
-
-func TestOeditDispVal1Menu_Stub_SetsValue1Mode(t *testing.T) {
+// Wave-2 value-menu stubs have been replaced by Wave 3 G7 per-item-type
+// dispatchers; see oedit_wave3_test.go for the full coverage. The kept
+// test below pins the weapon-val1 path which is exercised in the new
+// value-dispatcher tests — included here as a regression guard for the
+// specific mode-setting contract.
+func TestOeditDispVal1Menu_WeaponSetsValue1Mode(t *testing.T) {
 	rig := newOeditHarness(t)
 	rig.idx.ItemType = types.ITEM_WEAPON
 	oeditDispVal1Menu(rig.d)
 	out := rig.readBuf(t)
-	if !strings.Contains(out, "Value 1 editing") {
-		t.Errorf("expected stub text; got: %q", out)
-	}
-	if !strings.Contains(out, "Wave 3") {
-		t.Errorf("expected 'Wave 3' marker; got: %q", out)
+	if !strings.Contains(out, "Condition") {
+		t.Errorf("expected weapon 'Condition' prompt; got: %q", out)
 	}
 	if rig.d.Olc.Mode != types.OEDIT_VALUE_1 {
 		t.Errorf("Mode = %d, want OEDIT_VALUE_1", rig.d.Olc.Mode)

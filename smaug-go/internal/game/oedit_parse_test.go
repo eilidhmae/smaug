@@ -320,9 +320,13 @@ func TestOeditParse_MainMenu_Option8_WeightPrompt(t *testing.T) {
 	}
 }
 
-// TestOeditParse_MainMenu_OptionD_ShowsLayerMenu pins 'D' → OEDIT_LAYERS.
+// TestOeditParse_MainMenu_OptionD_ShowsLayerMenu pins 'D' → OEDIT_LAYERS
+// when the object is layerable (has ITEM_WEAR_BODY or similar set).
+// Wave 3 PRE-G added the layerable precheck; object needs layerable wear
+// bits for D to open the layer menu.
 func TestOeditParse_MainMenu_OptionD_ShowsLayerMenu(t *testing.T) {
 	rig := newOeditHarness(t)
+	rig.idx.WearFlags = 1 << 3 // ITEM_WEAR_BODY
 	oeditParse(rig.d, "D")
 	if rig.d.Olc.Mode != types.OEDIT_LAYERS {
 		t.Errorf("Mode = %d, want OEDIT_LAYERS", rig.d.Olc.Mode)
@@ -339,9 +343,13 @@ func TestOeditParse_MainMenu_OptionG_ShowsExtradescMenu(t *testing.T) {
 	}
 }
 
-// TestOeditParse_MainMenu_OptionE_CallsVal1Menu pins 'E' → OEDIT_VALUE_1.
+// TestOeditParse_MainMenu_OptionE_CallsVal1Menu pins 'E' → OEDIT_VALUE_1
+// for an item-type that has a val1 prompt (weapon). Wave 3 G7 made the
+// val1 dispatcher item-type-aware; ItemType=ITEM_NONE (default) bails
+// back to main menu, so the test now seeds a weapon.
 func TestOeditParse_MainMenu_OptionE_CallsVal1Menu(t *testing.T) {
 	rig := newOeditHarness(t)
+	rig.idx.ItemType = types.ITEM_WEAPON
 	oeditParse(rig.d, "E")
 	if rig.d.Olc.Mode != types.OEDIT_VALUE_1 {
 		t.Errorf("Mode = %d, want OEDIT_VALUE_1", rig.d.Olc.Mode)
@@ -669,25 +677,8 @@ func TestOeditParse_Layers_InvalidRedisplays(t *testing.T) {
 	}
 }
 
-// --- Wave 2 value-stub parse behavior ---
-
-func TestOeditParse_ValueStub_ZeroReturnsToMain(t *testing.T) {
-	rig := newOeditHarness(t)
-	rig.d.Olc.Mode = types.OEDIT_VALUE_1
-	oeditParse(rig.d, "0")
-	if rig.d.Olc.Mode != types.OEDIT_MAIN_MENU {
-		t.Errorf("Mode = %d, want OEDIT_MAIN_MENU after 0 in value stub", rig.d.Olc.Mode)
-	}
-}
-
-func TestOeditParse_ValueStub_NonZeroReprompts(t *testing.T) {
-	rig := newOeditHarness(t)
-	rig.d.Olc.Mode = types.OEDIT_VALUE_3
-	oeditParse(rig.d, "7")
-	if rig.d.Olc.Mode != types.OEDIT_VALUE_3 {
-		t.Errorf("Mode = %d, want stay in OEDIT_VALUE_3", rig.d.Olc.Mode)
-	}
-}
+// Wave 2 value-stub behavior tests have been replaced by the Wave 3 G7
+// per-item-type value-dispatcher tests in oedit_values_test.go.
 
 // --- G5 EditorSave closure: long desc restores CON_OEDIT (mutation #11) ---
 

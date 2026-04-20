@@ -99,24 +99,44 @@ func oeditParse(d *types.DescriptorData, arg string) {
 	case types.OEDIT_LAYERS:
 		oeditHandleLayers(d, idx, arg)
 
-	case types.OEDIT_VALUE_1, types.OEDIT_VALUE_2, types.OEDIT_VALUE_3,
-		types.OEDIT_VALUE_4, types.OEDIT_VALUE_5, types.OEDIT_VALUE_6:
-		// Wave 2 stubs — Wave 3 G7 fills the per-item-type bodies.
-		oeditHandleValueStub(d, idx, arg)
+	case types.OEDIT_VALUE_1:
+		oeditHandleValue1(d, idx, arg)
+	case types.OEDIT_VALUE_2:
+		oeditHandleValue2(d, idx, arg)
+	case types.OEDIT_VALUE_3:
+		oeditHandleValue3(d, idx, arg)
+	case types.OEDIT_VALUE_4:
+		oeditHandleValue4(d, idx, arg)
+	case types.OEDIT_VALUE_5:
+		oeditHandleValue5(d, idx, arg)
+	case types.OEDIT_VALUE_6:
+		oeditHandleValue6(d, idx, arg)
 
-	case types.OEDIT_AFFECT_MENU, types.OEDIT_AFFECT_LOCATION,
-		types.OEDIT_AFFECT_MODIFIER, types.OEDIT_AFFECT_REMOVE,
-		types.OEDIT_AFFECT_RIS:
-		// Wave 3 G9 fills these in.
-		d.WriteToBuffer("Affect editing -- Wave 3.\n\r")
+	case types.OEDIT_AFFECT_MENU:
+		oeditHandleAffectMenu(d, idx, arg)
+	case types.OEDIT_AFFECT_LOCATION:
+		oeditHandleAffectLocation(d, idx, arg)
+	case types.OEDIT_AFFECT_MODIFIER:
+		oeditHandleAffectModifier(d, idx, arg)
+	case types.OEDIT_AFFECT_REMOVE:
+		oeditHandleAffectRemove(d, idx, arg)
+	case types.OEDIT_AFFECT_RIS:
+		// Unreachable in shipped C per §C Bug Catalog #1. Preserve as
+		// dead path — redisplay main defensively.
+		util.Bug("oeditParse: OEDIT_AFFECT_RIS unreachable path")
 		OeditDispMenu(d)
 
-	case types.OEDIT_EXTRADESC_MENU, types.OEDIT_EXTRADESC_CHOICE,
-		types.OEDIT_EXTRADESC_KEY, types.OEDIT_EXTRADESC_DESCRIPTION,
-		types.OEDIT_EXTRADESC_DELETE:
-		// Wave 3 G8 fills these in.
-		d.WriteToBuffer("Extradesc editing -- Wave 3.\n\r")
-		OeditDispMenu(d)
+	case types.OEDIT_EXTRADESC_MENU:
+		oeditHandleExtradescMenu(d, idx, arg)
+	case types.OEDIT_EXTRADESC_CHOICE:
+		oeditHandleExtradescChoice(d, idx, arg)
+	case types.OEDIT_EXTRADESC_KEY:
+		oeditHandleExtradescKey(d, idx, arg)
+	case types.OEDIT_EXTRADESC_DESCRIPTION:
+		// Editor-driven; defensive only.
+		d.WriteToBuffer("Use /s to save the editor.\n\r")
+	case types.OEDIT_EXTRADESC_DELETE:
+		oeditHandleExtradescDelete(d, idx, arg)
 
 	default:
 		util.Bug("oeditParse: unhandled mode %d", d.Olc.Mode)
@@ -214,13 +234,27 @@ func oeditHandleMainMenu(d *types.DescriptorData, idx *types.ObjIndexData, arg s
 		d.WriteToBuffer("Enter level : ")
 		d.Olc.Mode = types.OEDIT_LEVEL
 	case "D":
+		// Layerable precheck per C ooedit.c:1261-1275. D only opens the
+		// layer menu when the object has at least one of BODY/ABOUT/ARMS/
+		// FEET/HANDS/LEGS/WAIST wear bits set; otherwise refuse with
+		// C-verbatim message and stay on main menu.
+		const layerableMask = (1 << 3) | // ITEM_WEAR_BODY
+			(1 << 10) | // ITEM_WEAR_ABOUT
+			(1 << 8) | // ITEM_WEAR_ARMS
+			(1 << 6) | // ITEM_WEAR_FEET
+			(1 << 7) | // ITEM_WEAR_HANDS
+			(1 << 5) | // ITEM_WEAR_LEGS
+			(1 << 11) // ITEM_WEAR_WAIST
+		if idx.WearFlags&layerableMask == 0 {
+			d.WriteToBuffer("The wear location of this object is not layerable.\n\r")
+			OeditDispMenu(d)
+			return
+		}
 		oeditDispLayerMenu(d)
 	case "E":
 		oeditDispVal1Menu(d)
 	case "F":
-		// Wave 3 G9 wires the affect-menu sub-machine. Stub for now.
-		d.WriteToBuffer("Affect editing -- Wave 3.\n\r")
-		OeditDispMenu(d)
+		oeditDispPromptApplyMenu(d)
 	case "G":
 		oeditDispExtradescMenu(d)
 	default:
@@ -517,17 +551,4 @@ func oeditHandleLayers(d *types.DescriptorData, idx *types.ObjIndexData, arg str
 	}
 	olcLog(d, "OBJ", "%s layer %s", action, layerLabels[n])
 	oeditDispLayerMenu(d)
-}
-
-// oeditHandleValueStub is the Wave 2 placeholder for OEDIT_VALUE_1..6.
-// Wave 3 (G7) replaces it with per-item-type dispatch tables. For now,
-// numeric `0` returns to the main menu; any other input re-prompts with
-// the stub message.
-func oeditHandleValueStub(d *types.DescriptorData, idx *types.ObjIndexData, arg string) {
-	if strings.TrimSpace(arg) == "0" {
-		OeditDispMenu(d)
-		return
-	}
-	d.WriteToBufferf("Value editing for type %s -- Wave 3 (enter 0 to cancel) : ",
-		oTypeName(idx.ItemType))
 }
