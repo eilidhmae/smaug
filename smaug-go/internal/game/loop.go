@@ -281,6 +281,11 @@ func (g *GameLoop) processInput() {
 				// routing pattern as CON_REDIT — the nanny is
 				// NOT involved. Plan plan-phase6-olc-oedit.md §G3.
 				oeditParse(d, line)
+			case types.CON_MEDIT:
+				// Interactive mob/character-editor substate.
+				// Same routing pattern as CON_REDIT / CON_OEDIT.
+				// Plan plan-phase6-olc-medit.md §G4.
+				meditParse(d, line)
 			default:
 				g.nanny(d, line)
 			}

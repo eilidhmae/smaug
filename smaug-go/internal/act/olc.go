@@ -41,6 +41,17 @@ var ReditDispMenuFunc func(d *types.DescriptorData)
 // Plan plan-phase6-olc-oedit.md §G3.
 var OeditDispMenuFunc func(d *types.DescriptorData)
 
+// MeditDispMenuFunc is the medit counterpart to ReditDispMenuFunc /
+// OeditDispMenuFunc. Wired from boot (game.MeditDispMenu) in Wave 2 — Wave
+// 1 declares the seam but deliberately does NOT wire it in boot.go because
+// the Wave 1 stub meditParse does not call it (so a nil seam is safe).
+// Wave 2 lands the real game.MeditDispMenu renderer and adds the boot
+// assignment. The eventual DoMedit no-arg menu-entry path will call this
+// function to enter the CON_MEDIT menu (NPC or PC branch selected inside
+// the renderer via victim.IsNPC()).
+// Plan plan-phase6-olc-medit.md §G4 / §G14.
+var MeditDispMenuFunc func(d *types.DescriptorData)
+
 // --- Room editing ---
 
 // DoRedit implements the 'redit' command: edit the current room.

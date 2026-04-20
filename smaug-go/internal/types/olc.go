@@ -126,3 +126,80 @@ const (
 	OEDIT_MPROGS_TYPE   // reserved for mpedit
 	OEDIT_MPROGS_ARG    // reserved for mpedit
 )
+
+// MEDIT_* modes for OlcData.Mode while d.Connected == CON_MEDIT.
+// Mirror C src/olc.h MEDIT_* enum at :198-263. Offset iota+300 so every
+// MEDIT_* value is strictly greater than every OEDIT_* value (which live
+// at iota+200, max at OEDIT_MPROGS_ARG). REDIT_* live at iota+100.
+//
+// 64 consecutive iota slots. Plan: plan-phase6-olc-medit.md §G1.
+//
+// Mode ownership (NPC-only / PC-only / shared) and digit mapping from C
+// main menus is documented in the plan §"PC-vs-NPC mode ownership" table
+// — this block is purely the value enumeration.
+const (
+	MEDIT_NPC_MAIN_MENU      = iota + 300 // 0 in C — shown for IS_NPC
+	MEDIT_PC_MAIN_MENU                    // 1 — shown for connected PC
+	MEDIT_NAME                            // 2
+	MEDIT_S_DESC                          // 3
+	MEDIT_L_DESC                          // 4
+	MEDIT_D_DESC                          // 5
+	MEDIT_NPC_FLAGS                       // 6 — ACT_* bitmask editor
+	MEDIT_PC_FLAGS                        // 7 — PLR_* bitmask editor
+	MEDIT_AFF_FLAGS                       // 8 — AFF_* bitmask editor
+	MEDIT_CONFIRM_SAVESTRING              // 9 — PC exit save-confirm
+	MEDIT_SEX                             // 10
+	MEDIT_HITROLL                         // 11
+	MEDIT_DAMROLL                         // 12
+	MEDIT_DAMNUMDIE                       // 13
+	MEDIT_DAMSIZEDIE                      // 14
+	MEDIT_DAMPLUS                         // 15
+	MEDIT_HITNUMDIE                       // 16
+	MEDIT_HITSIZEDIE                      // 17
+	MEDIT_HITPLUS                         // 18
+	MEDIT_AC                              // 19
+	MEDIT_GOLD                            // 20
+	MEDIT_POS                             // 21
+	MEDIT_DEFAULT_POS                     // 22 — NPC-only default posture
+	MEDIT_ATTACK                          // 23 — NPC-only attack index
+	MEDIT_DEFENSE                         // 24 — NPC-only defense flags
+	MEDIT_LEVEL                           // 25 — LEVEL_GREATER for PC target
+	MEDIT_ALIGNMENT                       // 26
+	MEDIT_STRENGTH                        // 27
+	MEDIT_INTELLIGENCE                    // 28
+	MEDIT_WISDOM                          // 29
+	MEDIT_DEXTERITY                       // 30
+	MEDIT_CONSTITUTION                    // 31
+	MEDIT_CHARISMA                        // 32
+	MEDIT_LUCK                            // 33
+	MEDIT_CLAN                            // 34
+	MEDIT_DEITY                           // 35
+	MEDIT_COUNCIL                         // 36
+	MEDIT_SPEC                            // 37 — NPC-only spec_fun name
+	MEDIT_RESISTANT                       // 38 — RIS_* bitmask editor
+	MEDIT_IMMUNE                          // 39 — RIS_* bitmask editor
+	MEDIT_SUSCEPTIBLE                     // 40 — RIS_* bitmask editor
+	MEDIT_PCDATA_FLAGS                    // 41 — PCFLAG_* PC-only
+	MEDIT_MENTALSTATE                     // 42
+	MEDIT_EMOTIONAL                       // 43
+	MEDIT_THIRST                          // 44
+	MEDIT_FULL                            // 45
+	MEDIT_DRUNK                           // 46
+	MEDIT_PARTS                           // 47 — PART_* bitmask editor
+	MEDIT_FAVOR                           // 48
+	MEDIT_HITPOINT                        // 49
+	MEDIT_MANA                            // 50
+	MEDIT_MOVE                            // 51
+	MEDIT_PRACTICE                        // 52 — PC-only
+	MEDIT_PASSWORD                        // 53 — PC-only (bcrypt path)
+	MEDIT_SAVE_MENU                       // 54 — PC-only 5-way sub-dispatch
+	MEDIT_SAV1                            // 55
+	MEDIT_SAV2                            // 56
+	MEDIT_SAV3                            // 57
+	MEDIT_SAV4                            // 58
+	MEDIT_SAV5                            // 59
+	MEDIT_CLASS                           // 60 — PC-only LEVEL_GREATER
+	MEDIT_RACE                            // 61 — PC-only LEVEL_GREATER
+	MEDIT_SILVER                          // 62
+	MEDIT_COPPER                          // 63
+)

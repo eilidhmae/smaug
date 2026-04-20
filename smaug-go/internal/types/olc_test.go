@@ -223,3 +223,181 @@ func TestSubstate_ObjActionAppendsAfterExtra(t *testing.T) {
 			SUB_OBJ_ACTION, SUB_OBJ_EXTRA)
 	}
 }
+
+// --- MEDIT_* constants (plan-phase6-olc-medit.md §G1) ---
+
+// meditAllModes is the full 64-entry name→value table consulted by every
+// MEDIT_* pin-test. Exposed as a helper to keep the tests under one source
+// of truth: add a constant here and all four tests pick it up.
+func meditAllModes() map[string]int {
+	return map[string]int{
+		"MEDIT_NPC_MAIN_MENU":      MEDIT_NPC_MAIN_MENU,
+		"MEDIT_PC_MAIN_MENU":       MEDIT_PC_MAIN_MENU,
+		"MEDIT_NAME":               MEDIT_NAME,
+		"MEDIT_S_DESC":             MEDIT_S_DESC,
+		"MEDIT_L_DESC":             MEDIT_L_DESC,
+		"MEDIT_D_DESC":             MEDIT_D_DESC,
+		"MEDIT_NPC_FLAGS":          MEDIT_NPC_FLAGS,
+		"MEDIT_PC_FLAGS":           MEDIT_PC_FLAGS,
+		"MEDIT_AFF_FLAGS":          MEDIT_AFF_FLAGS,
+		"MEDIT_CONFIRM_SAVESTRING": MEDIT_CONFIRM_SAVESTRING,
+		"MEDIT_SEX":                MEDIT_SEX,
+		"MEDIT_HITROLL":            MEDIT_HITROLL,
+		"MEDIT_DAMROLL":            MEDIT_DAMROLL,
+		"MEDIT_DAMNUMDIE":          MEDIT_DAMNUMDIE,
+		"MEDIT_DAMSIZEDIE":         MEDIT_DAMSIZEDIE,
+		"MEDIT_DAMPLUS":            MEDIT_DAMPLUS,
+		"MEDIT_HITNUMDIE":          MEDIT_HITNUMDIE,
+		"MEDIT_HITSIZEDIE":         MEDIT_HITSIZEDIE,
+		"MEDIT_HITPLUS":            MEDIT_HITPLUS,
+		"MEDIT_AC":                 MEDIT_AC,
+		"MEDIT_GOLD":               MEDIT_GOLD,
+		"MEDIT_POS":                MEDIT_POS,
+		"MEDIT_DEFAULT_POS":        MEDIT_DEFAULT_POS,
+		"MEDIT_ATTACK":             MEDIT_ATTACK,
+		"MEDIT_DEFENSE":            MEDIT_DEFENSE,
+		"MEDIT_LEVEL":              MEDIT_LEVEL,
+		"MEDIT_ALIGNMENT":          MEDIT_ALIGNMENT,
+		"MEDIT_STRENGTH":           MEDIT_STRENGTH,
+		"MEDIT_INTELLIGENCE":       MEDIT_INTELLIGENCE,
+		"MEDIT_WISDOM":             MEDIT_WISDOM,
+		"MEDIT_DEXTERITY":          MEDIT_DEXTERITY,
+		"MEDIT_CONSTITUTION":       MEDIT_CONSTITUTION,
+		"MEDIT_CHARISMA":           MEDIT_CHARISMA,
+		"MEDIT_LUCK":               MEDIT_LUCK,
+		"MEDIT_CLAN":               MEDIT_CLAN,
+		"MEDIT_DEITY":              MEDIT_DEITY,
+		"MEDIT_COUNCIL":            MEDIT_COUNCIL,
+		"MEDIT_SPEC":               MEDIT_SPEC,
+		"MEDIT_RESISTANT":          MEDIT_RESISTANT,
+		"MEDIT_IMMUNE":             MEDIT_IMMUNE,
+		"MEDIT_SUSCEPTIBLE":        MEDIT_SUSCEPTIBLE,
+		"MEDIT_PCDATA_FLAGS":       MEDIT_PCDATA_FLAGS,
+		"MEDIT_MENTALSTATE":        MEDIT_MENTALSTATE,
+		"MEDIT_EMOTIONAL":          MEDIT_EMOTIONAL,
+		"MEDIT_THIRST":             MEDIT_THIRST,
+		"MEDIT_FULL":               MEDIT_FULL,
+		"MEDIT_DRUNK":              MEDIT_DRUNK,
+		"MEDIT_PARTS":              MEDIT_PARTS,
+		"MEDIT_FAVOR":              MEDIT_FAVOR,
+		"MEDIT_HITPOINT":           MEDIT_HITPOINT,
+		"MEDIT_MANA":               MEDIT_MANA,
+		"MEDIT_MOVE":               MEDIT_MOVE,
+		"MEDIT_PRACTICE":           MEDIT_PRACTICE,
+		"MEDIT_PASSWORD":           MEDIT_PASSWORD,
+		"MEDIT_SAVE_MENU":          MEDIT_SAVE_MENU,
+		"MEDIT_SAV1":               MEDIT_SAV1,
+		"MEDIT_SAV2":               MEDIT_SAV2,
+		"MEDIT_SAV3":               MEDIT_SAV3,
+		"MEDIT_SAV4":               MEDIT_SAV4,
+		"MEDIT_SAV5":               MEDIT_SAV5,
+		"MEDIT_CLASS":              MEDIT_CLASS,
+		"MEDIT_RACE":               MEDIT_RACE,
+		"MEDIT_SILVER":             MEDIT_SILVER,
+		"MEDIT_COPPER":             MEDIT_COPPER,
+	}
+}
+
+// TestMeditData_ModeConstantsUnique is the MEDIT parallel of the redit /
+// oedit uniqueness pins. Pairwise-distinct assertion for all 64 MEDIT_*
+// values. If a constant is added or removed without updating the map
+// length, the length check fails first. Plan §G1.
+func TestMeditData_ModeConstantsUnique(t *testing.T) {
+	modes := meditAllModes()
+	if len(modes) != 64 {
+		t.Fatalf("expected 64 MEDIT_* constants in the map, got %d — did a constant get added/removed?", len(modes))
+	}
+	seen := make(map[int]string)
+	for name, val := range modes {
+		if prior, dup := seen[val]; dup {
+			t.Errorf("mode collision: %s and %s both = %d", name, prior, val)
+		}
+		seen[val] = name
+	}
+}
+
+// TestMeditData_ConstantsExceedOedit pins the iota+300 offset guarantee —
+// every MEDIT_* value must be strictly greater than every OEDIT_* value so
+// an Olc.Mode integer cannot be misinterpreted across editors. This is the
+// key "iota+300 vs iota+200" separation. Plan §G1.
+func TestMeditData_ConstantsExceedOedit(t *testing.T) {
+	oeditValues := []int{
+		OEDIT_MAIN_MENU, OEDIT_EDIT_NAMELIST, OEDIT_SHORTDESC, OEDIT_LONGDESC,
+		OEDIT_ACTDESC, OEDIT_TYPE, OEDIT_EXTRAS, OEDIT_WEAR, OEDIT_WEIGHT,
+		OEDIT_COST, OEDIT_COSTPERDAY, OEDIT_TIMER, OEDIT_VALUE_1, OEDIT_VALUE_2,
+		OEDIT_VALUE_3, OEDIT_VALUE_4, OEDIT_VALUE_5, OEDIT_VALUE_6,
+		OEDIT_EXTRADESC_KEY, OEDIT_CONFIRM_SAVEDB, OEDIT_CONFIRM_SAVESTRING,
+		OEDIT_EXTRADESC_DESCRIPTION, OEDIT_EXTRADESC_MENU, OEDIT_LEVEL,
+		OEDIT_LAYERS, OEDIT_AFFECT_MENU, OEDIT_AFFECT_LOCATION,
+		OEDIT_AFFECT_MODIFIER, OEDIT_AFFECT_REMOVE, OEDIT_AFFECT_RIS,
+		OEDIT_EXTRADESC_CHOICE, OEDIT_EXTRADESC_DELETE, OEDIT_MPROGS,
+		OEDIT_MPROGS_CHOICE, OEDIT_MPROGS_DELETE, OEDIT_MPROGS_TYPE,
+		OEDIT_MPROGS_ARG,
+	}
+	oeditMax := oeditValues[0]
+	for _, v := range oeditValues {
+		if v > oeditMax {
+			oeditMax = v
+		}
+	}
+	if MEDIT_NPC_MAIN_MENU <= oeditMax {
+		t.Errorf("MEDIT_NPC_MAIN_MENU (%d) must exceed max OEDIT_* (%d) to keep enum spaces disjoint",
+			MEDIT_NPC_MAIN_MENU, oeditMax)
+	}
+}
+
+// TestMeditData_IotaContiguous verifies the MEDIT_* block is a single
+// unbroken iota run — every adjacent pair differs by exactly 1. If a
+// future edit accidentally sets an explicit value in the middle (e.g.
+// `MEDIT_SOMETHING = 999`), the iota sequence would break and downstream
+// constants would gain an unexpected jump. Plan §G1 mutation gate.
+func TestMeditData_IotaContiguous(t *testing.T) {
+	ordered := []int{
+		MEDIT_NPC_MAIN_MENU, MEDIT_PC_MAIN_MENU, MEDIT_NAME,
+		MEDIT_S_DESC, MEDIT_L_DESC, MEDIT_D_DESC, MEDIT_NPC_FLAGS,
+		MEDIT_PC_FLAGS, MEDIT_AFF_FLAGS, MEDIT_CONFIRM_SAVESTRING,
+		MEDIT_SEX, MEDIT_HITROLL, MEDIT_DAMROLL, MEDIT_DAMNUMDIE,
+		MEDIT_DAMSIZEDIE, MEDIT_DAMPLUS, MEDIT_HITNUMDIE,
+		MEDIT_HITSIZEDIE, MEDIT_HITPLUS, MEDIT_AC, MEDIT_GOLD,
+		MEDIT_POS, MEDIT_DEFAULT_POS, MEDIT_ATTACK, MEDIT_DEFENSE,
+		MEDIT_LEVEL, MEDIT_ALIGNMENT, MEDIT_STRENGTH, MEDIT_INTELLIGENCE,
+		MEDIT_WISDOM, MEDIT_DEXTERITY, MEDIT_CONSTITUTION,
+		MEDIT_CHARISMA, MEDIT_LUCK, MEDIT_CLAN, MEDIT_DEITY,
+		MEDIT_COUNCIL, MEDIT_SPEC, MEDIT_RESISTANT, MEDIT_IMMUNE,
+		MEDIT_SUSCEPTIBLE, MEDIT_PCDATA_FLAGS, MEDIT_MENTALSTATE,
+		MEDIT_EMOTIONAL, MEDIT_THIRST, MEDIT_FULL, MEDIT_DRUNK,
+		MEDIT_PARTS, MEDIT_FAVOR, MEDIT_HITPOINT, MEDIT_MANA,
+		MEDIT_MOVE, MEDIT_PRACTICE, MEDIT_PASSWORD, MEDIT_SAVE_MENU,
+		MEDIT_SAV1, MEDIT_SAV2, MEDIT_SAV3, MEDIT_SAV4, MEDIT_SAV5,
+		MEDIT_CLASS, MEDIT_RACE, MEDIT_SILVER, MEDIT_COPPER,
+	}
+	if len(ordered) != 64 {
+		t.Fatalf("ordered length = %d, want 64 (did a constant change position?)", len(ordered))
+	}
+	for i := 1; i < len(ordered); i++ {
+		if got := ordered[i] - ordered[i-1]; got != 1 {
+			t.Errorf("MEDIT_* iota gap at index %d: diff = %d, want 1 (ordered[%d]=%d, ordered[%d]=%d)",
+				i, got, i-1, ordered[i-1], i, ordered[i])
+		}
+	}
+	if MEDIT_NPC_MAIN_MENU != 300 {
+		t.Errorf("MEDIT_NPC_MAIN_MENU = %d, want 300 (iota+300 offset is load-bearing for editor disambiguation)",
+			MEDIT_NPC_MAIN_MENU)
+	}
+}
+
+// TestMeditData_CONMEDIT_Distinct pins the three interactive-editor
+// connection states as mutually distinct. CON_MEDIT lives in the CON_*
+// iota space (enums.go :91) not the MEDIT_* space, and must not collide
+// with CON_REDIT / CON_OEDIT. Plan §G1.
+func TestMeditData_CONMEDIT_Distinct(t *testing.T) {
+	if CON_MEDIT == CON_REDIT {
+		t.Errorf("CON_MEDIT (%d) collides with CON_REDIT (%d)", CON_MEDIT, CON_REDIT)
+	}
+	if CON_MEDIT == CON_OEDIT {
+		t.Errorf("CON_MEDIT (%d) collides with CON_OEDIT (%d)", CON_MEDIT, CON_OEDIT)
+	}
+	if CON_REDIT == CON_OEDIT {
+		t.Errorf("CON_REDIT (%d) collides with CON_OEDIT (%d)", CON_REDIT, CON_OEDIT)
+	}
+}
