@@ -146,7 +146,9 @@ func drainHolidayBlock(sc *Scanner) {
 // user-facing confirmation unconditionally (matches C's no-error-to-user
 // convention).
 func SaveHolidays(path string, list []*types.HolidayData) error {
-	f, err := os.Create(path)
+	// 0o600 — game-data files are kept private to the smaug user. Matches
+	// the hotboot precedent (persist/hotboot.go) that landed 2026-04-19.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

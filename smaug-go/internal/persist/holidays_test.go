@@ -277,6 +277,22 @@ func TestLoadHolidays_UnknownSectionEmitsSpecificBug(t *testing.T) {
 // --- shipped file edge: confirm tilde handling doesn't trip on `\n\r`
 // bake-in by ReadString.
 
+// TestSaveHolidays_FileMode pins 0600 — security adversary 2026-04-19.
+// Game-balance data should not be world-readable on shared hosts.
+func TestSaveHolidays_FileMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "holidays.dat")
+	if err := SaveHolidays(path, nil); err != nil {
+		t.Fatalf("SaveHolidays: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("holidays.dat mode = %#o, want 0o600", mode)
+	}
+}
+
 func TestLoadHolidays_NameSurvivesRoundTrip(t *testing.T) {
 	seed := []*types.HolidayData{{Month: 5, Day: 10, Name: "With Spaces And 'quotes'", Announce: "Body with punctuation! And apostrophes'."}}
 	path := filepath.Join(t.TempDir(), "out.dat")

@@ -446,6 +446,53 @@ func TestDoSetHoliday_NameRenames(t *testing.T) {
 	}
 }
 
+// Defense-in-depth: an immortal who passes a literal `~` in the holiday
+// name or announcement could otherwise inject a structurally-corrupt
+// `#HOLIDAY` block into holidays.dat (the on-disk format is tilde-
+// terminated). SmashTilde converts the embedded `~` to `-` before storage.
+func TestDoSetHoliday_NameSmashesTilde(t *testing.T) {
+	w := setupHolidaysWorld(t)
+	w.Holidays = []*types.HolidayData{{Month: 1, Day: 1, Name: "Old"}}
+	ch, client := makeTestChar("Tester")
+	defer client.Close()
+
+	DoSetHoliday(ch, "Old name foo~injected")
+	_ = readOutput(ch, client)
+
+	if w.Holidays[0].Name != "foo-injected" {
+		t.Errorf("Name = %q, want %q (tilde must be smashed)", w.Holidays[0].Name, "foo-injected")
+	}
+}
+
+func TestDoSetHoliday_AnnounceSmashesTilde(t *testing.T) {
+	w := setupHolidaysWorld(t)
+	w.Holidays = []*types.HolidayData{{Month: 1, Day: 1, Name: "Test"}}
+	ch, client := makeTestChar("Tester")
+	defer client.Close()
+
+	DoSetHoliday(ch, "Test announce hello~Name injected~")
+	_ = readOutput(ch, client)
+
+	if w.Holidays[0].Announce != "hello-Name injected-" {
+		t.Errorf("Announce = %q, want %q (tildes must be smashed)", w.Holidays[0].Announce, "hello-Name injected-")
+	}
+}
+
+func TestDoSetHoliday_CreateSmashesTildeInName(t *testing.T) {
+	w := setupHolidaysWorld(t)
+	w.TimeInfo.Month = 0
+	w.TimeInfo.Day = 0
+	ch, client := makeTestChar("Tester")
+	defer client.Close()
+
+	DoSetHoliday(ch, "Foo~bar create")
+	_ = readOutput(ch, client)
+
+	if len(w.Holidays) != 1 || w.Holidays[0].Name != "Foo-bar" {
+		t.Fatalf("Holidays = %+v, want one entry named %q", w.Holidays, "Foo-bar")
+	}
+}
+
 // --- DoSetHoliday delete ---------------------------------------------
 
 func TestDoSetHoliday_DeleteRequiresYes(t *testing.T) {

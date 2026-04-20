@@ -1,6 +1,9 @@
 package util
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestAdvatoi_BareInt(t *testing.T) {
 	if got := Advatoi("123"); got != 123 {
@@ -113,5 +116,45 @@ func TestParseBet_Empty(t *testing.T) {
 func TestParseBet_Unknown(t *testing.T) {
 	if got := ParseBet(1000, "abc"); got != 0 {
 		t.Errorf("ParseBet(1000, abc) = %d, want 0", got)
+	}
+}
+
+// Security adversary 2026-04-19: a crafted `*N` whose product wraps int
+// would otherwise produce a deceptively-small bet that passes the
+// auction's 2-billion ceiling check. ParseBet must return 0 instead of
+// wrapping.
+func TestParseBet_MultiplyOverflowReturnsZero(t *testing.T) {
+	// 10000 * 1844674407370960 wraps to a small positive on 64-bit int.
+	if got := ParseBet(10000, "*1844674407370960"); got != 0 {
+		t.Errorf("ParseBet(10000, *huge) = %d, want 0 (overflow guard)", got)
+	}
+	if got := ParseBet(10000, "x1844674407370960"); got != 0 {
+		t.Errorf("ParseBet(10000, xhuge) = %d, want 0 (overflow guard)", got)
+	}
+}
+
+func TestParseBet_PercentOverflowReturnsZero(t *testing.T) {
+	// 1000 * (100 + huge) — the `100+n` step alone wraps.
+	if got := ParseBet(1000, "+9223372036854775000"); got != 0 {
+		t.Errorf("ParseBet(1000, +huge) = %d, want 0 (overflow guard)", got)
+	}
+}
+
+func TestMulOverflows(t *testing.T) {
+	cases := []struct {
+		a, b int
+		want bool
+	}{
+		{0, math.MaxInt, false},
+		{math.MaxInt, 0, false},
+		{-1, math.MaxInt, false}, // negative operands are out-of-contract; treated as no-overflow.
+		{2, math.MaxInt / 2, false},
+		{2, math.MaxInt/2 + 1, true},
+		{10000, 1844674407370960, true},
+	}
+	for _, c := range cases {
+		if got := mulOverflows(c.a, c.b); got != c.want {
+			t.Errorf("mulOverflows(%d, %d) = %v, want %v", c.a, c.b, got, c.want)
+		}
 	}
 }

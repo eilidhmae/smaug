@@ -371,3 +371,18 @@ func TestCheckPlanes_NilWorldNoPanic(t *testing.T) {
 	}()
 	CheckPlanes(nil, nil)
 }
+
+// TestSavePlanes_FileMode pins 0600 — security adversary 2026-04-19.
+func TestSavePlanes_FileMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "planes.dat")
+	if err := SavePlanes(path, []*types.PlaneData{{Name: "Prime Material"}}); err != nil {
+		t.Fatalf("SavePlanes: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("planes.dat mode = %#o, want 0o600", mode)
+	}
+}

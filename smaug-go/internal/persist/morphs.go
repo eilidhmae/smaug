@@ -400,7 +400,8 @@ func SetupMorphVnum(w any) {
 //
 // Terminator: `#END\n`.
 func SaveMorphs(path string, list []*types.MorphData) error {
-	f, err := os.Create(path)
+	// 0o600 — private to the smaug user (hotboot precedent).
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

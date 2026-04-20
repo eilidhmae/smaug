@@ -114,7 +114,8 @@ func readPlaneBlock(sc *Scanner, path string) *types.PlaneData {
 // "Planes saved." unconditionally to match C's no-error-to-user
 // convention.
 func SavePlanes(path string, list []*types.PlaneData) error {
-	f, err := os.Create(path)
+	// 0o600 — private to the smaug user (hotboot precedent).
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package persist
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -263,5 +264,21 @@ func TestSaveStances_WritesToPath(t *testing.T) {
 	}
 	if got[types.STANCE_DRAGON].NumAttacks != 7 {
 		t.Errorf("round-trip via disk: got Attacks=%d, want 7", got[types.STANCE_DRAGON].NumAttacks)
+	}
+}
+
+// TestSaveStances_FileMode pins 0600 — security adversary 2026-04-19.
+func TestSaveStances_FileMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stances.dat")
+	var tbl [types.MAX_STANCE]combat.StanceInfo
+	if err := SaveStances(&tbl, path); err != nil {
+		t.Fatalf("SaveStances: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("stances.dat mode = %#o, want 0o600", mode)
 	}
 }

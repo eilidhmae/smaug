@@ -174,7 +174,7 @@ func DoSetHoliday(ch *types.CharData, argument string) {
 			return
 		}
 		h := &types.HolidayData{
-			Name: arg1,
+			Name: util.SmashTilde(arg1),
 			// Fix C bug: C stores time_info.month unshifted (0-indexed
 			// value in 1-indexed slot). Go emits +1.
 			Month:    WorldRef.TimeInfo.Month + 1,
@@ -250,7 +250,7 @@ func DoSetHoliday(ch *types.CharData, argument string) {
 			ch.Send("Set the annoucement to what?\n\r")
 			return
 		}
-		day.Announce = full
+		day.Announce = util.SmashTilde(full)
 		ch.Send("Announcement changed.\n\r")
 		return
 
@@ -260,7 +260,7 @@ func DoSetHoliday(ch *types.CharData, argument string) {
 			ch.Send("Set the name to what?\n\r")
 			return
 		}
-		day.Name = full
+		day.Name = util.SmashTilde(full)
 		ch.Send("Name changed.\n\r")
 		return
 

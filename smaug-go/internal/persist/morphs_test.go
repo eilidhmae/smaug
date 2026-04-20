@@ -488,3 +488,18 @@ func TestSetupMorphVnum_NilWorldNoPanic(t *testing.T) {
 	}()
 	SetupMorphVnum(nil)
 }
+
+// TestSaveMorphs_FileMode pins 0600 — security adversary 2026-04-19.
+func TestSaveMorphs_FileMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "morph.dat")
+	if err := SaveMorphs(path, nil); err != nil {
+		t.Fatalf("SaveMorphs: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("morph.dat mode = %#o, want 0o600", mode)
+	}
+}

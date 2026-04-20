@@ -158,6 +158,22 @@ func readClan(sc *Scanner) (*types.ClanData, error) {
 	}
 }
 
+// errWriter wraps fmt.Fprintf so the caller can issue many writes and
+// only inspect the first error at the end. Short-circuits after first
+// error to match the user expectation that a partial write does not
+// continue corrupting the file.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (ew *errWriter) Fprintf(format string, args ...any) {
+	if ew.err != nil {
+		return
+	}
+	_, ew.err = fmt.Fprintf(ew.w, format, args...)
+}
+
 // SaveClan writes a clan record in the SMAUG save_clan format. Byte-for-byte
 // parity with C src/clans.c:206-250 save_clan. Strings get tilde terminators
 // and two-space-padded key columns matching C's fprintf format strings.
@@ -169,51 +185,52 @@ func SaveClan(w io.Writer, c *types.ClanData) error {
 	// Apply SmashTilde to every string field (belt-and-braces vs. builder-
 	// typed tildes, matching C smash_tilde on read-in).
 	smash := util.SmashTilde
+	ew := &errWriter{w: w}
 
-	fmt.Fprintf(w, "#CLAN\n")
-	fmt.Fprintf(w, "Name         %s~\n", smash(c.Name))
-	fmt.Fprintf(w, "Abbrev       %s~\n", smash(c.Abbrev))
-	fmt.Fprintf(w, "Filename     %s~\n", smash(c.Filename))
-	fmt.Fprintf(w, "Motto        %s~\n", smash(c.Motto))
-	fmt.Fprintf(w, "Description  %s~\n", smash(c.Description))
-	fmt.Fprintf(w, "Deity        %s~\n", smash(c.Deity))
-	fmt.Fprintf(w, "Leader       %s~\n", smash(c.Leader))
-	fmt.Fprintf(w, "NumberOne    %s~\n", smash(c.Number1))
-	fmt.Fprintf(w, "NumberTwo    %s~\n", smash(c.Number2))
-	fmt.Fprintf(w, "Badge        %s~\n", smash(c.Badge))
-	fmt.Fprintf(w, "Leadrank     %s~\n", smash(c.LeadRank))
-	fmt.Fprintf(w, "Onerank      %s~\n", smash(c.OneRank))
-	fmt.Fprintf(w, "Tworank      %s~\n", smash(c.TwoRank))
-	fmt.Fprintf(w, "PKillRangeNew   %d %d %d %d %d %d %d\n",
+	ew.Fprintf("#CLAN\n")
+	ew.Fprintf("Name         %s~\n", smash(c.Name))
+	ew.Fprintf("Abbrev       %s~\n", smash(c.Abbrev))
+	ew.Fprintf("Filename     %s~\n", smash(c.Filename))
+	ew.Fprintf("Motto        %s~\n", smash(c.Motto))
+	ew.Fprintf("Description  %s~\n", smash(c.Description))
+	ew.Fprintf("Deity        %s~\n", smash(c.Deity))
+	ew.Fprintf("Leader       %s~\n", smash(c.Leader))
+	ew.Fprintf("NumberOne    %s~\n", smash(c.Number1))
+	ew.Fprintf("NumberTwo    %s~\n", smash(c.Number2))
+	ew.Fprintf("Badge        %s~\n", smash(c.Badge))
+	ew.Fprintf("Leadrank     %s~\n", smash(c.LeadRank))
+	ew.Fprintf("Onerank      %s~\n", smash(c.OneRank))
+	ew.Fprintf("Tworank      %s~\n", smash(c.TwoRank))
+	ew.Fprintf("PKillRangeNew   %d %d %d %d %d %d %d\n",
 		c.PKills[0], c.PKills[1], c.PKills[2],
 		c.PKills[3], c.PKills[4], c.PKills[5], c.PKills[6])
-	fmt.Fprintf(w, "PDeathRangeNew  %d %d %d %d %d %d %d\n",
+	ew.Fprintf("PDeathRangeNew  %d %d %d %d %d %d %d\n",
 		c.PDeaths[0], c.PDeaths[1], c.PDeaths[2],
 		c.PDeaths[3], c.PDeaths[4], c.PDeaths[5], c.PDeaths[6])
-	fmt.Fprintf(w, "MKills       %d\n", c.MKills)
-	fmt.Fprintf(w, "MDeaths      %d\n", c.MDeaths)
-	fmt.Fprintf(w, "IllegalPK    %d\n", c.IllegalPK)
-	fmt.Fprintf(w, "Score        %d\n", c.Score)
-	fmt.Fprintf(w, "Type         %d\n", c.ClanType)
-	fmt.Fprintf(w, "Class        %d\n", c.Class)
-	fmt.Fprintf(w, "Favour       %d\n", c.Favour)
-	fmt.Fprintf(w, "Strikes      %d\n", c.Strikes)
-	fmt.Fprintf(w, "Members      %d\n", c.Members)
-	fmt.Fprintf(w, "MemLimit     %d\n", c.MemLimit)
-	fmt.Fprintf(w, "Alignment    %d\n", c.Alignment)
-	fmt.Fprintf(w, "Board        %d\n", c.Board)
-	fmt.Fprintf(w, "ClanObjOne   %d\n", c.ClanObj1)
-	fmt.Fprintf(w, "ClanObjTwo   %d\n", c.ClanObj2)
-	fmt.Fprintf(w, "ClanObjThree %d\n", c.ClanObj3)
-	fmt.Fprintf(w, "ClanObjFour  %d\n", c.ClanObj4)
-	fmt.Fprintf(w, "ClanObjFive  %d\n", c.ClanObj5)
-	fmt.Fprintf(w, "Recall       %d\n", c.Recall)
-	fmt.Fprintf(w, "Storeroom    %d\n", c.Storeroom)
-	fmt.Fprintf(w, "GuardOne     %d\n", c.Guard1)
-	fmt.Fprintf(w, "GuardTwo     %d\n", c.Guard2)
-	fmt.Fprintf(w, "End\n\n")
-	fmt.Fprintf(w, "#END\n")
-	return nil
+	ew.Fprintf("MKills       %d\n", c.MKills)
+	ew.Fprintf("MDeaths      %d\n", c.MDeaths)
+	ew.Fprintf("IllegalPK    %d\n", c.IllegalPK)
+	ew.Fprintf("Score        %d\n", c.Score)
+	ew.Fprintf("Type         %d\n", c.ClanType)
+	ew.Fprintf("Class        %d\n", c.Class)
+	ew.Fprintf("Favour       %d\n", c.Favour)
+	ew.Fprintf("Strikes      %d\n", c.Strikes)
+	ew.Fprintf("Members      %d\n", c.Members)
+	ew.Fprintf("MemLimit     %d\n", c.MemLimit)
+	ew.Fprintf("Alignment    %d\n", c.Alignment)
+	ew.Fprintf("Board        %d\n", c.Board)
+	ew.Fprintf("ClanObjOne   %d\n", c.ClanObj1)
+	ew.Fprintf("ClanObjTwo   %d\n", c.ClanObj2)
+	ew.Fprintf("ClanObjThree %d\n", c.ClanObj3)
+	ew.Fprintf("ClanObjFour  %d\n", c.ClanObj4)
+	ew.Fprintf("ClanObjFive  %d\n", c.ClanObj5)
+	ew.Fprintf("Recall       %d\n", c.Recall)
+	ew.Fprintf("Storeroom    %d\n", c.Storeroom)
+	ew.Fprintf("GuardOne     %d\n", c.Guard1)
+	ew.Fprintf("GuardTwo     %d\n", c.Guard2)
+	ew.Fprintf("End\n\n")
+	ew.Fprintf("#END\n")
+	return ew.err
 }
 
 // SaveClanFile writes the clan to `<dir>/<clan.Filename>` using SaveClan
@@ -227,7 +244,8 @@ func SaveClanFile(dir string, c *types.ClanData) error {
 		return fmt.Errorf("SaveClanFile: clan %q has no filename", c.Name)
 	}
 	path := filepath.Join(dir, c.Filename)
-	f, err := os.Create(path)
+	// 0o600 — private to the smaug user (hotboot precedent).
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("SaveClanFile: create %s: %w", path, err)
 	}

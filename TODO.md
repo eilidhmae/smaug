@@ -33,6 +33,22 @@ Deferred from `plan-phase6-hotboot.md` §Post-Execution Adversary Review — non
 - [ ] **`/proc/<pid>/cmdline` threat-model note** — argv FD integers are world-readable on Linux during the ~10s recovery window; same-UID-only attack surface. Documentation entry in `smaug-go/doc/plan.md` security section.
 - [ ] **`os.Executable()` → `syscall.Exec` TOCTOU** — symlink swap between `EvalSymlinks` resolution and `syscall.Exec` execution. Mitigated in practice by binary-directory write permissions; worth a deployment-note mention. LOW.
 
+### Phase 6 post-landing audit (2026-04-19)
+
+Three parallel adversary audits — functionality/C-parity, security, and Go idiom — over all 13 landed Phase 6 commits. Functionality audit was PASS. Four fixes landed in this audit pass; the rest are queued below.
+
+**Landed in audit pass:**
+- [x] **HIGH (security)**: `internal/act/holidays.go:177,253,263` — `DoSetHoliday` now applies `util.SmashTilde` to `name` / `announce` / create-name. An immortal could otherwise inject `~`-terminated tokens into `holidays.dat` and corrupt subsequent `LoadHolidays` parses. Three pin tests in `internal/act/holidays_test.go` (`TestDoSetHoliday_NameSmashesTilde`, `_AnnounceSmashesTilde`, `_CreateSmashesTildeInName`).
+- [x] **HIGH (security)**: 5 persist writers switched from `os.Create` (default `0o644` under standard umask) to `os.OpenFile(..., 0o600)` — `holidays.go:149`, `planes.go:117`, `stances_save.go:55`, `morphs.go:403`, `subsystems.go:230` (SaveClanFile). Pin tests in each `*_test.go` (`TestSaveHolidays_FileMode`, `TestSavePlanes_FileMode`, `TestSaveStances_FileMode`, `TestSaveMorphs_FileMode`, `TestSaveClanFile_FileMode`). Matches the 2026-04-19 hotboot precedent.
+- [x] **MEDIUM (security)**: `internal/util/parsebet.go:78,88` — `ParseBet` `+N%` and `*N` paths now reject overflowing products via new `mulOverflows` helper. Crafted `*1844674407370960` would otherwise wrap to a small valid bid and pass the auction's 2-billion ceiling check. Pin tests `TestParseBet_MultiplyOverflowReturnsZero`, `TestParseBet_PercentOverflowReturnsZero`, `TestMulOverflows`.
+- [x] **SHOULD-FIX (idiom)**: `internal/persist/subsystems.go:164-217` — `SaveClan` now uses an `errWriter` wrapper that short-circuits on the first failed `Fprintf` and surfaces the error. Prior implementation discarded all 39 write returns and silently returned nil on broken-pipe / disk-full. Pin test `TestSaveClan_PropagatesWriteError` (mutation-verified).
+
+**Queued for follow-up (no fix this pass):**
+- [ ] **MEDIUM (security, future-risk)**: `internal/act/olc.go:799` — `filepath.Join(WorldRef.DataDir, "area", area.Filename)` has no path-containment check. Safe today (filename comes from loaded `.are` files), but becomes a path-traversal risk when a future `oedit`/`medit` plan lets immortals set `area.Filename` interactively. Add `strings.HasPrefix(filepath.Clean(path), filepath.Clean(filepath.Join(...)))` containment guard at that point. Same forward-risk applies to `SaveClanFile` if a future `do_setclan` exposes `Filename` editing.
+- [ ] **TODO (idiom)**: `internal/combat/combat.go:449`, `internal/act/archery.go:887`, `internal/game/redit_menu.go:234` — three private copies of the same direction-name lookup. Will diverge further as `oedit`/`medit` editors land. Consolidate into a single `util.DirectionName(dir int) string` helper. Three lookups, ~15 LOC saved + drift risk eliminated.
+- [ ] **TODO (idiom)**: `internal/persist/holidays.go:43`, `planes.go:42`, `morphs.go:44` — `make([]*T, 0)` allocates a non-nil empty slice when `var list []*T` would do; the `nil`-vs-empty distinction is load-bearing for the missing-file vs empty-file semantics in these loaders. Cosmetic, but misleading next to the empty-slice contract. Switch to `var` form.
+- [ ] **TODO (idiom)**: `internal/game/redit_parse.go:25` (`worldRef`) — third package-level world-pointer seam after `act.WorldRef` and `mudprog.WorldRef`. Each new OLC editor (`oedit`, `medit`) will need its own. Consider passing `*world.World` through `reditParse` instead of via `SetWorldRef`. Would also let `worldRoomLookup` (line 718) drop the seam-of-a-seam indirection. Defer the refactor to when the second OLC editor lands.
+
 ### High-impact combat gaps (from 2026-04-17 audit — P0)
 
 **→ See `smaug-go/doc/plan-combat-depth.md` for the full plan (9 task groups, adversary-verified). LANDED 2026-04-17.**

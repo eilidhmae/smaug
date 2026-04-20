@@ -1,6 +1,9 @@
 package util
 
-import "strconv"
+import (
+	"math"
+	"strconv"
+)
 
 // Advatoi mirrors the non-GSC C advatoi (src/bet.h:118-163): parses
 // an integer string with optional `k` (×1000) or `m` (×1000000)
@@ -75,6 +78,12 @@ func ParseBet(currentBet int, s string) int {
 			// C's atoi returns 0 on junk — (100 + 0) / 100 = currentBet.
 			return currentBet
 		}
+		// Overflow guard — a crafted `+N` with N near math.MaxInt would
+		// wrap `100+n` and produce a deceptively-small "valid" bet.
+		// Reject rather than wrap. Security adversary 2026-04-19.
+		if mulOverflows(currentBet, 100+n) {
+			return 0
+		}
 		return currentBet * (100 + n) / 100
 	}
 	if s[0] == '*' || s[0] == 'x' {
@@ -85,7 +94,22 @@ func ParseBet(currentBet int, s string) int {
 		if err != nil {
 			return 0
 		}
+		if mulOverflows(currentBet, n) {
+			return 0
+		}
 		return currentBet * n
 	}
 	return 0
+}
+
+// mulOverflows reports whether a*b overflows int when both operands are
+// non-negative. Guards the `+N%` and `*N` / `xN` ParseBet paths from
+// producing wrapped values that the auction bid-ceiling check (2
+// billion) would otherwise let through. Negative operands return false
+// — ParseBet's caller path always supplies non-negative `currentBet`.
+func mulOverflows(a, b int) bool {
+	if a <= 0 || b <= 0 {
+		return false
+	}
+	return a > math.MaxInt/b
 }

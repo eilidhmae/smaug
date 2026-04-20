@@ -836,6 +836,64 @@ func TestSaveClanFile_NilRejected(t *testing.T) {
 	}
 }
 
+// TestSaveClan_PropagatesWriteError pins the post-audit fix: prior
+// implementation discarded all 39 fmt.Fprintf return values and returned
+// nil even on a broken pipe / disk-full mid-write. The errWriter
+// short-circuits on the first failure and surfaces the error.
+func TestSaveClan_PropagatesWriteError(t *testing.T) {
+	w := &shortWriter{limit: 5}
+	c := &types.ClanData{Name: "Truncated", Filename: "x.clan"}
+	if err := SaveClan(w, c); err == nil {
+		t.Error("SaveClan with mid-write failure should return error, got nil")
+	}
+}
+
+// shortWriter accepts up to `limit` bytes total then returns io.ErrShortWrite.
+type shortWriter struct {
+	limit   int
+	written int
+}
+
+func (sw *shortWriter) Write(p []byte) (int, error) {
+	if sw.written >= sw.limit {
+		return 0, errShortBound
+	}
+	remaining := sw.limit - sw.written
+	if len(p) <= remaining {
+		sw.written += len(p)
+		return len(p), nil
+	}
+	sw.written = sw.limit
+	return remaining, errShortBound
+}
+
+var errShortBound = fmtErrorf("short writer hit limit")
+
+// fmtErrorf is a tiny test helper to avoid pulling fmt into the var init.
+func fmtErrorf(s string) error { return &fmtError{s: s} }
+
+type fmtError struct{ s string }
+
+func (e *fmtError) Error() string { return e.s }
+
+// TestSaveClanFile_FileMode pins 0600 — security adversary 2026-04-19.
+// Clan files contain PKill records that shouldn't be world-readable on
+// shared hosts.
+func TestSaveClanFile_FileMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	c := &types.ClanData{Filename: "mode.clan", Name: "Mode Clan"}
+	if err := SaveClanFile(tmpDir, c); err != nil {
+		t.Fatalf("SaveClanFile: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(tmpDir, "mode.clan"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("clan-file mode = %#o, want 0o600", mode)
+	}
+}
+
 // --------------- loadDeity from string (unit test) ---------------
 
 func TestLoadDeity_FromString(t *testing.T) {
