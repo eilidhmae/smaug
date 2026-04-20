@@ -34,6 +34,13 @@ var (
 // Plan plan-phase6-olc-redit.md §G3.
 var ReditDispMenuFunc func(d *types.DescriptorData)
 
+// OeditDispMenuFunc is the oedit counterpart to ReditDispMenuFunc. Wired
+// from boot (game.OeditDispMenu). Wave 1 only declares the seam — Wave 2+
+// will populate game.OeditDispMenu and the DoOedit no-arg path will call
+// this function to enter the CON_OEDIT menu.
+// Plan plan-phase6-olc-oedit.md §G3.
+var OeditDispMenuFunc func(d *types.DescriptorData)
+
 // --- Room editing ---
 
 // DoRedit implements the 'redit' command: edit the current room.
@@ -796,7 +803,33 @@ func DoSaveArea(ch *types.CharData, argument string) {
 		return
 	}
 
-	path := filepath.Join(WorldRef.DataDir, "area", filename)
+	// Path-containment guard (plan-phase6-olc-oedit.md §G11): area.Filename
+	// is admin-typed (via DoAset / OLC editors) so a malicious or buggy
+	// value like "../../etc/passwd" or "/tmp/evil.are" must NOT escape the
+	// configured area directory.
+	//
+	// Note: filepath.Join silently strips a leading "/" from the second
+	// arg (Go normalization), so an absolute path would join INTO the area
+	// dir as a deep subpath rather than escaping it. To preserve the
+	// semantic intent ("filenames must be plain leaf names within the
+	// area dir"), we reject absolute paths explicitly before joining and
+	// then perform the standard prefix-containment check on the result
+	// to catch ".." traversal.
+	if filepath.IsAbs(filename) {
+		util.Bug("DoSaveArea: rejected absolute area filename %q", filename)
+		ch.Send("Invalid area filename.\n\r")
+		return
+	}
+	areaDir := filepath.Clean(filepath.Join(WorldRef.DataDir, "area"))
+	cleaned := filepath.Clean(filepath.Join(areaDir, filename))
+	base := areaDir + string(filepath.Separator)
+	if !strings.HasPrefix(cleaned+string(filepath.Separator), base) {
+		util.Bug("DoSaveArea: rejected out-of-area filename %q (cleaned=%q, base=%q)", filename, cleaned, base)
+		ch.Send("Invalid area filename.\n\r")
+		return
+	}
+
+	path := cleaned
 	tmpPath := path + ".tmp"
 
 	// Write to a temp file first so a crash or write error mid-save

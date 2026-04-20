@@ -1,0 +1,243 @@
+package game
+
+import (
+	"io"
+	"net"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/eilidhmae/smaug/internal/command"
+	"github.com/eilidhmae/smaug/internal/types"
+	"github.com/eilidhmae/smaug/internal/world"
+)
+
+// newWorldStubForOedit returns a minimal world adequate for processInput
+// dispatch tests. /tmp/test is a placeholder DataDir; processInput does
+// not touch the filesystem.
+func newWorldStubForOedit() *world.World {
+	return world.New("/tmp/test")
+}
+
+// newRegistryStubForOedit returns an empty command registry — sufficient
+// for the CON_OEDIT dispatch path which never reaches CON_PLAYING.
+func newRegistryStubForOedit() *command.Registry {
+	return command.NewRegistry()
+}
+
+// oeditTestRig mirrors reditTestRig but stashes a *ObjIndexData on
+// Olc.Target and sets Connected = CON_OEDIT. Wave 1 uses this only for
+// the skeleton + stub tests; Wave 2+ will drive the full mode-dispatch
+// through the same harness.
+type oeditTestRig struct {
+	d    *types.DescriptorData
+	idx  *types.ObjIndexData
+	mu   sync.Mutex
+	sink []byte
+	done chan struct{}
+}
+
+func newOeditHarness(t *testing.T) *oeditTestRig {
+	t.Helper()
+	server, client := net.Pipe()
+	rig := &oeditTestRig{done: make(chan struct{})}
+	t.Cleanup(func() {
+		server.Close()
+		client.Close()
+		<-rig.done
+	})
+
+	go func() {
+		defer close(rig.done)
+		buf := make([]byte, 4096)
+		for {
+			n, err := client.Read(buf)
+			if n > 0 {
+				rig.mu.Lock()
+				rig.sink = append(rig.sink, buf[:n]...)
+				rig.mu.Unlock()
+			}
+			if err == io.EOF || err != nil {
+				return
+			}
+		}
+	}()
+
+	d := types.NewDescriptor(server)
+	ch := &types.CharData{Name: "Builder", Level: 100, Trust: 100}
+	ch.Desc = d
+	d.Character = ch
+	idx := &types.ObjIndexData{
+		Vnum: 1234,
+		Name: "a test item",
+	}
+	d.Olc = &types.OlcData{
+		Mode:   types.OEDIT_MAIN_MENU,
+		Vnum:   idx.Vnum,
+		Target: idx,
+	}
+	d.Connected = int(types.CON_OEDIT)
+	rig.d = d
+	rig.idx = idx
+	return rig
+}
+
+func (r *oeditTestRig) readBuf(t *testing.T) string {
+	t.Helper()
+	if err := r.d.FlushOutput(); err != nil {
+		t.Fatalf("FlushOutput: %v", err)
+	}
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		r.mu.Lock()
+		got := len(r.sink) > 0
+		r.mu.Unlock()
+		if got {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	r.mu.Lock()
+	s := string(r.sink)
+	r.sink = nil
+	r.mu.Unlock()
+	return s
+}
+
+// --- G3 skeleton tests ---
+
+// TestOeditParse_Quit_CleansUpAndReturnsToPlaying pins the Wave 1 Q branch:
+// reuses the mode-agnostic cleanupOlc helper so that descriptor state after
+// a Q matches the redit analog exactly (Connected=CON_PLAYING, Olc=nil,
+// Substate=SUB_NONE) and emits "Exiting editor." to the descriptor buffer.
+func TestOeditParse_Quit_CleansUpAndReturnsToPlaying(t *testing.T) {
+	rig := newOeditHarness(t)
+
+	oeditParse(rig.d, "Q")
+
+	if rig.d.Connected != int(types.CON_PLAYING) {
+		t.Errorf("Connected = %d, want CON_PLAYING", rig.d.Connected)
+	}
+	if rig.d.Olc != nil {
+		t.Errorf("Olc should be nil after Q; got %+v", rig.d.Olc)
+	}
+	if rig.d.Character.Substate != types.SUB_NONE {
+		t.Errorf("Substate = %d, want SUB_NONE", rig.d.Character.Substate)
+	}
+	out := rig.readBuf(t)
+	if !strings.Contains(out, "Exiting editor.") {
+		t.Errorf("expected 'Exiting editor.' in output, got: %q", out)
+	}
+}
+
+// TestOeditParse_Quit_LowercaseQ pins the case-insensitive Q matching,
+// mirroring redit's main-menu behavior.
+func TestOeditParse_Quit_LowercaseQ(t *testing.T) {
+	rig := newOeditHarness(t)
+	oeditParse(rig.d, "q")
+	if rig.d.Connected != int(types.CON_PLAYING) {
+		t.Errorf("Connected = %d, want CON_PLAYING after lowercase q", rig.d.Connected)
+	}
+}
+
+// TestOeditParse_UnimplementedStub confirms Wave 1 non-Q inputs produce
+// the stub message without changing descriptor state. Wave 2 will replace
+// this with the real OEDIT_* dispatch; the test is expected to change
+// when Wave 2 lands. Kept pinned for Wave 1 landing only.
+func TestOeditParse_UnimplementedStub(t *testing.T) {
+	rig := newOeditHarness(t)
+
+	oeditParse(rig.d, "1")
+
+	if rig.d.Connected != int(types.CON_OEDIT) {
+		t.Errorf("Connected = %d, want CON_OEDIT (session still open)", rig.d.Connected)
+	}
+	if rig.d.Olc == nil {
+		t.Fatal("Olc cleared prematurely — Wave 1 stub must not call cleanupOlc on non-Q input")
+	}
+	out := rig.readBuf(t)
+	if !strings.Contains(out, "not yet implemented") {
+		t.Errorf("expected stub message, got: %q", out)
+	}
+}
+
+// TestOeditParse_DefensiveNilOlc verifies the defensive branch that fires
+// when d.Olc is nil. Should restore CON_PLAYING without panicking.
+func TestOeditParse_DefensiveNilOlc(t *testing.T) {
+	rig := newOeditHarness(t)
+	rig.d.Olc = nil
+
+	oeditParse(rig.d, "anything")
+
+	if rig.d.Connected != int(types.CON_PLAYING) {
+		t.Errorf("Connected = %d, want CON_PLAYING after nil-Olc recovery", rig.d.Connected)
+	}
+}
+
+// TestOeditParse_DefensiveWrongTargetType pins the type-assert fallback.
+// If Target is not *ObjIndexData (e.g. somehow a Room got stashed),
+// cleanupOlc fires and the session closes gracefully.
+func TestOeditParse_DefensiveWrongTargetType(t *testing.T) {
+	rig := newOeditHarness(t)
+	rig.d.Olc.Target = &types.RoomIndexData{Vnum: 999} // wrong type
+
+	oeditParse(rig.d, "anything")
+
+	if rig.d.Connected != int(types.CON_PLAYING) {
+		t.Errorf("Connected = %d, want CON_PLAYING after wrong-type recovery", rig.d.Connected)
+	}
+	if rig.d.Olc != nil {
+		t.Errorf("Olc should be cleared on wrong-type recovery; got %+v", rig.d.Olc)
+	}
+}
+
+// TestLoop_ConOeditDispatchesToOeditParse is the integration pin for the
+// loop.go dispatch arm. We construct a real GameLoop, queue a "Q" input
+// on a descriptor in CON_OEDIT, run processInput once, and verify the
+// descriptor cleaned up — which only happens if oeditParse was reached
+// (the nanny default would disconnect with "Unexpected state" instead).
+// Mutation gate (plan §G3): swapping the case label to CON_MEDIT routes
+// input to the nanny default; this test fails because Olc would still be
+// non-nil and Connected would not be CON_PLAYING.
+func TestLoop_ConOeditDispatchesToOeditParse(t *testing.T) {
+	server, client := net.Pipe()
+	t.Cleanup(func() {
+		server.Close()
+		client.Close()
+	})
+	// Drain client side so writes don't block.
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := client.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	w := newWorldStubForOedit()
+	reg := newRegistryStubForOedit()
+	incoming := make(chan *types.DescriptorData, 4)
+	g := NewGameLoop(w, reg, incoming)
+
+	d := types.NewDescriptor(server)
+	ch := &types.CharData{Name: "Builder", Level: 100, Trust: 100}
+	ch.Desc = d
+	d.Character = ch
+	idx := &types.ObjIndexData{Vnum: 1234, Name: "a test item"}
+	d.Olc = &types.OlcData{Mode: types.OEDIT_MAIN_MENU, Vnum: idx.Vnum, Target: idx}
+	d.Connected = int(types.CON_OEDIT)
+
+	w.Descriptors = append(w.Descriptors, d)
+	d.InputQueue <- "Q"
+
+	g.processInput()
+
+	if d.Connected != int(types.CON_PLAYING) {
+		t.Errorf("Connected = %d, want CON_PLAYING after Q via processInput dispatch (loop arm likely missing)", d.Connected)
+	}
+	if d.Olc != nil {
+		t.Errorf("Olc should be nil after Q; got %+v (loop arm likely routed to nanny)", d.Olc)
+	}
+}

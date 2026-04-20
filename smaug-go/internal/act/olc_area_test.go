@@ -236,6 +236,79 @@ func TestDoSaveArea_WritesFileAndCleansTmp(t *testing.T) {
 	}
 }
 
+// --- Path-containment guard tests (plan-phase6-olc-oedit.md §G11) ---
+
+// TestDoSaveArea_RejectsPathTraversal pins the §G11 guard against directory-
+// traversal attempts via area.Filename (e.g. "../../etc/passwd"). Without
+// the guard, filepath.Join would escape the area directory and write into
+// the wider filesystem. Mutation gate: drop the HasPrefix check and this
+// test fails because the filename is silently accepted.
+func TestDoSaveArea_RejectsPathTraversal(t *testing.T) {
+	ch, client, area, tmpDir, cleanup := setupSaveAreaWorld(t)
+	defer cleanup()
+
+	area.Filename = "../../etc/passwd"
+
+	DoSaveArea(ch, "")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(out, "Invalid area filename") {
+		t.Errorf("expected rejection message, got: %q", out)
+	}
+	// The traversal target must NOT exist on disk relative to tmpDir.
+	if _, err := os.Stat(filepath.Join(tmpDir, "..", "..", "etc", "passwd.tmp")); err == nil {
+		t.Errorf("path traversal succeeded — a file was written outside the area dir")
+	}
+}
+
+// TestDoSaveArea_RejectsAbsolutePath pins the absolute-path branch of the
+// guard. filepath.Clean preserves leading slashes, so a filename like
+// "/tmp/evil.are" must be rejected by the HasPrefix check (the joined
+// path resolves outside the area dir entirely).
+func TestDoSaveArea_RejectsAbsolutePath(t *testing.T) {
+	ch, client, area, _, cleanup := setupSaveAreaWorld(t)
+	defer cleanup()
+
+	// Use an absolute path that is definitely outside the temp area dir.
+	evilPath := filepath.Join(t.TempDir(), "evil.are")
+	area.Filename = evilPath
+
+	DoSaveArea(ch, "")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(out, "Invalid area filename") {
+		t.Errorf("expected rejection message for absolute path, got: %q", out)
+	}
+	// The evil target must NOT have been created.
+	if _, err := os.Stat(evilPath); err == nil {
+		t.Errorf("absolute path traversal succeeded — file was created at %s", evilPath)
+	}
+	if _, err := os.Stat(evilPath + ".tmp"); err == nil {
+		t.Errorf("absolute path .tmp file was created at %s.tmp", evilPath)
+	}
+}
+
+// TestDoSaveArea_AllowsNormalFilename confirms the guard is permissive for
+// well-formed filenames — "foo.are" must pass through and write into the
+// area dir as before. Regression-guards against a too-strict guard.
+func TestDoSaveArea_AllowsNormalFilename(t *testing.T) {
+	ch, client, area, tmpDir, cleanup := setupSaveAreaWorld(t)
+	defer cleanup()
+
+	area.Filename = "foo.are"
+
+	DoSaveArea(ch, "")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(strings.ToLower(out), "saved") {
+		t.Errorf("expected success for normal filename, got: %q", out)
+	}
+	expected := filepath.Join(tmpDir, "area", "foo.are")
+	if _, err := os.Stat(expected); err != nil {
+		t.Errorf("expected file at %s after save: %v", expected, err)
+	}
+}
+
 func TestDoSaveArea_LeavesLiveFileOnError(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("cannot simulate permission failure as root")

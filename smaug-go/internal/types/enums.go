@@ -102,6 +102,7 @@ const (
 	SUB_OBJ_SHORT
 	SUB_OBJ_LONG
 	SUB_OBJ_EXTRA
+	SUB_OBJ_ACTION // Go-port divergence: plan-phase6-olc-oedit.md §G1 (C OEDIT_ACTDESC uses inline input; Go uses text editor)
 	SUB_MOB_LONG
 	SUB_MOB_DESC
 	SUB_ROOM_DESC

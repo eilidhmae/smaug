@@ -65,7 +65,7 @@ func reditParse(d *types.DescriptorData, arg string) {
 			return
 		}
 		room.Name = util.SmashTilde(arg)
-		olcLog(d, "Changed name to %s", room.Name)
+		olcLog(d, "ROOM", "Changed name to %s", room.Name)
 		ReditDispMenu(d)
 
 	case types.REDIT_FLAGS:
@@ -77,18 +77,18 @@ func reditParse(d *types.DescriptorData, arg string) {
 	case types.REDIT_TUNNEL:
 		n := parseIntDefault(arg, 0)
 		room.Tunnel = uRange(0, n, 1000)
-		olcLog(d, "Changed tunnel amount to %d", room.Tunnel)
+		olcLog(d, "ROOM", "Changed tunnel amount to %d", room.Tunnel)
 		ReditDispMenu(d)
 
 	case types.REDIT_TELEDELAY:
 		room.TeleDelay = parseIntDefault(arg, 0)
-		olcLog(d, "Changed teleportation delay to %d", room.TeleDelay)
+		olcLog(d, "ROOM", "Changed teleportation delay to %d", room.TeleDelay)
 		ReditDispMenu(d)
 
 	case types.REDIT_TELEVNUM:
 		n := parseIntDefault(arg, 0)
 		room.TeleVnum = uRange(1, n, types.MAX_VNUM)
-		olcLog(d, "Changed teleportation vnum to %d", room.TeleVnum)
+		olcLog(d, "ROOM", "Changed teleportation vnum to %d", room.TeleVnum)
 		ReditDispMenu(d)
 
 	case types.REDIT_EXIT_MENU:
@@ -171,7 +171,7 @@ func reditHandleMainMenu(d *types.DescriptorData, room *types.RoomIndexData, arg
 			// StopEditing just set Connected = CON_PLAYING. Re-set
 			// CON_REDIT so the next line returns to the menu handler.
 			c.Desc.Connected = int(types.CON_REDIT)
-			olcLog(c.Desc, "Edited room description")
+			olcLog(c.Desc, "ROOM", "Edited room description")
 			ReditDispMenu(c.Desc)
 		}
 		d.WriteToBuffer("Enter room description:\n\r")
@@ -234,7 +234,7 @@ func reditHandleFlags(d *types.DescriptorData, room *types.RoomIndexData, arg st
 		if bit < len(roomFlagNames) {
 			label = roomFlagNames[bit]
 		}
-		olcLog(d, "%s the room flag %s", action, label)
+		olcLog(d, "ROOM", "%s the room flag %s", action, label)
 		reditDispFlagMenu(d)
 		return
 	}
@@ -250,7 +250,7 @@ func reditHandleFlags(d *types.DescriptorData, room *types.RoomIndexData, arg st
 		if room.RoomFlags.IsSet(bit) {
 			action = "Added"
 		}
-		olcLog(d, "%s the room flag %s", action, roomFlagNames[bit])
+		olcLog(d, "ROOM", "%s the room flag %s", action, roomFlagNames[bit])
 	}
 	reditDispFlagMenu(d)
 }
@@ -266,7 +266,7 @@ func reditHandleSector(d *types.DescriptorData, room *types.RoomIndexData, arg s
 		return
 	}
 	room.SectorType = n
-	olcLog(d, "Changed sector to %s", sectorKeywords[n])
+	olcLog(d, "ROOM", "Changed sector to %s", sectorKeywords[n])
 	ReditDispMenu(d)
 }
 
@@ -404,7 +404,7 @@ func reditHandleExitAddVnum(d *types.DescriptorData, room *types.RoomIndexData, 
 	}
 	room.Exits = append(room.Exits, pexit)
 	d.Olc.Spare = pexit
-	olcLog(d, "Added %s exit to %d", directionName(pexit.Direction), n)
+	olcLog(d, "ROOM", "Added %s exit to %d", directionName(pexit.Direction), n)
 	d.Olc.Mode = types.REDIT_EXIT_EDIT
 	reditDispExitEdit(d)
 }
@@ -425,7 +425,7 @@ func reditHandleExitDelete(d *types.DescriptorData, room *types.RoomIndexData, a
 	}
 	idx := n - 1
 	gone := room.Exits[idx]
-	olcLog(d, "Removed %s exit", directionName(gone.Direction))
+	olcLog(d, "ROOM", "Removed %s exit", directionName(gone.Direction))
 	room.Exits = append(room.Exits[:idx], room.Exits[idx+1:]...)
 	reditDispExitMenu(d)
 }
@@ -454,7 +454,7 @@ func reditHandleExitVnum(d *types.DescriptorData, arg string) {
 	pexit.Vnum = n
 	pexit.RVnum = n
 	pexit.ToRoom = target // Go fix — C leaves this stale (C bug).
-	olcLog(d, "%s exit vnum changed to %d", directionName(pexit.Direction), n)
+	olcLog(d, "ROOM", "%s exit vnum changed to %d", directionName(pexit.Direction), n)
 	reditDispExitMenu(d)
 }
 
@@ -472,7 +472,7 @@ func reditHandleExitKey(d *types.DescriptorData, arg string) {
 		return
 	}
 	pexit.Key = n
-	olcLog(d, "%s key vnum is now %d", directionName(pexit.Direction), n)
+	olcLog(d, "ROOM", "%s key vnum is now %d", directionName(pexit.Direction), n)
 	reditDispExitEdit(d)
 }
 
@@ -485,7 +485,7 @@ func reditHandleExitKeyword(d *types.DescriptorData, arg string) {
 		return
 	}
 	pexit.Keyword = util.SmashTilde(strings.TrimSpace(arg))
-	olcLog(d, "Changed %s keyword to %s", directionName(pexit.Direction), pexit.Keyword)
+	olcLog(d, "ROOM", "Changed %s keyword to %s", directionName(pexit.Direction), pexit.Keyword)
 	reditDispExitEdit(d)
 }
 
@@ -503,7 +503,7 @@ func reditHandleExitDesc(d *types.DescriptorData, arg string) {
 	} else {
 		pexit.Description = util.SmashTilde(arg) + "\n\r"
 	}
-	olcLog(d, "Changed %s description to %s", directionName(pexit.Direction), arg)
+	olcLog(d, "ROOM", "Changed %s description to %s", directionName(pexit.Direction), arg)
 	reditDispExitEdit(d)
 }
 
@@ -545,7 +545,7 @@ func reditHandleExitFlags(d *types.DescriptorData, arg string) {
 	if pexit.ExitInfo&(1<<bit) != 0 {
 		action = "Added"
 	}
-	olcLog(d, "%s %s to %s exit", action, label, directionName(pexit.Direction))
+	olcLog(d, "ROOM", "%s %s to %s exit", action, label, directionName(pexit.Direction))
 	reditDispExitFlagMenu(d)
 }
 
@@ -565,7 +565,7 @@ func reditHandleExtradescMenu(d *types.DescriptorData, room *types.RoomIndexData
 		ed := &types.ExtraDescrData{Keyword: "", Description: ""}
 		room.ExtraDescr = append(room.ExtraDescr, ed)
 		d.Olc.Spare = ed
-		olcLog(d, "Added new exdesc")
+		olcLog(d, "ROOM", "Added new exdesc")
 		reditDispExtradescChoice(d)
 		return
 	case "r":
@@ -630,7 +630,7 @@ func reditHandleExtradescChoice(d *types.DescriptorData, room *types.RoomIndexDa
 			// Restore the extradesc-choice sub-menu so builder is
 			// still positioned on this ed.
 			c.Desc.Olc.Spare = targetEd
-			olcLog(c.Desc, "Edit description for exdesc %s", targetEd.Keyword)
+			olcLog(c.Desc, "ROOM", "Edit description for exdesc %s", targetEd.Keyword)
 			reditDispExtradescChoice(c.Desc)
 		}
 		d.WriteToBuffer("Enter new extradesc description:\n\r")
@@ -650,7 +650,7 @@ func reditHandleExtradescKey(d *types.DescriptorData, arg string) {
 	}
 	old := ed.Keyword
 	ed.Keyword = util.SmashTilde(strings.TrimSpace(arg))
-	olcLog(d, "Changed exkey %s to %s", old, ed.Keyword)
+	olcLog(d, "ROOM", "Changed exkey %s to %s", old, ed.Keyword)
 	reditDispExtradescChoice(d)
 }
 
@@ -667,7 +667,7 @@ func reditHandleExtradescDelete(d *types.DescriptorData, room *types.RoomIndexDa
 		return
 	}
 	gone := room.ExtraDescr[n-1]
-	olcLog(d, "Deleted exdesc %s", gone.Keyword)
+	olcLog(d, "ROOM", "Deleted exdesc %s", gone.Keyword)
 	room.ExtraDescr = append(room.ExtraDescr[:n-1], room.ExtraDescr[n:]...)
 	reditDispExtradescMenu(d)
 }
@@ -688,9 +688,13 @@ func cleanupOlc(d *types.DescriptorData) {
 }
 
 // olcLog emits a structured build-log line. Mirrors C olc_log at
-// src/oredit.c:171-210 with the ROOM(vnum) prefix only (the OBJ/MOB
-// branches belong to future oedit/medit plans).
-func olcLog(d *types.DescriptorData, format string, args ...any) {
+// src/oredit.c:171-210 — the target label selects the appropriate
+// ROOM/OBJ/MOB prefix so redit/oedit/medit share the same helper. Callers
+// pass the edit-target type as the second arg ("ROOM" for redit, "OBJ"
+// for oedit, "MOB" for medit).
+// Plan: plan-phase6-olc-oedit.md §G2 (generalized from the redit-only
+// predecessor).
+func olcLog(d *types.DescriptorData, target, format string, args ...any) {
 	if d == nil || d.Character == nil {
 		return
 	}
@@ -707,7 +711,7 @@ func olcLog(d *types.DescriptorData, format string, args ...any) {
 		trust = d.Character.GetTrust()
 	}
 	util.LogStringPlus(
-		fmt.Sprintf("Log %s: ROOM(%d): %s", d.Character.Name, vnum, msg),
+		fmt.Sprintf("Log %s: %s(%d): %s", d.Character.Name, target, vnum, msg),
 		types.LOG_BUILD, trust)
 }
 

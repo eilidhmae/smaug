@@ -73,3 +73,56 @@ const (
 	REDIT_EXTRADESC_DELETE
 	REDIT_CONFIRM_SAVESTRING
 )
+
+// OEDIT_* modes for OlcData.Mode while d.Connected == CON_OEDIT.
+// Mirror C src/olc.h OEDIT_* enum (:114-150). Offset iota+200 to stay
+// clear of CON_* (iota 0..~30) and REDIT_* (iota 100..124). Every OEDIT_*
+// value is strictly greater than every REDIT_* value.
+//
+// The 37-entry block preserves C's ordering including the reserved
+// iota slots (OEDIT_CONFIRM_SAVEDB / OEDIT_CONFIRM_SAVESTRING are
+// declared-but-unused in stock C; OEDIT_AFFECT_RIS is declared-but-
+// unreachable; OEDIT_MPROGS* are scope-cut to plan-phase6-olc-mpedit.md
+// but their iota slots are reserved here so mpedit does not have to
+// renumber — the plan guarantees OEDIT_MPROGS == OEDIT_MAIN_MENU + 32).
+//
+// Plan: plan-phase6-olc-oedit.md §G1.
+const (
+	OEDIT_MAIN_MENU = iota + 200
+	OEDIT_EDIT_NAMELIST
+	OEDIT_SHORTDESC
+	OEDIT_LONGDESC
+	OEDIT_ACTDESC
+	OEDIT_TYPE
+	OEDIT_EXTRAS
+	OEDIT_WEAR
+	OEDIT_WEIGHT
+	OEDIT_COST
+	OEDIT_COSTPERDAY
+	OEDIT_TIMER
+	OEDIT_VALUE_1
+	OEDIT_VALUE_2
+	OEDIT_VALUE_3
+	OEDIT_VALUE_4
+	OEDIT_VALUE_5
+	OEDIT_VALUE_6
+	OEDIT_EXTRADESC_KEY
+	OEDIT_CONFIRM_SAVEDB     // reserved; unused in stock C
+	OEDIT_CONFIRM_SAVESTRING // reserved; commented-out in C
+	OEDIT_EXTRADESC_DESCRIPTION
+	OEDIT_EXTRADESC_MENU
+	OEDIT_LEVEL
+	OEDIT_LAYERS
+	OEDIT_AFFECT_MENU
+	OEDIT_AFFECT_LOCATION
+	OEDIT_AFFECT_MODIFIER
+	OEDIT_AFFECT_REMOVE
+	OEDIT_AFFECT_RIS // declared in shipped C but unreachable code path
+	OEDIT_EXTRADESC_CHOICE
+	OEDIT_EXTRADESC_DELETE
+	OEDIT_MPROGS        // reserved for plan-phase6-olc-mpedit.md
+	OEDIT_MPROGS_CHOICE // reserved for mpedit
+	OEDIT_MPROGS_DELETE // reserved for mpedit
+	OEDIT_MPROGS_TYPE   // reserved for mpedit
+	OEDIT_MPROGS_ARG    // reserved for mpedit
+)

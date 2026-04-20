@@ -28,9 +28,14 @@ const (
 	MAX_SKILL     = 600
 	MAX_CLASS     = 27
 	MAX_NPC_CLASS = 27
-	MAX_RACE      = 26
-	MAX_NPC_RACE  = 200
-	MAX_MSG       = 18
+
+	// MAX_OLC_ITEMS_LIST caps the container-flag range for OEDIT_VALUE_2
+	// (and similar menu range-checks). Mirrors C src/olc.h:48.
+	// Plan: plan-phase6-olc-oedit.md §G1.
+	MAX_OLC_ITEMS_LIST = 61
+	MAX_RACE           = 26
+	MAX_NPC_RACE       = 200
+	MAX_MSG            = 18
 
 	MAX_COND_VAL = 48
 )

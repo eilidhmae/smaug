@@ -276,6 +276,11 @@ func (g *GameLoop) processInput() {
 				// input to redit_parse directly (not nanny).
 				// Plan plan-phase6-olc-redit.md §G2.
 				reditParse(d, line)
+			case types.CON_OEDIT:
+				// Interactive object-editor substate. Same
+				// routing pattern as CON_REDIT — the nanny is
+				// NOT involved. Plan plan-phase6-olc-oedit.md §G3.
+				oeditParse(d, line)
 			default:
 				g.nanny(d, line)
 			}

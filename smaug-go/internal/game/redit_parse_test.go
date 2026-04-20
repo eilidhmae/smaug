@@ -2,6 +2,7 @@ package game
 
 import (
 	"io"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -101,6 +102,58 @@ func (r *reditTestRig) readBuf(t *testing.T) string {
 
 // strconvItoa: wrapper so test body reads cleanly.
 func strconvItoa(n int) string { return strconv.Itoa(n) }
+
+// captureLog diverts the stdlib logger output while fn runs, returning
+// whatever was logged. Used to pin olcLog's format string; restores the
+// original writer on return.
+func captureLog(fn func()) string {
+	var buf strings.Builder
+	prior := log.Writer()
+	priorFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prior)
+		log.SetFlags(priorFlags)
+	}()
+	fn()
+	return buf.String()
+}
+
+// --- olcLog target-label tests (plan-phase6-olc-oedit.md §G2) ---
+
+// TestOlcLog_EmitsRoomPrefix pins the redit caller path: target="ROOM"
+// produces "ROOM(vnum)" in the log line. Mutation gate: swapping the
+// format-string argument order in olcLog flips this to "123(ROOM)".
+func TestOlcLog_EmitsRoomPrefix(t *testing.T) {
+	rig := newReditHarness(t)
+	out := captureLog(func() {
+		olcLog(rig.d, "ROOM", "Changed name to %s", "Foo")
+	})
+	if !strings.Contains(out, "ROOM(1000)") {
+		t.Errorf("olcLog output missing ROOM(1000); got %q", out)
+	}
+	if !strings.Contains(out, "Changed name to Foo") {
+		t.Errorf("olcLog output missing formatted body; got %q", out)
+	}
+}
+
+// TestOlcLog_CustomTarget pins the generalization: target="OBJ" produces
+// "OBJ(vnum)". Confirms the target-label parameter is threaded all the way
+// through to the formatted log line.
+func TestOlcLog_CustomTarget(t *testing.T) {
+	rig := newReditHarness(t)
+	rig.d.Olc.Vnum = 1234 // OBJ vnum
+	out := captureLog(func() {
+		olcLog(rig.d, "OBJ", "Changed type to %s", "weapon")
+	})
+	if !strings.Contains(out, "OBJ(1234)") {
+		t.Errorf("olcLog output missing OBJ(1234); got %q", out)
+	}
+	if !strings.Contains(out, "Changed type to weapon") {
+		t.Errorf("olcLog output missing formatted body; got %q", out)
+	}
+}
 
 // ----------------------------------------------------------------------
 
