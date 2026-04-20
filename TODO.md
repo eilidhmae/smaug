@@ -49,6 +49,18 @@ Three parallel adversary audits — functionality/C-parity, security, and Go idi
 - [ ] **TODO (idiom)**: `internal/persist/holidays.go:43`, `planes.go:42`, `morphs.go:44` — `make([]*T, 0)` allocates a non-nil empty slice when `var list []*T` would do; the `nil`-vs-empty distinction is load-bearing for the missing-file vs empty-file semantics in these loaders. Cosmetic, but misleading next to the empty-slice contract. Switch to `var` form.
 - [ ] **TODO (idiom)**: `internal/game/redit_parse.go:25` (`worldRef`) — third package-level world-pointer seam after `act.WorldRef` and `mudprog.WorldRef`. Each new OLC editor (`oedit`, `medit`) will need its own. Consider passing `*world.World` through `reditParse` instead of via `SetWorldRef`. Would also let `worldRoomLookup` (line 718) drop the seam-of-a-seam indirection. Defer the refactor to when the second OLC editor lands.
 
+### Phase 6 OLC oedit (landing in waves)
+
+- [x] Wave 1 (commit `6f42126`) — G1 schema (37 OEDIT_* at iota+200, SUB_OBJ_ACTION, MAX_OLC_ITEMS_LIST), G2 olcLog target-label generalization, G3 dispatcher skeleton with Q-arm, G11 path-containment guard at `DoSaveArea` (closed today's audit future-risk finding).
+- [x] Wave 2 (commit `578fa97`) — G4 menu renderers (main/type/extras/wear/layer/extradesc/value-stubs), G5 main-menu dispatch (1-9, A-G, Q + EditorSave trampolines for longdesc/actdesc), G6 simple-field arms (namelist/short/weight/cost/rent/timer/level/type/extras/wear/layers) with SmashTilde + URange clamps + LEVEL_GREATER trust gate.
+- [ ] **Wave 3 follow-up (Wave 2 scope miss):** D branch in `oeditHandleMainMenu` at `internal/game/oedit_parse.go:219` does NOT gate on the layerable-wear precheck from plan §G5 D (BODY|ABOUT|ARMS|FEET|HANDS|LEGS|WAIST). Current code always opens the layer menu. Add the check at main-menu entry and pin-test the refusal path before G7 lands.
+- [ ] Wave 3: G7 per-item-type value-menu bodies (val1..val6 switching on `idx.ItemType` — weapon/armor/container/drink/food/light/key/money/fountain/pen/fire/boat/corpse/fetish/trash/treasure/worn/gem/jewelry/missile/projectile/quiver). Plan estimates ~400 LOC.
+- [ ] Wave 3: G8 OEDIT_EXTRADESC_* arms (add/edit/delete/keyword — reuse redit extradesc shape at `redit_parse.go`).
+- [ ] Wave 3: G9 OEDIT_AFFECT_MENU + OEDIT_AFFECT_LOCATION + OEDIT_AFFECT_MODIFIER + OEDIT_AFFECT_TYPE arms (C `ooedit.c:1735-1931`). Soft-blocked on `medit_disp_aff_flags`/`medit_disp_ris` until medit lands; Wave 3 ships with placeholder that accepts only `0`-cancel per plan Q4.
+- [ ] Wave 4: G10 `DoOedit` no-arg menu-entry path extension (replace `oeditShow` call at `internal/act/olc_interactive.go:72` — opens CON_OEDIT when no subcommand given).
+- [ ] Wave 4: G12 testclient E2E scenarios (menu-entry/quit/set-name/type-submenu/longdesc-roundtrip).
+- [ ] Wave 4: G13 CHANGELOG + CLAUDE.md phase table "LANDED" update with commit hash.
+
 ### High-impact combat gaps (from 2026-04-17 audit — P0)
 
 **→ See `smaug-go/doc/plan-combat-depth.md` for the full plan (9 task groups, adversary-verified). LANDED 2026-04-17.**
