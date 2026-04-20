@@ -61,6 +61,24 @@ Three parallel adversary audits — functionality/C-parity, security, and Go idi
 - [ ] Post-medit follow-up: replace OEDIT_AFFECT_MODIFIER placeholder with full affect-flag + RIS bitmask editor once `medit_disp_aff_flags` / `medit_disp_ris` land in medit.
 - [ ] Post-oedit follow-up: implement full OEDIT_AFFECT_MENU edit-by-index helper (currently a stub per plan §Q11 — numeric input redisplays the menu rather than opening the edit trampoline).
 
+### Phase 6 OLC medit (landing in waves)
+
+- [x] Plan authored + audited (commit `69e9402`) — 982 doc lines, G1-G15, A1-A35, M1-M16. Dual PC-vs-NPC main-menu, bcrypt password path (G13), shared `olcBitmaskEdit` helper (G9), G14 back-wires oedit OEDIT_AFFECT_MODIFIER placeholder. Adversary CONCERNS → 8 in-place corrections + 5 orchestrator corrections (util.IsNpc→victim.IsNPC in 5 code-sketch sites).
+- [x] Wave 1 (commit `d4c6112`) — G1 schema (64 MEDIT_* at iota+300), G2/G3 menu renderer stubs, G4 meditParse dispatcher skeleton with Q-arm + CON_MEDIT loop arm + worldMobLookup seam + MeditDispMenuFunc declaration. 11 new tests, 5 mutation gates.
+- [ ] Wave 2: G5 NPC main-menu dispatch + G6 PC main-menu dispatch (parallel arms keyed on victim.IsNPC() per plan §Go Design).
+- [ ] Wave 2: G2/G3 real menu renderers (replace Wave-1 stubs). MeditDispMenuFunc boot wire (`act.MeditDispMenuFunc = game.MeditDispMenu`).
+- [ ] Wave 3: G7 simple-field arms (25 fields: NAME/S_DESC/L_DESC/D_DESC via EditorSave trampoline; HITROLL/DAMROLL/AC/GOLD/LEVEL/ALIGNMENT/FAVOR/HIT/MANA/MOVE/PRACTICE/SILVER/COPPER/MENTAL/EMOTIONAL/THIRST/FULL/DRUNK).
+- [ ] Wave 3: G8 stat editors (STR/INT/WIS/DEX/CON/CHA/LUCK — NPC URange(1,25), PC URange(3,18) per C :998-1007).
+- [ ] Wave 3: G9 shared `olcBitmaskEdit` helper + 6 flag-table wires (NPC_FLAGS→ACT_*, PC_FLAGS→PLR_*, AFF_FLAGS→AFF_*, PCDATA_FLAGS→PCFLAG_*, PARTS→PART_*, RIS_* triple). This is the helper oedit G9 placeholdered.
+- [ ] Wave 4: G10 full affect editor (AFFECT_MENU + LOCATION + MODIFIER + TYPE — real implementation consuming G9 helper).
+- [ ] Wave 4: G11 save editor (MEDIT_SAVE_MENU + SAV1-SAV5 named CharData fields — SavingPoisonDeath/Wand/ParaPetri/Breath/SpellStaff per audit correction).
+- [ ] Wave 4: G12 class/race editors (numeric-only per plan §Q5; ClassLookup/RaceLookup seam is a post-medit follow-up).
+- [ ] Wave 4: G13 MEDIT_PASSWORD via bcrypt.GenerateFromPassword (pre-hash SmashTilde on raw input; min-length 5; trust gate TBD at G-start — C uses LEVEL_SUB_IMPLEM but plan description suggests LEVEL_GREATER, resolve from C :1602).
+- [ ] Wave 4: MEDIT_CONFIRM_SAVESTRING=9 wired (PC Q-exit → Y/N save-confirm → save_char_obj OR fold_area; NPC Q skips to cleanupOlc — per C :1011-1057, audit-corrected from oedit's reserved-but-dead precedent).
+- [ ] Wave 5: G14 DoMedit menu-entry extension (mirrors DoOedit pattern from oedit Wave 4) + **G14 back-wire deliverable**: rewire `internal/game/oedit_extras.go` OEDIT_AFFECT_MODIFIER placeholder to consume the new olcBitmaskEdit helper. Pin-test: TestOeditParse_AffectModifier_UsesBitmaskEditor.
+- [ ] Wave 5: G15 testclient E2E + CHANGELOG + CLAUDE.md LANDED update.
+- [ ] Post-medit follow-up: `util.ClassLookup` / `util.RaceLookup` seam so `game/` can resolve class/race by name (currently numeric-only per plan §Q5).
+
 ### High-impact combat gaps (from 2026-04-17 audit — P0)
 
 **→ See `smaug-go/doc/plan-combat-depth.md` for the full plan (9 task groups, adversary-verified). LANDED 2026-04-17.**
