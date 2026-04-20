@@ -69,7 +69,29 @@ func DoOedit(ch *types.CharData, argument string) {
 
 	switch sub {
 	case "":
-		oeditShow(ch, idx)
+		// Menu-entry path (plan-phase6-olc-oedit.md §G10): `oedit <vnum>`
+		// with no subcommand enters the interactive CON_OEDIT substate.
+		// The flat subcommand form (`oedit <vnum> name foo`) is
+		// preserved — only the no-subcommand branch routes into the menu.
+		//
+		// Go-port divergence from C: C `do_ooedit` (src/ooedit.c:109-208)
+		// takes an OBJECT name/vnum of a LIVE INSTANCE; Go port has
+		// always operated on the prototype by vnum (matches flat DoOedit
+		// + DoOset).
+		if ch.Desc == nil {
+			// NPC or disconnected — defensive refusal matching DoRedit.
+			ch.Send("No descriptor.\n\r")
+			return
+		}
+		ch.Desc.Olc = &types.OlcData{
+			Mode:   types.OEDIT_MAIN_MENU,
+			Vnum:   vnum,
+			Target: idx,
+		}
+		ch.Desc.Connected = int(types.CON_OEDIT)
+		if OeditDispMenuFunc != nil {
+			OeditDispMenuFunc(ch.Desc)
+		}
 	case "name":
 		if args == "" {
 			ch.Sendf("Current name: %s\n\r", idx.Name)
@@ -153,6 +175,11 @@ func DoOedit(ch *types.CharData, argument string) {
 		}
 		idx.Level = v
 		ch.Sendf("Level set to %d.\n\r", v)
+	case "show":
+		// Retained flat summary — formerly the no-arg default, now
+		// available as an explicit subcommand. Menu-entry (the no-arg
+		// path) replaced it per plan-phase6-olc-oedit.md §G10 / Q2.
+		oeditShow(ch, idx)
 	case "affects":
 		oeditAffects(ch, idx, args)
 	case "ed":
@@ -523,4 +550,3 @@ func sexFromName(s string) (int, bool) {
 	}
 	return 0, false
 }
-
