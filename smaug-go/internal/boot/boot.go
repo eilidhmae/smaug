@@ -151,6 +151,10 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	// via game.SetWorldRef; act holds only the command entry. Same
 	// cross-package cycle-break pattern as the other OLC seams.
 	act.ReditDispMenuFunc = game.ReditDispMenu
+	// Interactive oedit menu seam (plan-phase6-olc-oedit.md §G3 / §G12).
+	// Wired alongside redit; OeditDispMenu resolves object vnums via the
+	// shared game.SetWorldRef call below.
+	act.OeditDispMenuFunc = game.OeditDispMenu
 	game.SetWorldRef(w)
 
 	// TIMER_DO_FUN callback registry (plan-tranche-b.md G2). Registry
