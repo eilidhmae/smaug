@@ -250,24 +250,36 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Goal:** Ship the large self-contained systems deferred from Phase 5 (hotboot, overland, housing, polymorph, archery, dragon flight, arena, stances OLC, planes, holidays, star maps, marriage), plus interactive OLC substates (`CON_OEDIT` / `CON_MEDIT` / `CON_REDIT`), plus remaining Phase-5 content follow-ups (full auction state machine, extra communication channels, clan officer commands, missing skills, deity prayer).
 
-**Landed (2026-04-19 snapshot):**
+**Landed** (each plan file owns its own §Completion Record with full detail — file deltas, LOC, C-bug notes, mutation gates, commit hash):
 
-| System | Plan | Status |
-|---|---|---|
-| Arena PvP | `plan-phase6-arena.md` | LANDED 2026-04-19 |
-| Star maps | `plan-phase6-starmap.md` | LANDED 2026-04-18 |
-| Holidays | `plan-phase6-holidays.md` | LANDED 2026-04-19 |
-| Planes | `plan-phase6-planes.md` | LANDED 2026-04-19 |
-| Channels (extra) | `plan-phase6-channels-extra.md` | LANDED 2026-04-18 |
-| Skills (bloodlet/pounce/broach) | `plan-phase6-skills.md` | LANDED 2026-04-18 |
-| Combat stances OLC | `plan-phase6-stances-olc.md` | LANDED 2026-04-19 |
-| Auction (full state machine) | `plan-phase6-auction.md` | LANDED 2026-04-19 |
-| Clan officer commands | `plan-phase6-clan-officer.md` | LANDED 2026-04-19 |
-| OLC `redit` substate | `plan-phase6-olc-redit.md` | LANDED 2026-04-19 |
-| Polymorph | `plan-phase6-polymorph.md` | LANDED 2026-04-19 |
-| Archery | `plan-phase6-archery.md` | LANDED 2026-04-19 |
-| **Hotboot / copyover** | `plan-phase6-hotboot.md` | **LANDED 2026-04-19** (Linux/Unix only via `//go:build !windows`; ~9.4s measured hotboot pause; 18/18 acceptance criteria + `TestHotboot_EndToEnd` integration) |
+| System | Plan | Status | Scope |
+|---|---|---|---|
+| Arena PvP | `plan-phase6-arena.md` | LANDED 2026-04-19 (`0cc1d97`) | challenge/accept/decline/withdraw + arena-victory + timeout tick |
+| Star maps | `plan-phase6-starmap.md` | LANDED 2026-04-18 (`cd6f1b3`) | `look sky` — star/sun/moon ASCII render |
+| Holidays | `plan-phase6-holidays.md` | LANDED 2026-04-19 (`04366ad`) | holiday CRUD + persistence + `month_name[]` port |
+| Planes | `plan-phase6-planes.md` | LANDED 2026-04-19 (`d895e5b`) | planes CRUD — `plist` / `pstat` / `pset` |
+| Channels (extra) | `plan-phase6-channels-extra.md` | LANDED 2026-04-18 (`5ff02b6`) | music / racetalk / wartalk / counciltalk / guildtalk / newbiechat via shared helper |
+| Skills | `plan-phase6-skills.md` | LANDED 2026-04-18 (`1d929e8`) | bloodlet / pounce / broach |
+| Combat stances OLC | `plan-phase6-stances-olc.md` | LANDED 2026-04-19 (`4af9823`) | stance-loader upgrade + `DoStance` rewrite + `ststat` / `stset` admin |
+| Auction | `plan-phase6-auction.md` | LANDED 2026-04-19 (`d82d632`) | full `do_auction` state machine (non-GSC) |
+| Clan officer commands | `plan-phase6-clan-officer.md` | LANDED 2026-04-19 (`fc4dfc8`) | induct / outcast / bestow + `SaveClan` |
+| OLC `redit` substate | `plan-phase6-olc-redit.md` | LANDED 2026-04-19 | `CON_REDIT` interactive room editor — establishes OLC-substate pattern |
+| Polymorph | `plan-phase6-polymorph.md` | LANDED 2026-04-19 (`b504b33`) | morph / unmorph + admin CRUD + `#MorphData` pfile block |
+| Archery | `plan-phase6-archery.md` | LANDED 2026-04-19 (`66cc205`) | draw / fire / dislodge + arrow-lodge mechanic |
+| Hotboot / copyover | `plan-phase6-hotboot.md` | LANDED 2026-04-19 | seamless restart via `syscall.Exec` + FD inheritance; Linux/Unix only (`//go:build !windows`); `TestHotboot_EndToEnd` integration |
+| OLC `oedit` substate | `plan-phase6-olc-oedit.md` | LANDED 2026-04-19 | `CON_OEDIT` interactive object editor — 4 waves, unblocks medit + mpedit |
 
-**Pending (authored, not yet landed):** `plan-phase6-housing.md`, `plan-phase6-overland-loader.md`, `plan-phase6-overland-builder.md`. **Deferred:** `plan-phase6-marriage.md` (human decision 2026-04-19 — park; poly-capable rewrite when revisited). **Unauthored:** `plan-phase6-olc-oedit.md`, `plan-phase6-olc-medit.md`, `plan-phase6-olc-mpedit.md`, `plan-phase6-dragonflight.md`, `plan-phase6-deity-prayer.md`, `plan-phase6-foldarea.md`.
+**Pending (authored, not yet landed):**
 
-See `phase6-roadmap.md` for the full inventory with per-system C LOC, dependencies, proposed plan filenames, and wave-based execution ordering. See also the table in `CLAUDE.md`'s documentation index for per-plan completion-record pointers.
+| Plan | Status |
+|---|---|
+| `plan-phase6-housing.md` | audited 2026-04-19 (CONCERNS, 5 corrections applied) |
+| `plan-phase6-overland-loader.md` | audited 2026-04-19 (PASS-with-notes, 2 corrections applied) |
+| `plan-phase6-overland-builder.md` | audited 2026-04-19 (PASS-with-notes, 5 corrections applied) — blocked on overland-loader |
+| `plan-phase6-olc-medit.md` | authored + audited 2026-04-19 (CONCERNS → corrections applied, execution-ready) |
+
+**Deferred:** `plan-phase6-marriage.md` — human decision 2026-04-19 (park; revisit on demand signal — `newgate.are` vnum-100/101 collision invalidates original `DoRings` strategy; poly-capable rewrite when revisited).
+
+**Unauthored:** `plan-phase6-olc-mpedit.md` (hard-blocked on medit landing), `plan-phase6-dragonflight.md` (hard-blocked on overland-loader), `plan-phase6-deity-prayer.md` (Wave 6 — `src/deity.c` is 1695 LOC, scope narrowing needed), `plan-phase6-foldarea.md` (deferred by policy).
+
+See `phase6-roadmap.md` for the full candidate inventory with per-system C LOC, dependencies, and wave-based execution ordering. `TODO.md` tracks small follow-up items (deferred mudprog ifchecks, archery follow-ups, morphset G4a/G4b split, etc.).
