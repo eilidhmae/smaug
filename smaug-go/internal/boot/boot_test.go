@@ -88,6 +88,29 @@ func TestBoot_RegistersCommands(t *testing.T) {
 	}
 }
 
+// TestBoot_WiresOlcMenuSeams pins the three OLC editor-menu seams (redit,
+// oedit, medit) to their game-package backing functions after Boot. A
+// mutation that breaks any of the three seam assignments fails this test
+// (mutation gate M-boot-wires). Plan-phase6-olc-medit.md §G1 Wave-2 boot
+// wire: act.MeditDispMenuFunc = game.MeditDispMenu.
+func TestBoot_WiresOlcMenuSeams(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+	if _, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if act.ReditDispMenuFunc == nil {
+		t.Error("act.ReditDispMenuFunc == nil after Boot")
+	}
+	if act.OeditDispMenuFunc == nil {
+		t.Error("act.OeditDispMenuFunc == nil after Boot")
+	}
+	if act.MeditDispMenuFunc == nil {
+		t.Error("act.MeditDispMenuFunc == nil after Boot (Wave-2 wire missing)")
+	}
+}
+
 // TestBoot_ClanOfficerRegistered pins induct/outcast/bestow command registration.
 // induct and outcast carry Level 0 (authority is in-command via isClanOfficer);
 // bestow is LEVEL_IMMORTAL. See plan-phase6-clan-officer.md §D5.

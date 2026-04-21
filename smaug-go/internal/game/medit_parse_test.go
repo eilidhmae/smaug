@@ -152,11 +152,11 @@ func TestMeditParse_Quit_LowercaseQ(t *testing.T) {
 	}
 }
 
-// TestMeditParse_UnimplementedStub confirms Wave 1 non-Q inputs produce
-// the stub message without changing descriptor state. Wave 2 will replace
-// this stub with the real MEDIT_* dispatch; the test is expected to
-// change when Wave 2 lands. Kept pinned for Wave 1 only.
-func TestMeditParse_UnimplementedStub(t *testing.T) {
+// TestMeditParse_Wave2Dispatch_DigitOneSetsSex pins the Wave-2 replacement
+// for the Wave-1 "unimplemented stub" test. Wave 1 made input "1" emit a
+// placeholder; Wave 2's NPC main-menu dispatcher MUST transition to
+// MEDIT_SEX per plan §230-269 / C omedit.c:1065-1067.
+func TestMeditParse_Wave2Dispatch_DigitOneSetsSex(t *testing.T) {
 	rig := newMeditHarness(t)
 
 	meditParse(rig.d, "1")
@@ -165,12 +165,12 @@ func TestMeditParse_UnimplementedStub(t *testing.T) {
 		t.Errorf("Connected = %d, want CON_MEDIT (session still open)", rig.d.Connected)
 	}
 	if rig.d.Olc == nil {
-		t.Fatal("Olc cleared prematurely — Wave 1 stub must not call cleanupOlc on non-Q input")
+		t.Fatal("Olc cleared — should still be in CON_MEDIT after digit 1")
 	}
-	out := rig.readBuf(t)
-	if !strings.Contains(out, "not yet implemented") {
-		t.Errorf("expected stub message, got: %q", out)
+	if rig.d.Olc.Mode != types.MEDIT_SEX {
+		t.Errorf("Mode = %d, want MEDIT_SEX after digit 1 on NPC menu", rig.d.Olc.Mode)
 	}
+	_ = rig.readBuf(t) // drain output buffer to keep harness tidy
 }
 
 // TestMeditParse_DefensiveNilOlc verifies the defensive branch that fires

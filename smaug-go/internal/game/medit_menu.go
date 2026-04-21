@@ -1,20 +1,30 @@
 // Package game — interactive mob/character editor (CON_MEDIT substate) menu
 // renderers.
 //
-// This file ports src/omedit.c medit_disp_menu / medit_disp_npc_menu /
-// medit_disp_pc_menu into Go. The C dispatcher at :814-825 branches on
-// IS_NPC(victim); the Go port mirrors that shape exactly via the method
-// victim.IsNPC() on *types.CharData (confirmed at internal/types/character.go:374-375).
+// Wave 2 ports src/omedit.c medit_disp_menu / medit_disp_npc_menu /
+// medit_disp_pc_menu plus the 16 submenu renderers (sex, pos, default_pos,
+// attack, defense, spec, class, race, save, affect, npc_flags, pc_flags,
+// aff_flags, pcdata_flags, parts, ris) into Go. The dispatcher MeditDispMenu
+// mirrors C :814-825 — branches on victim.IsNPC() (the Go analog of C's
+// IS_NPC macro on CharData).
 //
-// Wave 1 scope: entry-point skeletons only. Both branches emit a placeholder
-// message so the CON_MEDIT loop arm can be exercised end-to-end without
-// Wave-2 menu content blocking integration testing. Wave 2 fills the real
-// NPC / PC renderers from src/omedit.c:827-945.
+// Submenu renderers in Wave 2 are display-only scaffolds — the PARSE arms
+// that consume their input land in later waves (G7 simple fields,
+// G8 stats, G9 bitmask editors, G10 affect editor, G11 save editor,
+// G12 class/race, G13 password). Each submenu writes its current state +
+// the input hint; the parse-arm stubs simply re-render the main menu when
+// a non-dispatched mode receives input.
+//
+// The ANSI screen-clear sequence C emits at the top of each menu
+// ("50\x1B[;H\x1B[2J") is deliberately omitted per redit/oedit precedent —
+// cosmetic only and breaks testclient determinism.
 //
 // Plan: plan-phase6-olc-medit.md §G2 / §G3.
 package game
 
 import (
+	"fmt"
+
 	"github.com/eilidhmae/smaug/internal/types"
 )
 
@@ -43,21 +53,474 @@ func MeditDispMenu(d *types.DescriptorData) {
 	meditDispPcMenu(d)
 }
 
-// meditDispNpcMenu renders the NPC main menu. Wave 1 is a placeholder —
-// Wave 2 ports the 59-line renderer from src/omedit.c:827-885 with SPEC,
-// DEFAULT_POS, ATTACK, DEFENSE, STATS, flags, RIS, parts fields. The
-// placeholder line is load-bearing only insofar as it lets Wave-1
-// integration tests distinguish "MeditDispMenu reached NPC branch" from
-// "MeditDispMenu reached PC branch" — it is not user-facing in a landed
-// build because Wave 2 overwrites the body before this ships to players.
-func meditDispNpcMenu(d *types.DescriptorData) {
-	d.WriteToBuffer("Medit menu: npc — Wave 2 fills the renderer.\n\r")
+// sexLabel returns the human-readable sex name used in menu headers.
+// Matches C's ternary chain at omedit.c:847 / :894.
+func sexLabel(sex int) string {
+	switch sex {
+	case types.SEX_MALE:
+		return "male"
+	case types.SEX_FEMALE:
+		return "female"
+	default:
+		return "neutral"
+	}
 }
 
-// meditDispPcMenu renders the PC main menu. Wave 1 placeholder — Wave 2
-// ports the 59-line renderer from src/omedit.c:887-945 with CLASS, RACE,
-// PRACTICE, PASSWORD, SAVE_MENU, PC_FLAGS, PCDATA_FLAGS, COPPER/SILVER,
-// FAVOR fields.
+// positionName returns the C-parity position label. Index mirrors
+// src/const.c position_names[] (POS_DEAD..POS_DRAG).
+func positionName(pos int) string {
+	names := []string{
+		"dead", "mortally wounded", "incapacitated", "stunned",
+		"sleeping", "berserk", "resting", "aggressive",
+		"sitting", "fighting", "defensive", "evasive",
+		"standing", "mounted", "shove", "drag",
+	}
+	if pos < 0 || pos >= len(names) {
+		return "unknown"
+	}
+	return names[pos]
+}
+
+// meditDispNpcMenu renders the NPC main menu. Ports C
+// src/omedit.c:827-885 verbatim in label content; cosmetic ANSI clear and
+// color tags are dropped. Fields read from victim.IndexData for dice
+// (NPC prototype data) and from victim directly for per-instance stats.
+//
+// All label strings in this function are load-bearing for test assertions
+// (A5 regex scan) — do not rename without updating medit_wave2_test.go.
+func meditDispNpcMenu(d *types.DescriptorData) {
+	if d == nil || d.Olc == nil {
+		return
+	}
+	victim, ok := d.Olc.Target.(*types.CharData)
+	if !ok || victim == nil {
+		return
+	}
+
+	vnum := d.Olc.Vnum
+	if victim.IndexData != nil && victim.IndexData.Vnum != 0 {
+		vnum = victim.IndexData.Vnum
+	}
+	d.WriteToBuffer(fmt.Sprintf("-- Mob Number:  [%d]\n\r", vnum))
+
+	sdesc := ""
+	ldesc := ""
+	if victim.IndexData != nil {
+		sdesc = victim.IndexData.ShortDescr
+		ldesc = victim.IndexData.LongDescr
+	}
+	if sdesc == "" {
+		sdesc = victim.ShortDescr
+	}
+	if ldesc == "" {
+		ldesc = victim.LongDescr
+	}
+	if sdesc == "" {
+		sdesc = "(none set)"
+	}
+	if ldesc == "" {
+		ldesc = "(none set)"
+	}
+
+	d.WriteToBuffer(fmt.Sprintf("1) Sex: %-7s          2) Name: %s\n\r",
+		sexLabel(victim.Sex), victim.Name))
+	d.WriteToBuffer(fmt.Sprintf("3) Shortdesc: %s\n\r", sdesc))
+	d.WriteToBuffer(fmt.Sprintf("4) Longdesc:-\n\r%s\n\r", ldesc))
+	desc := victim.Description
+	if desc == "" {
+		desc = "(none set)"
+	}
+	d.WriteToBuffer(fmt.Sprintf("5) Description:-\n\r%s\n\r", desc))
+
+	d.WriteToBuffer(fmt.Sprintf("6) Class: [%d], 7) Race:   [%d]\n\r",
+		victim.Class, victim.Race))
+	d.WriteToBuffer(fmt.Sprintf(
+		"8) Level:       [%5d], 9) Alignment:    [%5d], A) Strength: [%5d]\n\r",
+		victim.Level, victim.Alignment, victim.GetCurrStr()))
+	d.WriteToBuffer(fmt.Sprintf(
+		"B) Intelligence:[%5d], C) Wisdom:       [%5d], D) Dexterity:[%5d]\n\r",
+		victim.GetCurrInt(), victim.GetCurrWis(), victim.GetCurrDex()))
+	d.WriteToBuffer(fmt.Sprintf(
+		"E) Constitution:[%5d], F) Charisma:     [%5d], G) Luck:     [%5d]\n\r",
+		victim.GetCurrCon(), victim.GetCurrCha(), victim.GetCurrLck()))
+
+	var damNum, damSize, damPlus, hitNum, hitSize, hitPlus int
+	if victim.IndexData != nil {
+		damNum = victim.IndexData.DamNoDice
+		damSize = victim.IndexData.DamSizeDice
+		damPlus = victim.IndexData.DamPlus
+		hitNum = victim.IndexData.HitNoDice
+		hitSize = victim.IndexData.HitSizeDice
+		hitPlus = victim.IndexData.HitPlus
+	}
+	d.WriteToBuffer(fmt.Sprintf(
+		"H) DamNumDice:  [%5d], I) DamSizeDice:  [%5d], J) DamPlus:  [%5d]\n\r",
+		damNum, damSize, damPlus))
+	d.WriteToBuffer(fmt.Sprintf(
+		"K) HitNumDice:  [%5d], L) HitSizeDice:  [%5d], M) HitPlus:  [%5d]\n\r",
+		hitNum, hitSize, hitPlus))
+	d.WriteToBuffer(fmt.Sprintf("N) Gold:     [%8d], O) Spec: %s\n\r",
+		victim.Gold, victim.SpecFun))
+
+	d.WriteToBuffer("P) Saving Throws\n\r")
+	d.WriteToBuffer(fmt.Sprintf("R) Resistant   : %d\n\r", victim.Resistant))
+	d.WriteToBuffer(fmt.Sprintf("S) Immune      : %d\n\r", victim.Immune))
+	d.WriteToBuffer(fmt.Sprintf("T) Susceptible : %d\n\r", victim.Susceptible))
+	d.WriteToBuffer(fmt.Sprintf("U) Position    : %s\n\r", positionName(victim.Position)))
+	d.WriteToBuffer(fmt.Sprintf("V) Attacks     : %s\n\r", victim.Attacks.String()))
+	d.WriteToBuffer(fmt.Sprintf("W) Defenses    : %s\n\r", victim.Defenses.String()))
+	d.WriteToBuffer(fmt.Sprintf("X) Body Parts  : 0x%x\n\r", victim.XFlags))
+	d.WriteToBuffer(fmt.Sprintf("Y) Act Flags   : %s\n\r", victim.Act.String()))
+	d.WriteToBuffer(fmt.Sprintf("Z) Affected    : %s\n\r", victim.AffectedBy.String()))
+	d.WriteToBuffer("Q) Quit\n\r")
+	d.WriteToBuffer("Enter choice : ")
+
+	d.Olc.Mode = types.MEDIT_NPC_MAIN_MENU
+}
+
+// meditDispPcMenu renders the PC main menu. Ports C
+// src/omedit.c:887-945 verbatim in label content; cosmetic tags dropped.
+// Reads PC-specific fields from victim.PCData (conditions + favor).
+//
+// All label strings are load-bearing for test assertions (A6 regex scan).
 func meditDispPcMenu(d *types.DescriptorData) {
-	d.WriteToBuffer("Medit menu: pc — Wave 2 fills the renderer.\n\r")
+	if d == nil || d.Olc == nil || d.Character == nil {
+		return
+	}
+	victim, ok := d.Olc.Target.(*types.CharData)
+	if !ok || victim == nil {
+		return
+	}
+	ch := d.Character
+
+	d.WriteToBuffer(fmt.Sprintf("1) Sex: %-7s           2) Name: %s\n\r",
+		sexLabel(victim.Sex), victim.Name))
+	desc := victim.Description
+	if desc == "" {
+		desc = "(none set)"
+	}
+	d.WriteToBuffer(fmt.Sprintf("3) Description:-\n\r%s\n\r", desc))
+
+	d.WriteToBuffer(fmt.Sprintf("4) Class: [%d],  5) Race:   [%d]\n\r",
+		victim.Class, victim.Race))
+	d.WriteToBuffer(fmt.Sprintf(
+		"6) Level:       [%5d],  7) Alignment:    [%5d],  8) Strength:  [%5d]\n\r",
+		victim.Level, victim.Alignment, victim.GetCurrStr()))
+	d.WriteToBuffer(fmt.Sprintf(
+		"9) Intelligence:[%5d],  A) Wisdom:       [%5d],  B) Dexterity: [%5d]\n\r",
+		victim.GetCurrInt(), victim.GetCurrWis(), victim.GetCurrDex()))
+	d.WriteToBuffer(fmt.Sprintf(
+		"C) Constitution:[%5d],  D) Charisma:     [%5d],  E) Luck:      [%5d]\n\r",
+		victim.GetCurrCon(), victim.GetCurrCha(), victim.GetCurrLck()))
+	d.WriteToBuffer(fmt.Sprintf(
+		"F) Hps:   [%5d/%5d],  G) Mana:   [%5d/%5d],  H) Move:[%5d/%-5d]\n\r",
+		victim.Hit, victim.MaxHit, victim.Mana, victim.MaxMana, victim.Move, victim.MaxMove))
+	d.WriteToBuffer(fmt.Sprintf(
+		"I) Gold:  [%11d],  J) Mentalstate:  [%5d],  K) Emotional: [%5d]\n\r",
+		victim.Gold, victim.MentalState, victim.EmotionalState))
+
+	thirst, full, drunk, favor := 0, 0, 0, 0
+	if victim.PCData != nil {
+		// C uses COND_THIRST=0, COND_FULL=1, COND_DRUNK=2.
+		if len(victim.PCData.Condition) > 0 {
+			thirst = victim.PCData.Condition[0]
+		}
+		if len(victim.PCData.Condition) > 1 {
+			full = victim.PCData.Condition[1]
+		}
+		if len(victim.PCData.Condition) > 2 {
+			drunk = victim.PCData.Condition[2]
+		}
+		favor = victim.PCData.Favor
+	}
+	d.WriteToBuffer(fmt.Sprintf(
+		"L) Thirst:      [%5d],  M) Full:         [%5d],  N) Drunk:     [%5d]\n\r",
+		thirst, full, drunk))
+	d.WriteToBuffer(fmt.Sprintf("O) Favor:       [%5d]\n\r", favor))
+	d.WriteToBuffer("P) Saving Throws\n\r")
+	d.WriteToBuffer(fmt.Sprintf("R) Resistant   : %d\n\r", victim.Resistant))
+	d.WriteToBuffer(fmt.Sprintf("S) Immune      : %d\n\r", victim.Immune))
+	d.WriteToBuffer(fmt.Sprintf("T) Susceptible : %d\n\r", victim.Susceptible))
+	d.WriteToBuffer(fmt.Sprintf("U) Position    : %s\n\r", positionName(victim.Position)))
+	d.WriteToBuffer(fmt.Sprintf("V) Act Flags   : %s\n\r", victim.Act.String()))
+	pcFlags := 0
+	if victim.PCData != nil {
+		pcFlags = victim.PCData.Flags
+	}
+	d.WriteToBuffer(fmt.Sprintf("W) PC Flags    : 0x%x\n\r", pcFlags))
+	d.WriteToBuffer(fmt.Sprintf("X) Affected    : %s\n\r", victim.AffectedBy.String()))
+
+	deityName := "None"
+	if victim.PCData != nil && victim.PCData.Deity != nil {
+		deityName = victim.PCData.Deity.Name
+	}
+	d.WriteToBuffer(fmt.Sprintf("Y) Deity       : %s\n\r", deityName))
+
+	// Trust-gated rows per C :927-937.
+	if ch.GetTrust() >= types.LEVEL_GOD {
+		clanLabel := "Clan"
+		clanName := "None"
+		if victim.PCData != nil && victim.PCData.Clan != nil {
+			clanName = victim.PCData.Clan.Name
+		}
+		d.WriteToBuffer(fmt.Sprintf("Z) %-12s: %s\n\r", clanLabel, clanName))
+	}
+	if ch.GetTrust() >= types.LEVEL_SUB_IMPLEM {
+		cName := "None"
+		if victim.PCData != nil && victim.PCData.Council != nil {
+			cName = victim.PCData.Council.Name
+		}
+		d.WriteToBuffer(fmt.Sprintf("=) Council     : %s\n\r", cName))
+	}
+
+	d.WriteToBuffer("Q) Quit\n\r")
+	d.WriteToBuffer("Enter choice : ")
+
+	d.Olc.Mode = types.MEDIT_PC_MAIN_MENU
+}
+
+// --- G3 submenu renderers ---
+//
+// Each renderer prints:
+//   1. A header identifying the field being edited.
+//   2. Current state (value or flag set).
+//   3. An input hint (valid values / keywords).
+//
+// The PARSE side of each submenu is filled in by later waves per plan
+// §G7-§G13. The render side is "display-only scaffold" in Wave 2.
+
+// meditDispSexMenu renders the sex picker.
+func meditDispSexMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	current := -1
+	if victim != nil {
+		current = victim.Sex
+	}
+	d.WriteToBuffer("Sex:\n\r")
+	d.WriteToBuffer("  0) Neutral\n\r")
+	d.WriteToBuffer("  1) Male\n\r")
+	d.WriteToBuffer("  2) Female\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %d (%s)\n\rEnter choice: ",
+		current, sexLabelOrNone(current)))
+}
+
+// sexLabelOrNone is sexLabel with an "(unset)" branch for the submenu.
+func sexLabelOrNone(sex int) string {
+	if sex < 0 {
+		return "unset"
+	}
+	return sexLabel(sex)
+}
+
+// meditDispPosMenu renders the position picker.
+func meditDispPosMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := -1
+	if victim != nil {
+		cur = victim.Position
+	}
+	d.WriteToBuffer("Position:\n\r")
+	for i, name := range []string{
+		"dead", "mortally wounded", "incapacitated", "stunned",
+		"sleeping", "berserk", "resting", "aggressive",
+		"sitting", "fighting", "defensive", "evasive",
+		"standing", "mounted", "shove", "drag",
+	} {
+		d.WriteToBuffer(fmt.Sprintf("  %2d) %s\n\r", i, name))
+	}
+	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\rEnter choice: ", positionName(cur)))
+}
+
+// meditDispDefaultPosMenu renders the default-position picker (NPC-only).
+func meditDispDefaultPosMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := -1
+	if victim != nil {
+		cur = victim.DefPosition
+	}
+	d.WriteToBuffer("Default Position:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", positionName(cur)))
+	d.WriteToBuffer("Enter position number: ")
+}
+
+// meditDispAttackMenu renders the NPC attack-flag picker. Full flag
+// tables land with G9's bitmask editor; Wave 2 prints current mask only.
+func meditDispAttackMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	attacks := ""
+	if victim != nil {
+		attacks = victim.Attacks.String()
+	}
+	d.WriteToBuffer("Attacks:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", attacks))
+	d.WriteToBuffer("Enter attack-flag toggle (done to exit): ")
+}
+
+// meditDispDefenseMenu renders the NPC defense-flag picker.
+func meditDispDefenseMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	defenses := ""
+	if victim != nil {
+		defenses = victim.Defenses.String()
+	}
+	d.WriteToBuffer("Defenses:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", defenses))
+	d.WriteToBuffer("Enter defense-flag toggle (done to exit): ")
+}
+
+// meditDispSpecMenu renders the NPC spec_fun name prompt.
+func meditDispSpecMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := ""
+	if victim != nil {
+		cur = victim.SpecFun
+	}
+	d.WriteToBuffer("Spec Fun:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", cur))
+	d.WriteToBuffer("Enter spec function name (blank to clear): ")
+}
+
+// meditDispClassMenu renders the class picker. Full class_table lookup
+// lands with G12 — Wave 2 prints current class index + numeric hint.
+func meditDispClassMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := -1
+	if victim != nil {
+		cur = victim.Class
+	}
+	d.WriteToBuffer("Class:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %d\n\r", cur))
+	d.WriteToBuffer("Enter class number: ")
+}
+
+// meditDispRaceMenu renders the race picker.
+func meditDispRaceMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := -1
+	if victim != nil {
+		cur = victim.Race
+	}
+	d.WriteToBuffer("Race:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %d\n\r", cur))
+	d.WriteToBuffer("Enter race number: ")
+}
+
+// meditDispSaveMenu renders the 5-way save-throw sub-dispatcher. Full
+// editing lands in G11; Wave 2 prints the menu.
+func meditDispSaveMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	var p, w, pp, br, ss int
+	if victim != nil {
+		p = victim.SavingPoisonDeath
+		w = victim.SavingWand
+		pp = victim.SavingParaPetri
+		br = victim.SavingBreath
+		ss = victim.SavingSpellStaff
+	}
+	d.WriteToBuffer("Saving Throws:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("  1) Poison/Death     [%d]\n\r", p))
+	d.WriteToBuffer(fmt.Sprintf("  2) Wand             [%d]\n\r", w))
+	d.WriteToBuffer(fmt.Sprintf("  3) Paralysis/Petri  [%d]\n\r", pp))
+	d.WriteToBuffer(fmt.Sprintf("  4) Breath           [%d]\n\r", br))
+	d.WriteToBuffer(fmt.Sprintf("  5) Spell/Staff      [%d]\n\r", ss))
+	d.WriteToBuffer("  Q) Quit\n\rEnter choice: ")
+}
+
+// meditDispAffectMenu renders the add-affect-menu entry. Full editor
+// lands in G10.
+func meditDispAffectMenu(d *types.DescriptorData) {
+	d.WriteToBuffer("Affect editor:\n\r")
+	d.WriteToBuffer("  A) Add affect\n\r  R) Remove affect\n\r  Q) Quit\n\r")
+	d.WriteToBuffer("Enter choice: ")
+}
+
+// meditDispNpcFlagsMenu renders the ACT_* bitmask editor entry. Full
+// flag-table rendering lands in G9.
+func meditDispNpcFlagsMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := ""
+	if victim != nil {
+		cur = victim.Act.String()
+	}
+	d.WriteToBuffer("Act Flags (NPC):\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", cur))
+	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+}
+
+// meditDispPcFlagsMenu renders the PLR_* bitmask editor entry.
+func meditDispPcFlagsMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := ""
+	if victim != nil {
+		cur = victim.Act.String()
+	}
+	d.WriteToBuffer("PC Flags (PLR_*):\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", cur))
+	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+}
+
+// meditDispAffFlagsMenu renders the AFF_* bitmask editor entry.
+func meditDispAffFlagsMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := ""
+	if victim != nil {
+		cur = victim.AffectedBy.String()
+	}
+	d.WriteToBuffer("Affect Flags (AFF_*):\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", cur))
+	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+}
+
+// meditDispPcdataFlagsMenu renders the PCFLAG_* bitmask editor entry.
+func meditDispPcdataFlagsMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := 0
+	if victim != nil && victim.PCData != nil {
+		cur = victim.PCData.Flags
+	}
+	d.WriteToBuffer("PCData Flags:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: 0x%x\n\r", cur))
+	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+}
+
+// meditDispPartsMenu renders the PART_* bitmask editor entry.
+func meditDispPartsMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	cur := 0
+	if victim != nil {
+		cur = victim.XFlags
+	}
+	d.WriteToBuffer("Body Parts:\n\r")
+	d.WriteToBuffer(fmt.Sprintf("Current: 0x%x\n\r", cur))
+	d.WriteToBuffer("Enter part name to toggle (done to exit): ")
+}
+
+// meditDispRisMenu renders the RIS_* bitmask editor entry. Reuses
+// util.RisflagNames (landed by stances-olc) for the current-mask display.
+func meditDispRisMenu(d *types.DescriptorData) {
+	victim := meditVictim(d)
+	var r, im, su int
+	if victim != nil {
+		r = victim.Resistant
+		im = victim.Immune
+		su = victim.Susceptible
+	}
+	d.WriteToBuffer("Resistant / Immune / Susceptible (RIS_*):\n\r")
+	d.WriteToBuffer(fmt.Sprintf("  Resistant   : %d\n\r", r))
+	d.WriteToBuffer(fmt.Sprintf("  Immune      : %d\n\r", im))
+	d.WriteToBuffer(fmt.Sprintf("  Susceptible : %d\n\r", su))
+	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+}
+
+// meditVictim is a small helper that does the repeated type-assert dance.
+// Returns nil if the descriptor or target is absent / wrong type.
+func meditVictim(d *types.DescriptorData) *types.CharData {
+	if d == nil || d.Olc == nil {
+		return nil
+	}
+	v, ok := d.Olc.Target.(*types.CharData)
+	if !ok {
+		return nil
+	}
+	return v
 }

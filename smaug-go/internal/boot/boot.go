@@ -155,6 +155,11 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	// Wired alongside redit; OeditDispMenu resolves object vnums via the
 	// shared game.SetWorldRef call below.
 	act.OeditDispMenuFunc = game.OeditDispMenu
+	// Interactive medit menu seam (plan-phase6-olc-medit.md §G4 / Wave 2).
+	// MeditDispMenu resolves mob/PC victims via game.SetWorldRef (shared
+	// seam with redit/oedit). The eventual DoMedit no-arg menu-entry path
+	// (Wave 5 G14) calls act.MeditDispMenuFunc to open CON_MEDIT.
+	act.MeditDispMenuFunc = game.MeditDispMenu
 	game.SetWorldRef(w)
 
 	// TIMER_DO_FUN callback registry (plan-tranche-b.md G2). Registry
