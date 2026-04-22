@@ -183,6 +183,40 @@ func meditParse(d *types.DescriptorData, arg string) {
 	case types.MEDIT_SUSCEPTIBLE:
 		meditArmRis(d, victim, arg, &victim.Susceptible, "Susceptible")
 
+	// --- G11 save editor (plan-phase6-olc-medit.md §G11) ---
+	case types.MEDIT_SAVE_MENU:
+		meditArmSaveMenu(d, victim, arg)
+	case types.MEDIT_SAV1:
+		meditArmSav(d, victim, arg, 1)
+	case types.MEDIT_SAV2:
+		meditArmSav(d, victim, arg, 2)
+	case types.MEDIT_SAV3:
+		meditArmSav(d, victim, arg, 3)
+	case types.MEDIT_SAV4:
+		meditArmSav(d, victim, arg, 4)
+	case types.MEDIT_SAV5:
+		meditArmSav(d, victim, arg, 5)
+
+	// --- G12 class / race editors (plan-phase6-olc-medit.md §G12) ---
+	case types.MEDIT_CLASS:
+		meditArmClass(d, victim, arg)
+	case types.MEDIT_RACE:
+		meditArmRace(d, victim, arg)
+
+	// --- G13 password editor (plan-phase6-olc-medit.md §G13) ---
+	case types.MEDIT_PASSWORD:
+		meditArmPassword(d, victim, arg)
+
+	// --- G10 affect-list editor (plan-phase6-olc-medit.md §G10) ---
+	case types.MEDIT_AFFECT_MENU:
+		meditArmAffectMenu(d, victim, arg)
+	case types.MEDIT_AFFECT_LOCATION:
+		meditArmAffectLocation(d, victim, arg)
+	case types.MEDIT_AFFECT_MODIFIER:
+		meditArmAffectModifier(d, victim, arg)
+	case types.MEDIT_AFFECT_REMOVE:
+		meditArmAffectRemove(d, victim, arg)
+
 	default:
 		// Unimplemented arm. Redisplay the main menu appropriate to
 		// the victim so the session stays navigable.
@@ -505,26 +539,20 @@ func meditDispatchPcMain(d *types.DescriptorData, victim *types.CharData, arg st
 }
 
 // meditDispatchConfirmSavestring handles the Y/N save-confirm prompt
-// after a PC-menu Q when OLC_CHANGE is set. Wave 2 is a stub — the full
-// save pathway lands in G11. Y routes to cleanupOlc (would call
-// save_char_obj in a future wave); N routes to cleanupOlc (discards
-// changes — matches C cleanup_olc flow). Either way the session closes.
-// Any other input re-prompts.
+// after a PC-menu Q when OLC_CHANGE is set. Wave 4 / G11 promotes this
+// from the Wave-2 stub to the full C-parity port:
 //
-// Plan scope note: "confirm-savestring arm can remain a stub that routes
-// Y→cleanup / N→cleanup (full save pathway is G11)". Pin-test added as a
-// TODO (see TODO-updates.md) for the full save flow.
+//	Y → "Saving...\n\r" + invoke act.SaveFunc(victim) + cleanupOlc.
+//	    For NPC the C path runs fold_area on the prototype's owning area;
+//	    the Go port reuses act.SaveFunc as a single seam (a future
+//	    fold_area mob-prototype writer can land behind it without a call-
+//	    site change).
+//	N → cleanupOlc (discard).
+//	default → reprompt verbatim per C omedit.c:1053-1054 — "Invalid
+//	    choice!\n\r" + "Do you wish to save to disk? : ". Wave 2's Go-
+//	    idiom "Please answer Y or N: " reprompt is replaced here.
+//
+// Plan §G11 + Wave 3 follow-up "medit G11 polish".
 func meditDispatchConfirmSavestring(d *types.DescriptorData, victim *types.CharData, arg string) {
-	_ = victim
-	switch firstUpper(arg) {
-	case "Y":
-		// TODO (G11): save_char_obj(victim) before cleanup.
-		d.WriteToBuffer("Changes noted. Exiting editor.\n\r")
-		cleanupOlc(d)
-	case "N":
-		d.WriteToBuffer("Changes discarded. Exiting editor.\n\r")
-		cleanupOlc(d)
-	default:
-		d.WriteToBuffer("Please answer Y or N: ")
-	}
+	meditConfirmSavestringFull(d, victim, arg)
 }

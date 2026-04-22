@@ -295,17 +295,25 @@ func meditAllModes() map[string]int {
 		"MEDIT_RACE":               MEDIT_RACE,
 		"MEDIT_SILVER":             MEDIT_SILVER,
 		"MEDIT_COPPER":             MEDIT_COPPER,
+
+		// Wave 4 — Go-port additions for the affect-list editor (G10).
+		// Not present in C MEDIT_* enum; allocated in iota+300 range.
+		"MEDIT_AFFECT_MENU":     MEDIT_AFFECT_MENU,
+		"MEDIT_AFFECT_LOCATION": MEDIT_AFFECT_LOCATION,
+		"MEDIT_AFFECT_MODIFIER": MEDIT_AFFECT_MODIFIER,
+		"MEDIT_AFFECT_REMOVE":   MEDIT_AFFECT_REMOVE,
 	}
 }
 
 // TestMeditData_ModeConstantsUnique is the MEDIT parallel of the redit /
-// oedit uniqueness pins. Pairwise-distinct assertion for all 64 MEDIT_*
-// values. If a constant is added or removed without updating the map
-// length, the length check fails first. Plan §G1.
+// oedit uniqueness pins. Pairwise-distinct assertion for all MEDIT_* values
+// (64 from C + 4 Go-port affect-editor extensions added in Wave 4 / G10).
+// If a constant is added or removed without updating the map length, the
+// length check fails first. Plan §G1 + G10.
 func TestMeditData_ModeConstantsUnique(t *testing.T) {
 	modes := meditAllModes()
-	if len(modes) != 64 {
-		t.Fatalf("expected 64 MEDIT_* constants in the map, got %d — did a constant get added/removed?", len(modes))
+	if len(modes) != 68 {
+		t.Fatalf("expected 68 MEDIT_* constants in the map (64 C + 4 Wave 4 affect-editor), got %d", len(modes))
 	}
 	seen := make(map[int]string)
 	for name, val := range modes {
@@ -370,9 +378,12 @@ func TestMeditData_IotaContiguous(t *testing.T) {
 		MEDIT_MOVE, MEDIT_PRACTICE, MEDIT_PASSWORD, MEDIT_SAVE_MENU,
 		MEDIT_SAV1, MEDIT_SAV2, MEDIT_SAV3, MEDIT_SAV4, MEDIT_SAV5,
 		MEDIT_CLASS, MEDIT_RACE, MEDIT_SILVER, MEDIT_COPPER,
+		// Wave 4 / G10 additions — affect-list editor (Go-port enhancement).
+		MEDIT_AFFECT_MENU, MEDIT_AFFECT_LOCATION, MEDIT_AFFECT_MODIFIER,
+		MEDIT_AFFECT_REMOVE,
 	}
-	if len(ordered) != 64 {
-		t.Fatalf("ordered length = %d, want 64 (did a constant change position?)", len(ordered))
+	if len(ordered) != 68 {
+		t.Fatalf("ordered length = %d, want 68 (64 C + 4 Wave 4 affect-editor)", len(ordered))
 	}
 	for i := 1; i < len(ordered); i++ {
 		if got := ordered[i] - ordered[i-1]; got != 1 {

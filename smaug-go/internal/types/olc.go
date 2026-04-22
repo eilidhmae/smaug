@@ -202,4 +202,16 @@ const (
 	MEDIT_RACE                            // 61 — PC-only LEVEL_GREATER
 	MEDIT_SILVER                          // 62
 	MEDIT_COPPER                          // 63
+
+	// Wave 4 additions — affect-list editor (G10). C medit has no
+	// MEDIT_AFFECT_* constants of its own (the AFF_FLAGS bitmask landed in
+	// Wave 3 covers affected_by toggles); the affect-list ADD/REMOVE flow
+	// is a Go-port enhancement, mirroring the OEDIT_AFFECT_* family in the
+	// iota+200 range. Allocated in iota+300 so the medit dispatcher stays
+	// cleanly typed and so per-arm bodies operate on *CharData.Affects
+	// rather than *ObjIndexData.Affects.
+	MEDIT_AFFECT_MENU     // 64
+	MEDIT_AFFECT_LOCATION // 65
+	MEDIT_AFFECT_MODIFIER // 66
+	MEDIT_AFFECT_REMOVE   // 67
 )
