@@ -26,6 +26,7 @@ import (
 	"fmt"
 
 	"github.com/eilidhmae/smaug/internal/types"
+	"github.com/eilidhmae/smaug/internal/util"
 )
 
 // MeditDispMenu is the single entry point the rest of the codebase calls
@@ -434,69 +435,92 @@ func meditDispAffectMenu(d *types.DescriptorData) {
 	d.WriteToBuffer("Enter choice: ")
 }
 
-// meditDispNpcFlagsMenu renders the ACT_* bitmask editor entry. Full
-// flag-table rendering lands in G9.
+// renderBitmaskTable renders a flag-name picker for a bitmask editor:
+// lists each flag (1-based) with current-set markers, plus the helper's
+// input hint. Shared by all six G9 flag submenus (NPC/PC/AFF/PCDATA/
+// PARTS/RIS). Back-wired 2026-04-21 (plan §G9); the Wave-2 scaffolds
+// only rendered mask hex strings because the name tables had not yet
+// landed.
+func renderBitmaskTable(d *types.DescriptorData, header string, names []string, isSet func(i int) bool) {
+	d.WriteToBuffer(header + "\n\r")
+	cols := 3
+	for i, name := range names {
+		if name == "" {
+			continue
+		}
+		marker := " "
+		if isSet(i) {
+			marker = "*"
+		}
+		d.WriteToBuffer(fmt.Sprintf(" [%s] %2d) %-14s", marker, i+1, name))
+		if (i+1)%cols == 0 {
+			d.WriteToBuffer("\n\r")
+		}
+	}
+	if len(names)%cols != 0 {
+		d.WriteToBuffer("\n\r")
+	}
+	d.WriteToBuffer("Enter flag name or 1-based index (done to exit): ")
+}
+
+// meditDispNpcFlagsMenu renders the ACT_* bitmask editor.
 func meditDispNpcFlagsMenu(d *types.DescriptorData) {
 	victim := meditVictim(d)
-	cur := ""
-	if victim != nil {
-		cur = victim.Act.String()
+	isSet := func(i int) bool {
+		return victim != nil && victim.Act.IsSet(i)
 	}
-	d.WriteToBuffer("Act Flags (NPC):\n\r")
-	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", cur))
-	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+	d.WriteToBuffer("Act Flags (NPC) — '*' = set:\n\r")
+	renderBitmaskTable(d, "", util.ActflagNames, isSet)
 }
 
-// meditDispPcFlagsMenu renders the PLR_* bitmask editor entry.
+// meditDispPcFlagsMenu renders the PLR_* bitmask editor.
 func meditDispPcFlagsMenu(d *types.DescriptorData) {
 	victim := meditVictim(d)
-	cur := ""
-	if victim != nil {
-		cur = victim.Act.String()
+	isSet := func(i int) bool {
+		return victim != nil && victim.Act.IsSet(i)
 	}
-	d.WriteToBuffer("PC Flags (PLR_*):\n\r")
-	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", cur))
-	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+	d.WriteToBuffer("PC Flags (PLR_*) — '*' = set:\n\r")
+	renderBitmaskTable(d, "", util.PlrflagNames, isSet)
 }
 
-// meditDispAffFlagsMenu renders the AFF_* bitmask editor entry.
+// meditDispAffFlagsMenu renders the AFF_* bitmask editor.
 func meditDispAffFlagsMenu(d *types.DescriptorData) {
 	victim := meditVictim(d)
-	cur := ""
-	if victim != nil {
-		cur = victim.AffectedBy.String()
+	isSet := func(i int) bool {
+		return victim != nil && victim.AffectedBy.IsSet(i)
 	}
-	d.WriteToBuffer("Affect Flags (AFF_*):\n\r")
-	d.WriteToBuffer(fmt.Sprintf("Current: %s\n\r", cur))
-	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+	d.WriteToBuffer("Affect Flags (AFF_*) — '*' = set:\n\r")
+	renderBitmaskTable(d, "", util.AffflagNames, isSet)
 }
 
-// meditDispPcdataFlagsMenu renders the PCFLAG_* bitmask editor entry.
+// meditDispPcdataFlagsMenu renders the PCFLAG_* bitmask editor.
 func meditDispPcdataFlagsMenu(d *types.DescriptorData) {
 	victim := meditVictim(d)
-	cur := 0
+	mask := 0
 	if victim != nil && victim.PCData != nil {
-		cur = victim.PCData.Flags
+		mask = victim.PCData.Flags
 	}
-	d.WriteToBuffer("PCData Flags:\n\r")
-	d.WriteToBuffer(fmt.Sprintf("Current: 0x%x\n\r", cur))
-	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+	isSet := func(i int) bool { return mask&(1<<i) != 0 }
+	d.WriteToBuffer("PCData Flags — '*' = set:\n\r")
+	renderBitmaskTable(d, "", util.PcflagNames, isSet)
 }
 
-// meditDispPartsMenu renders the PART_* bitmask editor entry.
+// meditDispPartsMenu renders the PART_* bitmask editor.
 func meditDispPartsMenu(d *types.DescriptorData) {
 	victim := meditVictim(d)
-	cur := 0
+	mask := 0
 	if victim != nil {
-		cur = victim.XFlags
+		mask = victim.XFlags
 	}
-	d.WriteToBuffer("Body Parts:\n\r")
-	d.WriteToBuffer(fmt.Sprintf("Current: 0x%x\n\r", cur))
-	d.WriteToBuffer("Enter part name to toggle (done to exit): ")
+	isSet := func(i int) bool { return mask&(1<<i) != 0 }
+	d.WriteToBuffer("Body Parts — '*' = set:\n\r")
+	renderBitmaskTable(d, "", util.PartflagNames, isSet)
 }
 
-// meditDispRisMenu renders the RIS_* bitmask editor entry. Reuses
-// util.RisflagNames (landed by stances-olc) for the current-mask display.
+// meditDispRisMenu renders the RIS_* bitmask editor. RIS shares one
+// table across three fields (Resistant/Immune/Susceptible); this
+// renderer shows all three current masks then the shared flag table.
+// Back-wired 2026-04-21 (plan §G9).
 func meditDispRisMenu(d *types.DescriptorData) {
 	victim := meditVictim(d)
 	var r, im, su int
@@ -506,10 +530,22 @@ func meditDispRisMenu(d *types.DescriptorData) {
 		su = victim.Susceptible
 	}
 	d.WriteToBuffer("Resistant / Immune / Susceptible (RIS_*):\n\r")
-	d.WriteToBuffer(fmt.Sprintf("  Resistant   : %d\n\r", r))
-	d.WriteToBuffer(fmt.Sprintf("  Immune      : %d\n\r", im))
-	d.WriteToBuffer(fmt.Sprintf("  Susceptible : %d\n\r", su))
-	d.WriteToBuffer("Enter flag name to toggle (done to exit): ")
+	d.WriteToBuffer(fmt.Sprintf("  Resistant   : %s\n\r", util.FlagString(r, util.RisflagNames)))
+	d.WriteToBuffer(fmt.Sprintf("  Immune      : %s\n\r", util.FlagString(im, util.RisflagNames)))
+	d.WriteToBuffer(fmt.Sprintf("  Susceptible : %s\n\r", util.FlagString(su, util.RisflagNames)))
+	// Pick the current-mode's target mask for the '*' markers.
+	mode := d.Olc.Mode
+	var focus int
+	switch mode {
+	case types.MEDIT_IMMUNE:
+		focus = im
+	case types.MEDIT_SUSCEPTIBLE:
+		focus = su
+	default:
+		focus = r
+	}
+	isSet := func(i int) bool { return focus&(1<<i) != 0 }
+	renderBitmaskTable(d, "", util.RisflagNames, isSet)
 }
 
 // meditVictim is a small helper that does the repeated type-assert dance.

@@ -68,10 +68,124 @@ func meditParse(d *types.DescriptorData, arg string) {
 		meditDispatchPcMain(d, victim, arg)
 	case types.MEDIT_CONFIRM_SAVESTRING:
 		meditDispatchConfirmSavestring(d, victim, arg)
+
+	// --- G7 simple-field arms (plan-phase6-olc-medit.md §G7) ---
+	case types.MEDIT_NAME:
+		meditArmName(d, victim, arg)
+	case types.MEDIT_S_DESC:
+		meditArmShortDesc(d, victim, arg)
+	case types.MEDIT_L_DESC:
+		meditArmLongDesc(d, victim, arg)
+	case types.MEDIT_D_DESC:
+		meditArmDDescBugTrap(d, victim, arg)
+	case types.MEDIT_SEX:
+		meditArmSex(d, victim, arg)
+	case types.MEDIT_HITROLL:
+		meditArmHitroll(d, victim, arg)
+	case types.MEDIT_DAMROLL:
+		meditArmDamroll(d, victim, arg)
+	case types.MEDIT_DAMNUMDIE:
+		meditArmDamNumDie(d, victim, arg)
+	case types.MEDIT_DAMSIZEDIE:
+		meditArmDamSizeDie(d, victim, arg)
+	case types.MEDIT_DAMPLUS:
+		meditArmDamPlus(d, victim, arg)
+	case types.MEDIT_HITNUMDIE:
+		meditArmHitNumDie(d, victim, arg)
+	case types.MEDIT_HITSIZEDIE:
+		meditArmHitSizeDie(d, victim, arg)
+	case types.MEDIT_HITPLUS:
+		meditArmHitPlus(d, victim, arg)
+	case types.MEDIT_AC:
+		meditArmArmor(d, victim, arg)
+	case types.MEDIT_GOLD:
+		meditArmGold(d, victim, arg)
+	case types.MEDIT_SILVER:
+		meditArmSilver(d, victim, arg)
+	case types.MEDIT_COPPER:
+		meditArmCopper(d, victim, arg)
+	case types.MEDIT_POS:
+		meditArmPosition(d, victim, arg)
+	case types.MEDIT_DEFAULT_POS:
+		meditArmDefaultPosition(d, victim, arg)
+	case types.MEDIT_LEVEL:
+		meditArmLevel(d, victim, arg)
+	case types.MEDIT_ALIGNMENT:
+		meditArmAlignment(d, victim, arg)
+	case types.MEDIT_FAVOR:
+		meditArmFavor(d, victim, arg)
+	case types.MEDIT_HITPOINT:
+		meditArmHitpoint(d, victim, arg)
+	case types.MEDIT_MANA:
+		meditArmMana(d, victim, arg)
+	case types.MEDIT_MOVE:
+		meditArmMove(d, victim, arg)
+	case types.MEDIT_PRACTICE:
+		meditArmPractice(d, victim, arg)
+	case types.MEDIT_MENTALSTATE:
+		meditArmMentalState(d, victim, arg)
+	case types.MEDIT_EMOTIONAL:
+		meditArmEmotional(d, victim, arg)
+	case types.MEDIT_THIRST:
+		meditArmThirst(d, victim, arg)
+	case types.MEDIT_FULL:
+		meditArmFull(d, victim, arg)
+	case types.MEDIT_DRUNK:
+		meditArmDrunk(d, victim, arg)
+	case types.MEDIT_ATTACK:
+		meditArmAttack(d, victim, arg)
+	case types.MEDIT_DEFENSE:
+		meditArmDefense(d, victim, arg)
+	case types.MEDIT_SPEC:
+		meditArmSpec(d, victim, arg)
+	case types.MEDIT_CLAN:
+		meditArmClan(d, victim, arg)
+	case types.MEDIT_DEITY:
+		meditArmDeity(d, victim, arg)
+	case types.MEDIT_COUNCIL:
+		meditArmCouncil(d, victim, arg)
+
+	// --- G8 stat editors (plan-phase6-olc-medit.md §G8) ---
+	// Mirror pointers are nil-safe: helpers below return nil when
+	// victim.IndexData is nil (PC path or NPC w/o prototype index).
+	// meditArmStat itself also gates the mirror write on
+	// IsNPC()+ACT_PROTOTYPE+IndexData!=nil per HIGH #1 (Wave 3 follow-up).
+	case types.MEDIT_STRENGTH:
+		meditArmStat(d, victim, arg, &victim.PermStr, statMirror(victim, statStr), "strength")
+	case types.MEDIT_INTELLIGENCE:
+		meditArmStat(d, victim, arg, &victim.PermInt, statMirror(victim, statInt), "intelligence")
+	case types.MEDIT_WISDOM:
+		meditArmStat(d, victim, arg, &victim.PermWis, statMirror(victim, statWis), "wisdom")
+	case types.MEDIT_DEXTERITY:
+		meditArmStat(d, victim, arg, &victim.PermDex, statMirror(victim, statDex), "dexterity")
+	case types.MEDIT_CONSTITUTION:
+		meditArmStat(d, victim, arg, &victim.PermCon, statMirror(victim, statCon), "constitution")
+	case types.MEDIT_CHARISMA:
+		meditArmStat(d, victim, arg, &victim.PermCha, statMirror(victim, statCha), "charisma")
+	case types.MEDIT_LUCK:
+		meditArmStat(d, victim, arg, &victim.PermLck, statMirror(victim, statLck), "luck")
+
+	// --- G9 bitmask arms (plan-phase6-olc-medit.md §G9) ---
+	case types.MEDIT_NPC_FLAGS:
+		meditArmNpcFlags(d, victim, arg)
+	case types.MEDIT_PC_FLAGS:
+		meditArmPcFlags(d, victim, arg)
+	case types.MEDIT_AFF_FLAGS:
+		meditArmAffFlags(d, victim, arg)
+	case types.MEDIT_PCDATA_FLAGS:
+		meditArmPcdataFlags(d, victim, arg)
+	case types.MEDIT_PARTS:
+		meditArmParts(d, victim, arg)
+	case types.MEDIT_RESISTANT:
+		meditArmRis(d, victim, arg, &victim.Resistant, "Resistant")
+	case types.MEDIT_IMMUNE:
+		meditArmRis(d, victim, arg, &victim.Immune, "Immune")
+	case types.MEDIT_SUSCEPTIBLE:
+		meditArmRis(d, victim, arg, &victim.Susceptible, "Susceptible")
+
 	default:
-		// Wave 2: unimplemented arm. Redisplay the main menu appropriate
-		// to the victim so the session stays navigable until later waves
-		// fill in the specific arm body.
+		// Unimplemented arm. Redisplay the main menu appropriate to
+		// the victim so the session stays navigable.
 		d.Olc.Mode = npcOrPcMenu(victim)
 		MeditDispMenu(d)
 	}

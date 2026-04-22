@@ -301,14 +301,16 @@ func oeditHandleAffectLocation(d *types.DescriptorData, idx *types.ObjIndexData,
 	}
 	paf.Location = n
 	d.Olc.Mode = types.OEDIT_AFFECT_MODIFIER
-	// Per plan §Q4: APPLY_AFFECT / APPLY_RESISTANT / APPLY_IMMUNE /
-	// APPLY_SUSCEPTIBLE would normally render the medit aff-flags / ris
-	// bitmask editor. Until medit lands, emit a placeholder.
+	// Back-wired 2026-04-21 per plan-phase6-olc-medit.md §G14 (Wave 3
+	// back-wire): APPLY_AFFECT / APPLY_RESISTANT / APPLY_IMMUNE /
+	// APPLY_SUSCEPTIBLE now render the shared bitmask editor so builders
+	// can toggle AFF_* / RIS_* bits by name or numeric index on the
+	// per-apply modifier. Other APPLY_* types remain numeric scalar.
 	switch n {
 	case types.APPLY_AFFECT:
-		d.WriteToBuffer("Affect-flag editing is a medit-plan dependency; enter numeric modifier (0 to cancel): ")
+		d.WriteToBuffer("Toggle AFF_* flags (name or 1-based index, 'done' when finished, 0 to cancel): ")
 	case types.APPLY_RESISTANT, types.APPLY_IMMUNE, types.APPLY_SUSCEPTIBLE:
-		d.WriteToBuffer("RIS-flag editing is a medit-plan dependency; enter numeric modifier (0 to cancel): ")
+		d.WriteToBuffer("Toggle RIS_* flags (name or 1-based index, 'done' when finished, 0 to cancel): ")
 	case types.APPLY_WEAPONSPELL, types.APPLY_WEARSPELL, types.APPLY_REMOVESPELL:
 		d.WriteToBuffer("Spell-name lookup not yet wired; enter numeric sn: ")
 	default:
@@ -319,6 +321,12 @@ func oeditHandleAffectLocation(d *types.DescriptorData, idx *types.ObjIndexData,
 // oeditHandleAffectModifier handles OEDIT_AFFECT_MODIFIER input. Mirrors
 // C :1821-1914. Appends a new AffectData to idx.Affects with the
 // location + modifier, then returns to the prompt-apply menu.
+//
+// For APPLY_AFFECT / APPLY_RESISTANT / APPLY_IMMUNE / APPLY_SUSCEPTIBLE
+// the modifier is a bitmask: dispatch through olcBitmaskEdit (plan
+// §G14 back-wire). "done"/"quit"/empty commits the accumulated
+// modifier; "0" cancels without appending. Other APPLY_* types
+// remain numeric scalar.
 func oeditHandleAffectModifier(d *types.DescriptorData, idx *types.ObjIndexData, arg string) {
 	arg = strings.TrimSpace(arg)
 	paf, ok := d.Olc.Spare.(*types.AffectData)
@@ -326,6 +334,40 @@ func oeditHandleAffectModifier(d *types.DescriptorData, idx *types.ObjIndexData,
 		oeditDispPromptApplyMenu(d)
 		return
 	}
+
+	// Bitmask APPLY_* types go through the shared helper.
+	var bitmaskTable string
+	switch paf.Location {
+	case types.APPLY_AFFECT:
+		bitmaskTable = "AFF_FLAGS"
+	case types.APPLY_RESISTANT, types.APPLY_IMMUNE, types.APPLY_SUSCEPTIBLE:
+		bitmaskTable = "RIS"
+	}
+	if bitmaskTable != "" {
+		// Cancel semantics: numeric "0" as a single token is the
+		// universal cancel signal — the helper treats it as a no-op
+		// exit too, but we want to DROP the accumulated modifier on
+		// explicit cancel rather than commit 0.
+		if arg == "0" {
+			d.Olc.Spare = nil
+			oeditDispPromptApplyMenu(d)
+			return
+		}
+		done := olcBitmaskEdit(d, bitmaskTable, &paf.Modifier, arg)
+		if !done {
+			// Stay in mode — helper either toggled and expects another
+			// line, or rejected with its own prompt.
+			return
+		}
+		// Commit the accumulated bitmask.
+		idx.Affects = append(idx.Affects, paf)
+		olcLog(d, "OBJ", "Added new affect: loc=%d mod=0x%x (bitmask)", paf.Location, paf.Modifier)
+		d.Olc.Spare = nil
+		oeditDispPromptApplyMenu(d)
+		return
+	}
+
+	// Scalar path — numeric modifier.
 	n, err := strconv.Atoi(arg)
 	if err != nil {
 		d.WriteToBuffer("Invalid modifier; enter numeric (0 to cancel): ")
