@@ -980,3 +980,76 @@ No cross-plan blockers outstanding. oedit G9 bitmask is back-wired here (additiv
 **Mutation gates:** M1-M16.
 **C citations verified:** `do_omedit` @ :109-232, `medit_disp_menu` @ :814-825, `medit_parse` @ :985-2160, `medit_disp_aff_flags` @ :637-812, `medit_disp_ris` @ :502-533, `MEDIT_PASSWORD` arm @ :1601-1623, NPC main menu dispatch @ :1059-1215, PC main menu dispatch @ :1218-1386.
 **Pending:** adversary review before G1 dispatch.
+
+---
+
+## Completion Record
+
+**Status:** LANDED 2026-04-22 across 5 execution waves. 34 of 35 acceptance criteria covered (A31 deferred — `worldPcLookup` seam missing; tracked as a Wave-5 follow-up in `TODO.md`). All 16 mutation gates (M1-M16) plus 4 cleanup gates verified via `Edit` round-trip.
+
+### Landing trail
+
+| Wave | Commit | Date | Scope |
+|---|---|---|---|
+| 1 | `d4c6112` | 2026-04-19 | G1 schema (64 MEDIT_* iota+300), G2/G3 menu renderer stubs, G4 meditParse skeleton with Q-arm + CON_MEDIT loop arm + worldMobLookup seam + MeditDispMenuFunc declaration. |
+| 2 | `c9bf798` | 2026-04-20 | G2/G3 real menu renderers (NPC + PC main + 16 G3 submenus), G5 NPC main-menu dispatch (34 digits), G6 PC main-menu dispatch (30 digits with LEVEL_GREATER on LEVEL/CLASS/RACE + LEVEL_GOD on Z Clan + LEVEL_SUB_IMPLEM on `=` Council + verbatim "NPC Only!!" / "NPCs Only!!" rejects), MEDIT_CONFIRM_SAVESTRING Y/N stub, `act.MeditDispMenuFunc = game.MeditDispMenu` boot wire + pin test. |
+| 3 | `3e5ac5e` | 2026-04-20 | G7 25 simple-field arms, G8 7 stat editors (NPC `uRange(1,25)` / PC `uRange(3,18)` + ACT_PROTOTYPE prototype mirror), G9 shared `olcBitmaskEdit` helper + 8 flag-arm wires (ACT/PLR/AFF/PCFLAG/PART/RIS×3) + 5 new flag-name tables in `util/flags.go` + Wave-2 flag-submenu renderer back-wires + oedit `OEDIT_AFFECT_MODIFIER` back-wire to consume `olcBitmaskEdit`. |
+| 4 | `7303ca4` | 2026-04-20 | G10 full affect editor (4 new MEDIT_AFFECT_* modes; Add/Remove/Modifier flow; bitmask APPLY_AFFECT/RESISTANT/IMMUNE/SUSCEPTIBLE), G11 save-throw editor (5-way + 5 SAV arms with C `URANGE(-30,30)` + ACT_PROTOTYPE mirror), G11 MEDIT_CONFIRM_SAVESTRING Y-path full port, G12 CLASS/RACE editors (numeric + name lookup), G13 MEDIT_PASSWORD security-critical via bcrypt. |
+| 5 | TBD | 2026-04-22 | G14 DoMedit no-arg menu-entry extension (ACT_PROTOTYPE wrapper via `handler.CreateMobile`), `medit <vnum> show` rebound, per-descriptor double-edit guard, PC-by-name scope cut documented; G15 testclient E2E (3 scenarios), boot-wire pin verified, 3 Wave-4 cleanups landed (`TestMeditAffect_AddBitmaskPath_AffectFlag` recovery dance removed; `util.SmashTilde` no-op call dropped; `intInput` body replaced with `strconv.Itoa`). |
+
+### Plan-vs-C divergences (deliberate)
+
+1. **CLASS/RACE NPC+PC, not PC-only** (Wave 4 G12). Plan §690-697 said PC-only; C `omedit.c:1866-1890` accepts both. Go follows C.
+2. **Password trust gate `LEVEL_SUB_IMPLEM`** (Wave 4 G13). Plan §708 hinted LEVEL_GREATER; C `omedit.c:1602` uses `LEVEL_SUB_IMPLEM`. Go follows C.
+3. **MEDIT_AFFECT_* as Go-port enhancement** (Wave 4 G10). C lacks dedicated affect-editor mode constants; Go adds `MEDIT_AFFECT_MENU/LOCATION/MODIFIER/REMOVE` at iota+364-367 to encapsulate the affect-list editor cleanly. Functionally equivalent to C's inline affect-list mutation but with explicit FSM state.
+4. **Dispatcher-time vs arm-body trust gate dual pattern**. Plan §597-607 puts LEVEL_GREATER on PC digits 4 (CLASS) / 5 (RACE) at dispatch time (Wave 2); C `omedit.c:1247-1253` applies it in the arm body. Wave 4 G12 added defense-in-depth at the arm body too — both gates fire for safety.
+5. **PC-menu default redisplays PC menu**, not NPC menu (Wave 2 `medit_parse.go:382-389`). C `omedit.c:1382-1384` has the PC dispatcher's default arm calling `medit_disp_npc_menu` — a likely C bug. Go calls `meditDispPcMenu` so the PC builder stays on the PC menu.
+6. **Pre-hash tilde rejection on raw input** (Wave 4 G13). C `omedit.c:1610-1616` checks the post-hash string for tildes (effectively unreachable on bcrypt). Go moves the check to raw input for safety.
+7. **`worldPcLookup` seam absent** (Wave 5 scope cut). DoMedit accepts NPC vnum only; PC-by-name (`medit Tagith`) emits "PC editing by name not yet supported". Tracked as a Wave-5 follow-up in `TODO.md`. Knock-on: G15 scenario 2 was specified in §G15 as `TestTestclient_MeditPcSetStat` (PC menu, set STR) but a genuine PC E2E requires the worldPcLookup seam. Wave 5 substituted `TestTestclient_MeditSetField` (NPC menu, set name) so the dual-write path is still pinned end-to-end; the PC-menu E2E lands with the `worldPcLookup` follow-up.
+8. **Per-descriptor double-edit guard, not cross-descriptor** (Wave 5 G14). C `omedit.c:203-210` walks all descriptors; Go guards only the same descriptor. Two builders editing the same vnum simultaneously is not refused; tracked as a follow-up.
+9. **Bare-allocation wrapper in DoMedit menu-entry** (Wave 5 G14 + Wave-5 follow-up HIGH #1, 2026-04-22). Initial Wave-5 G14 used `handler.CreateMobile(WorldRef, idx)` to wrap the prototype; adversary review found this leaks world state — `idx.Count++` blocks area resets that gate on `idx.Count >= reset.Arg2` (handler/reset.go:62) and `w.AddChar` permanently grows `WorldRef.Characters` with roomless orphans iterated by every pulse (game/update.go). `cleanupOlc` (game/redit_parse.go:679-688) only resets descriptor state, not the wrapper allocation. Fix: bare `&types.CharData{...}` allocation in `DoMedit` (act/olc_interactive.go) that copies only the fields the menu renderers (`game/medit_menu.go`) read, plus `IndexData` and `ACT_IS_NPC|ACT_PROTOTYPE` so the existing dual-write arms (`game/medit_arms.go`) continue to mirror edits to the prototype. Vital fields (Hit/MaxHit/Mana/MaxMove/AC/etc.) intentionally omitted — the menu displays dice from `victim.IndexData`, not `victim.MaxHit`; correctness lives at `victim.IndexData`. C `do_omedit` (omedit.c:109-232) operates on a LIVE mob from `get_char_world` and never wraps a prototype — the wrapper-around-prototype model is a deliberate Go divergence; this fix tightens the wrapper to be world-state-pure. Pinned by 3 invariant tests + 1 ZeroVnumRejected branch test in `internal/act/olc_interactive_test.go`; mutation-verified.
+
+### C bug catalog (preserved per port mandate)
+
+All bugs from §C Bug Catalog (1-9 in plan) preserved verbatim in the Go port except:
+- Bug #3 (post-hash tilde check) — Go diverges to raw-input check (security improvement, documented in §Password path).
+- Bug #7 (PC default redisplays NPC menu) — Go diverges to render PC menu (UX improvement, documented inline at `medit_parse.go:382-389`).
+All other bugs (D_DESC bug-trap unreachable, NAME→do_pcrename trust path, NPC Q skips save-confirm, PC digit 6/U "NPC Only!!" rejects, CLAN LEVEL_GOD / COUNCIL LEVEL_SUB_IMPLEM, stat clamps in arm bodies, SAV slot named-field stores) ported verbatim with pin-tests.
+
+### Test count summary
+
+Approximate per-wave test deltas (subtests counted at top-level test granularity):
+
+| Wave | Production tests added | Mutation gates verified | Notes |
+|---|---|---|---|
+| 1 | 11 | 5 | Schema + dispatch arm + nil guards + Q-arm. |
+| 2 | ~140 | 9 | Per-renderer snapshot pins; per-digit dispatch tables. |
+| 3 | ~58 | 16 | Stat clamp tables; 8 flag arms; bitmask shared helper. |
+| 4 | ~30 | 11 | G10 affect editor (3) + G11 save (3) + G12 class/race (2) + G13 password (3). |
+| 5 | 10 | 4 | G14 (7 unit) + G15 (3 testclient); cleanup #1 mutation + G14 Connected drop + G14 double-edit guard drop + G15 testclient menu-entry mutation. |
+| **Total** | **~249 new tests** | **45 mutation gates** | All gates `Edit`-round-trip verified — no banned-git-command usage. |
+
+### Phase 6 follow-ups (queued post-medit)
+
+Closed by Wave 5:
+- 3 Wave-4 cleanups (test recovery dance, SmashTilde no-op, intInput strconv refactor).
+
+Carried forward to TODO.md:
+- `worldPcLookup` seam for `medit <playername>`.
+- `util.ApplyflagNames` table for MEDIT_AFFECT_LOCATION + oedit OEDIT_AFFECT_LOCATION (cross-cut).
+- `MobIndexData.Affects` field (Wave 4 G10 instance-only edits don't propagate to subsequent NPC instantiations).
+- Mob-prototype `fold_area` writer for NPC Y-path save-confirm (Wave 4 reuses `act.SaveFunc` which is a no-op for NPCs).
+- `MEDIT_AFFECT_MENU` main-menu digit (currently reachable only by direct mode-set).
+- `util.ClassLookup` / `util.RaceLookup` promotion to shared helpers.
+- `util.AttackflagNames` / `util.DefenseflagNames` for MEDIT_ATTACK / MEDIT_DEFENSE keyword lookup (currently numeric only).
+- `do_pcrename` port for MEDIT_NAME PC branch (in-memory rename today; pfile rename is the C semantic).
+- `world.GetDeity` / `GetClan` / `GetCouncil` pointer resolution for MEDIT_DEITY/CLAN/COUNCIL (string-only stash today).
+- `MEDIT_CONFIRM_SAVESTRING` reprompt-text harmonization with C verbatim.
+- `MEDIT_AFFECT_LOCATION` quit semantics — no q/quit escape; only `0` cancels.
+- Cross-descriptor double-edit guard (medit-Wave-5 cut).
+- `handler.CreateMobile` randomization in DoMedit wrapper — cosmetic level fuzz.
+
+### Unblocks
+
+`plan-phase6-olc-mpedit.md` is now unblocked (was hard-blocked on medit). The CON_MEDIT pattern (OlcData on descriptor, Mode iota, dispatch arm in `loop.go`, MeditDispMenuFunc seam, ACT_PROTOTYPE mirror) is the template for `CON_MPROG_EDIT` at iota+400.
+

@@ -1,6 +1,7 @@
 package game
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -524,17 +525,13 @@ func TestMeditAffect_ScalarZeroCancels(t *testing.T) {
 func TestMeditAffect_AddBitmaskPath_AffectFlag(t *testing.T) {
 	rig := affectHarness(t)
 	meditParse(rig.d, "A")
-	meditParse(rig.d, "27") // APPLY_AFFECT (verified at types/enums.go:833 — APPLY_AFFECT=26 zero-based, so token "27" maps to APPLY_AFFECT after the +1 builder convention)
-	// Actually APPLY_AFFECT enum value: APPLY_NONE=0, ... let's just probe.
-	if paf, ok := rig.d.Olc.Spare.(*types.AffectData); !ok || paf == nil || paf.Location != types.APPLY_AFFECT {
-		// recover: maybe APPLY_AFFECT is a different number; re-stage
-		// with the actual enum-value as input.
-		meditParse(rig.d, "0") // cancel current
-		meditParse(rig.d, "A")
-		// Use the enum constant directly as the prompt input
-		meditParse(rig.d, intInput(types.APPLY_AFFECT))
+	// Use the enum constant directly so the test exercises the
+	// success path on the first attempt — no recovery dance.
+	meditParse(rig.d, intInput(types.APPLY_AFFECT))
+	paf, ok := rig.d.Olc.Spare.(*types.AffectData)
+	if !ok || paf == nil {
+		t.Fatalf("Spare not staged after APPLY_AFFECT input: %+v", rig.d.Olc.Spare)
 	}
-	paf := rig.d.Olc.Spare.(*types.AffectData)
 	if paf.Location != types.APPLY_AFFECT {
 		t.Fatalf("staged Location=%d, want APPLY_AFFECT(%d)", paf.Location, types.APPLY_AFFECT)
 	}
@@ -566,23 +563,7 @@ func TestMeditAffect_AddBitmaskPath_AffectFlag(t *testing.T) {
 
 // intInput: small helper to pass an integer as a builder-input string.
 func intInput(n int) string {
-	if n < 10 {
-		return string(rune('0' + n))
-	}
-	// Use strconv via the package-import already pulled by the test file.
-	// Inline to avoid an extra import.
-	var buf [12]byte
-	i := len(buf)
-	if n < 0 {
-		// Our APPLY_* values are non-negative.
-		return "0"
-	}
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
+	return strconv.Itoa(n)
 }
 
 // A22: affect-remove path.

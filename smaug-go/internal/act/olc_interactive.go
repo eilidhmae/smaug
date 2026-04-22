@@ -268,8 +268,21 @@ func itemTypeFromName(s string) (int, bool) {
 	return v, ok
 }
 
-// DoMedit implements the 'medit' command: edit a mob prototype non-interactively.
-// Usage: medit <vnum> <subcommand> [args...]
+// DoMedit implements the 'medit' command: edit a mob prototype.
+// Usage:
+//
+//	medit <vnum>                 — open the interactive CON_MEDIT menu
+//	medit <vnum> show            — flat one-shot summary (Wave 1-pre form)
+//	medit <vnum> <sub> [args...] — flat single-field set (legacy MVP path)
+//
+// Plan: plan-phase6-olc-medit.md §G14. The no-arg branch enters the
+// interactive editor. The `show` subcommand re-binds what the no-arg
+// branch did pre-Wave-5 so the flat summary is still reachable.
+//
+// Scope cut: PC-by-name argument resolution (`medit <playername>`) is
+// deferred to a future wave that lands the `worldPcLookup` seam.
+// Today only NPC vnum is recognized — non-numeric arguments fall
+// through to the existing "Vnum must be a positive number." rejection.
 func DoMedit(ch *types.CharData, argument string) {
 	if ch.GetTrust() < types.LEVEL_IMMORTAL {
 		ch.Send("Huh?\n\r")
@@ -277,12 +290,22 @@ func DoMedit(ch *types.CharData, argument string) {
 	}
 	vnumArg, rest := util.OneArgument(argument)
 	if vnumArg == "" {
-		ch.Send("Usage: medit <vnum> <subcommand> [args]\n\r")
-		ch.Send("Subcommands: create, name, short, long, desc, level, stats, hp, mana, mv, armor, hitroll, damroll, align, flags, race, class, sex, attacks, defenses, gold, xp, position, affected\n\r")
+		ch.Send("Usage: medit <vnum> [subcommand] [args]\n\r")
+		ch.Send("With no subcommand: opens the interactive editor.\n\r")
+		ch.Send("Subcommands: create, show, name, short, long, desc, level, stats, hp, mana, mv, armor, hitroll, damroll, align, flags, race, class, sex, attacks, defenses, gold, xp, position, affected\n\r")
 		return
 	}
 	vnum, err := strconv.Atoi(vnumArg)
-	if err != nil || vnum <= 0 {
+	if err != nil {
+		// Plan §G14 scope cut: PC-by-name lookup not yet supported
+		// (worldPcLookup seam unland). Distinguish "non-numeric" (likely
+		// a PC name) from "numeric but invalid (vnum<=0)" using the same
+		// err the outer Atoi already produced — re-parsing the same
+		// string would always re-fail the same way (LOW #4).
+		ch.Send("PC editing by name not yet supported; pass an NPC vnum.\n\r")
+		return
+	}
+	if vnum <= 0 {
 		ch.Send("Vnum must be a positive number.\n\r")
 		return
 	}
@@ -325,6 +348,115 @@ func DoMedit(ch *types.CharData, argument string) {
 
 	switch sub {
 	case "":
+		// Plan §G14: no-arg → enter interactive CON_MEDIT menu.
+		// Mirrors the oedit Wave 4 pattern at olc_interactive.go case ""
+		// for `oedit <vnum>`.
+		if ch.Desc == nil {
+			// NPC or disconnected — defensive refusal matching DoOedit.
+			ch.Send("No descriptor.\n\r")
+			return
+		}
+		// Double-edit guard: refuse if this descriptor is already in
+		// CON_MEDIT. A second `medit <vnum>` while editing would clobber
+		// the in-flight Olc state. C `do_omedit` (omedit.c:203-210) does
+		// a global descriptor scan; here we only need to guard the
+		// current descriptor since each descriptor owns its own Olc.
+		if ch.Desc.Connected == int(types.CON_MEDIT) && ch.Desc.Olc != nil {
+			ch.Send("You are already editing a mob. Type Q to exit first.\n\r")
+			return
+		}
+		// Wrap the prototype in a bare CharData so the menu renderers
+		// (which type-assert OlcData.Target to *CharData) can read fields
+		// and the parse arms (which dual-write through victim.IndexData
+		// when ACT_PROTOTYPE is set) propagate edits back to the
+		// prototype.
+		//
+		// Wave-5 follow-up HIGH #1: do NOT use handler.CreateMobile
+		// here. CreateMobile bumps idx.Count and appends to
+		// w.Characters; cleanupOlc only resets descriptor state, so
+		// every menu-entry would permanently leak one phantom mob —
+		// blocking area resets that gate on `idx.Count >= reset.Arg2`
+		// (handler/reset.go:62) and growing w.Characters with roomless
+		// orphans iterated by every pulse (game/update.go).
+		//
+		// We bare-allocate and copy ONLY the fields the menu renderers
+		// (game/medit_menu.go) read for display, plus IndexData and
+		// ACT_PROTOTYPE so the existing dual-write arms (game/medit_arms.go)
+		// continue to mirror edits to the prototype. Vital fields
+		// (Hit/MaxHit/Mana/MaxMove/AC/etc.) are intentionally NOT
+		// copied — the NPC main menu reads dice from victim.IndexData,
+		// not victim.MaxHit, and direct stat edits on a prototype are
+		// flat-mset territory. Any zero-valued display field that
+		// surprises a future reader is a UX cosmetic; correctness lives
+		// at victim.IndexData.
+		//
+		// C reference: do_omedit (omedit.c:109-232) operates on a LIVE
+		// mob instance from get_char_world, never wrapping the
+		// prototype. The Go port's wrapper-around-prototype model is a
+		// deliberate divergence — see plan-phase6-olc-medit.md §G14.
+		victim := &types.CharData{
+			Name:              idx.PlayerName,
+			ShortDescr:        idx.ShortDescr,
+			LongDescr:         idx.LongDescr,
+			Description:       idx.Description,
+			IndexData:         idx,
+			Sex:               idx.Sex,
+			Level:             idx.Level,
+			Position:          idx.Position,
+			DefPosition:       idx.DefPosition,
+			Race:              idx.Race,
+			Class:             idx.Class,
+			Alignment:         idx.Alignment,
+			Hitroll:           idx.Hitroll,
+			Damroll:           idx.Damroll,
+			Gold:              idx.Gold,
+			Silver:            idx.Silver,
+			Copper:            idx.Copper,
+			Exp:               idx.Exp,
+			SpecFun:           idx.SpecFun,
+			XFlags:            idx.XFlags,
+			Immune:            idx.Immune,
+			Resistant:         idx.Resistant,
+			Susceptible:       idx.Susceptible,
+			Attacks:           idx.Attacks,
+			Defenses:          idx.Defenses,
+			Speaks:            idx.Speaks,
+			Speaking:          idx.Speaking,
+			AffectedBy:        idx.AffectedBy,
+			PermStr:           idx.PermStr,
+			PermInt:           idx.PermInt,
+			PermWis:           idx.PermWis,
+			PermDex:           idx.PermDex,
+			PermCon:           idx.PermCon,
+			PermCha:           idx.PermCha,
+			PermLck:           idx.PermLck,
+			SavingPoisonDeath: idx.SavingPoisonDeath,
+			SavingWand:        idx.SavingWand,
+			SavingParaPetri:   idx.SavingParaPetri,
+			SavingBreath:      idx.SavingBreath,
+			SavingSpellStaff:  idx.SavingSpellStaff,
+		}
+		// Act bitvector is the canonical edit target — copy from idx
+		// then set ACT_PROTOTYPE so the existing arms' dual-write
+		// through victim.IndexData kicks in (Wave 3 G7 / G8 mirror
+		// pattern). ACT_IS_NPC must remain set so victim.IsNPC()
+		// returns true and the dispatcher routes to the NPC menu.
+		victim.Act = idx.Act
+		victim.Act.Set(types.ACT_IS_NPC)
+		victim.Act.Set(types.ACT_PROTOTYPE)
+		ch.Desc.Olc = &types.OlcData{
+			Mode:   types.MEDIT_NPC_MAIN_MENU,
+			Vnum:   vnum,
+			Target: victim,
+		}
+		ch.Desc.Connected = int(types.CON_MEDIT)
+		if MeditDispMenuFunc != nil {
+			MeditDispMenuFunc(ch.Desc)
+		}
+	case "show":
+		// Wave 5: the old default pre-G14 summary, re-bound under an
+		// explicit subcommand so flat inspection is still reachable.
+		// Mirrors `oedit <vnum> show` (olc_interactive.go case "show").
 		meditShow(ch, idx)
 	case "name":
 		if args == "" {

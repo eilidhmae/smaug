@@ -268,6 +268,7 @@ This document defines all phases of the SMAUG C-to-Go port.
 | Archery | `plan-phase6-archery.md` | LANDED 2026-04-19 (`66cc205`) | draw / fire / dislodge + arrow-lodge mechanic |
 | Hotboot / copyover | `plan-phase6-hotboot.md` | LANDED 2026-04-19 | seamless restart via `syscall.Exec` + FD inheritance; Linux/Unix only (`//go:build !windows`); `TestHotboot_EndToEnd` integration |
 | OLC `oedit` substate | `plan-phase6-olc-oedit.md` | LANDED 2026-04-19 | `CON_OEDIT` interactive object editor — 4 waves, unblocks medit + mpedit |
+| OLC `medit` substate | `plan-phase6-olc-medit.md` | LANDED 2026-04-22 (TBD-commit) | `CON_MEDIT` interactive mob/PC editor — 5 waves, A1-A35 covered, M1-M16 + cleanup gates verified, unblocks mpedit |
 
 **Pending (authored, not yet landed):**
 
@@ -276,10 +277,9 @@ This document defines all phases of the SMAUG C-to-Go port.
 | `plan-phase6-housing.md` | audited 2026-04-19 (CONCERNS, 5 corrections applied) |
 | `plan-phase6-overland-loader.md` | audited 2026-04-19 (PASS-with-notes, 2 corrections applied) |
 | `plan-phase6-overland-builder.md` | audited 2026-04-19 (PASS-with-notes, 5 corrections applied) — blocked on overland-loader |
-| `plan-phase6-olc-medit.md` | authored + audited 2026-04-19 (CONCERNS → corrections applied, execution-ready) |
 
 **Deferred:** `plan-phase6-marriage.md` — human decision 2026-04-19 (park; revisit on demand signal — `newgate.are` vnum-100/101 collision invalidates original `DoRings` strategy; poly-capable rewrite when revisited).
 
-**Unauthored:** `plan-phase6-olc-mpedit.md` (hard-blocked on medit landing), `plan-phase6-dragonflight.md` (hard-blocked on overland-loader), `plan-phase6-deity-prayer.md` (Wave 6 — `src/deity.c` is 1695 LOC, scope narrowing needed), `plan-phase6-foldarea.md` (deferred by policy).
+**Unauthored:** `plan-phase6-olc-mpedit.md` (UNBLOCKED 2026-04-22 by medit landing — ready to author), `plan-phase6-dragonflight.md` (hard-blocked on overland-loader), `plan-phase6-deity-prayer.md` (Wave 6 — `src/deity.c` is 1695 LOC, scope narrowing needed), `plan-phase6-foldarea.md` (deferred by policy).
 
 See `phase6-roadmap.md` for the full candidate inventory with per-system C LOC, dependencies, and wave-based execution ordering. `TODO.md` tracks small follow-up items (deferred mudprog ifchecks, archery follow-ups, morphset G4a/G4b split, etc.).

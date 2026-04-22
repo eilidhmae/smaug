@@ -391,13 +391,11 @@ func meditArmPassword(d *types.DescriptorData, victim *types.CharData, arg strin
 		return // stay in MEDIT_PASSWORD
 	}
 
-	// SmashTilde is a no-op here (we already rejected on tilde) but
-	// harmless — kept for parity with other string-input arms.
-	clean := util.SmashTilde(arg)
-
 	// Min-length: C uses 5 (omedit.c:1604). DoPassword uses 6 in Go. Per
 	// plan §398-399 G13 matches C exactly to preserve the medit-vs-flat
-	// behavior contract.
+	// behavior contract. Tilde already rejected above so we operate on
+	// arg directly — no SmashTilde pass needed.
+	clean := arg
 	if len(clean) < 5 {
 		d.WriteToBuffer("Password too short, try again: ")
 		return // stay in MEDIT_PASSWORD
