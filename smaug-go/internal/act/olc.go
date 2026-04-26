@@ -2,13 +2,10 @@ package act
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/eilidhmae/smaug/internal/handler"
-	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -796,7 +793,10 @@ func DoMlist(ch *types.CharData, argument string) {
 
 // --- Area Save ---
 
-// DoSaveArea implements the 'savearea' command: save an area to disk.
+// DoSaveArea implements the 'savearea' command: save the current room's area
+// to disk. The mechanical save (path validation, tmp-file write, atomic
+// install) lives in writeAreaToDisk (olc_area_save.go) and is shared with
+// DoFoldarea. Plan plan-phase6-foldarea.md §G2.
 func DoSaveArea(ch *types.CharData, argument string) {
 	if ch.GetTrust() < types.LEVEL_IMMORTAL {
 		ch.Send("Huh?\n\r")
@@ -808,66 +808,22 @@ func DoSaveArea(ch *types.CharData, argument string) {
 	}
 
 	area := ch.InRoom.Area
-	filename := area.Filename
-	if filename == "" {
+	if area.Filename == "" {
 		ch.Send("This area has no filename.\n\r")
 		return
 	}
 
-	// Path-containment guard (plan-phase6-olc-oedit.md §G11): area.Filename
-	// is admin-typed (via DoAset / OLC editors) so a malicious or buggy
-	// value like "../../etc/passwd" or "/tmp/evil.are" must NOT escape the
-	// configured area directory.
-	//
-	// Note: filepath.Join silently strips a leading "/" from the second
-	// arg (Go normalization), so an absolute path would join INTO the area
-	// dir as a deep subpath rather than escaping it. To preserve the
-	// semantic intent ("filenames must be plain leaf names within the
-	// area dir"), we reject absolute paths explicitly before joining and
-	// then perform the standard prefix-containment check on the result
-	// to catch ".." traversal.
-	if filepath.IsAbs(filename) {
-		util.Bug("DoSaveArea: rejected absolute area filename %q", filename)
-		ch.Send("Invalid area filename.\n\r")
-		return
-	}
-	areaDir := filepath.Clean(filepath.Join(WorldRef.DataDir, "area"))
-	cleaned := filepath.Clean(filepath.Join(areaDir, filename))
-	base := areaDir + string(filepath.Separator)
-	if !strings.HasPrefix(cleaned+string(filepath.Separator), base) {
-		util.Bug("DoSaveArea: rejected out-of-area filename %q (cleaned=%q, base=%q)", filename, cleaned, base)
-		ch.Send("Invalid area filename.\n\r")
-		return
-	}
-
-	path := cleaned
-	tmpPath := path + ".tmp"
-
-	// Write to a temp file first so a crash or write error mid-save
-	// can't corrupt the live .are file.
-	f, err := os.Create(tmpPath)
-	if err != nil {
+	if err := writeAreaToDisk(area); err != nil {
+		// Path-containment / filename rejection surfaces as the C-faithful
+		// "Invalid area filename" message; other failures get the underlying
+		// error text so a mid-save disk failure is still actionable.
+		if err.Error() == "invalid area filename" {
+			ch.Send("Invalid area filename.\n\r")
+			return
+		}
 		ch.Sendf("Error saving area: %v\n\r", err)
 		return
 	}
 
-	if err := persist.SaveArea(f, WorldRef, area); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		ch.Sendf("Error writing area: %v\n\r", err)
-		return
-	}
-
-	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
-		ch.Sendf("Error closing area file: %v\n\r", err)
-		return
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		ch.Sendf("Error replacing area file (backup at %s): %v\n\r", tmpPath, err)
-		return
-	}
-
-	ch.Sendf("Area '%s' saved to %s.\n\r", area.Name, filename)
+	ch.Sendf("Area '%s' saved to %s.\n\r", area.Name, area.Filename)
 }
