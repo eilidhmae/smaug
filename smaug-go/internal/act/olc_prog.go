@@ -556,20 +556,94 @@ func progEditInsert(ch *types.CharData, t *progEditorTarget, value int, progName
 	progEditOpenEditor(ch, mprg, t, false /* no rebuild */)
 }
 
-// --- edit / delete stubs (filled in by Wave 4) ---
+// --- edit subcommand (G7) ---
 
+// progEditEdit walks to the value-th prog (1-based), optionally overrides
+// its Type, replaces ArgList, and opens the editor seeded with the existing
+// ComList. Mirrors C build.c:9203-9242. The progtypes bitmask is rebuilt by
+// the EditorSave closure (rebuild=true) per C `xCLEAR_BITS + iterate` —
+// because changing a prog's type may leave a stale bit set when the only
+// prog of the old type was the one just edited.
 func progEditEdit(ch *types.CharData, t *progEditorTarget, value int, progName, argument string) {
-	_ = t
-	_ = value
-	_ = progName
-	_ = argument
-	ch.Send("mpedit edit: not yet implemented.\n\r")
+	if len(*t.progs) == 0 {
+		switch t.kind {
+		case "mob":
+			ch.Sendf("No programs on mobile: %s - #%d\n\r", t.targetName, t.targetVnum)
+		default:
+			ch.Send("That object has no mob programs.\n\r")
+		}
+		return
+	}
+	if value < 1 || value > len(*t.progs) {
+		ch.Send("Program not found.\n\r")
+		return
+	}
+	mprg := (*t.progs)[value-1]
+	// Optional type override (Q5 in plan: explicit override flag, not a 0
+	// sentinel). If progName is a valid mprog flavor, treat it as the new
+	// type AND drop it from the arglist; otherwise treat progName as the
+	// first word of the arglist and leave the prog's type unchanged.
+	finalArglist := argument
+	if progName != "" {
+		if newType, ok := util.GetMpFlag(progName); ok {
+			mprg.Type = newType
+		} else {
+			// progName was actually the first arglist word. Re-prepend.
+			if argument == "" {
+				finalArglist = progName
+			} else {
+				finalArglist = progName + " " + argument
+			}
+		}
+	}
+	mprg.ArgList = util.SmashTilde(finalArglist)
+	progEditOpenEditor(ch, mprg, t, true /* rebuild on save */)
 }
 
+// --- delete subcommand (G8) ---
+
+// progEditDelete removes the value-th prog (1-based). If the deleted prog
+// was the last of its type, clears the corresponding progtypes bit.
+// Mirrors C build.c:9244-9306 — the `if (num <= 1)` guard counts progs
+// sharing the doomed type BEFORE deletion, so num<=1 means there are no
+// surviving siblings of that type.
 func progEditDelete(ch *types.CharData, t *progEditorTarget, value int) {
-	_ = t
-	_ = value
-	ch.Send("mpedit delete: not yet implemented.\n\r")
+	if len(*t.progs) == 0 {
+		switch t.kind {
+		case "mob":
+			ch.Sendf("No programs on mobile: %s - #%d\n\r", t.targetName, t.targetVnum)
+		default:
+			ch.Send("That object has no mob programs.\n\r")
+		}
+		return
+	}
+	if value < 1 || value > len(*t.progs) {
+		ch.Send("Program not found.\n\r")
+		return
+	}
+	progs := *t.progs
+	doomed := progs[value-1]
+	removedType := doomed.Type
+
+	// Count progs sharing removedType BEFORE the splice (C semantics).
+	num := 0
+	for _, p := range progs {
+		if p.Type == removedType {
+			num++
+		}
+	}
+
+	// Splice out the value-th prog.
+	newProgs := make([]*types.MProgData, 0, len(progs)-1)
+	newProgs = append(newProgs, progs[:value-1]...)
+	newProgs = append(newProgs, progs[value:]...)
+	*t.progs = newProgs
+
+	if num <= 1 {
+		t.progTypes.Remove(progBitIndex(removedType))
+	}
+
+	ch.Send("Program removed.\n\r")
 }
 
 // --- editor closure (shared by add / insert / edit) ---

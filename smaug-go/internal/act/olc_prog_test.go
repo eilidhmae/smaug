@@ -691,6 +691,211 @@ func TestRpeditInsert_GateFires(t *testing.T) {
 	}
 }
 
+// --- G7: edit subcommand ---
+
+func TestMpeditEdit_KeepsType(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 7001, []*types.MProgData{
+		{Type: types.MPROG_ACT, ArgList: "old args", ComList: "old body"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	defer func() { StartEditingFunc = prevStart }()
+
+	// No progName supplied → type stays MPROG_ACT, only arglist updates.
+	DoMpedit(ch, "fido edit 1  new arglist")
+	_ = readOutput(ch, client)
+	if idx.MudProgs[0].Type != types.MPROG_ACT {
+		t.Errorf("type changed unexpectedly: 0x%x", idx.MudProgs[0].Type)
+	}
+	if idx.MudProgs[0].ArgList != "new arglist" {
+		t.Errorf("arglist not updated: %q", idx.MudProgs[0].ArgList)
+	}
+}
+
+func TestMpeditEdit_OverridesType(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 7002, []*types.MProgData{
+		{Type: types.MPROG_ACT, ArgList: "old", ComList: "body"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	defer func() { StartEditingFunc = prevStart }()
+
+	DoMpedit(ch, "fido edit 1 greet new args")
+	_ = readOutput(ch, client)
+	if idx.MudProgs[0].Type != types.MPROG_GREET {
+		t.Errorf("type not overridden: 0x%x", idx.MudProgs[0].Type)
+	}
+	if idx.MudProgs[0].ArgList != "new args" {
+		t.Errorf("arglist not updated: %q", idx.MudProgs[0].ArgList)
+	}
+}
+
+func TestMpeditEdit_RebuildsProgtypes(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 7003, []*types.MProgData{
+		{Type: types.MPROG_ACT, ComList: "A"},
+		{Type: types.MPROG_SPEECH, ComList: "B"},
+		{Type: types.MPROG_GREET, ComList: "C"},
+	})
+	placeMobInRoomWith(ch, idx)
+	if !idx.ProgTypes.IsSet(progBitIndex(types.MPROG_GREET)) {
+		t.Fatal("setup precondition: greet bit should be set")
+	}
+
+	prevStart, prevCopy, prevStop := StartEditingFunc, CopyBufferFunc, StopEditingFunc
+	defer func() {
+		StartEditingFunc, CopyBufferFunc, StopEditingFunc = prevStart, prevCopy, prevStop
+	}()
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	CopyBufferFunc = func(c *types.CharData) string { return "edited body" }
+	StopEditingFunc = func(c *types.CharData) {
+		c.Substate = types.SUB_NONE
+		c.EditorSave = nil
+	}
+
+	// Edit the greet (3rd) prog and change its type to act.
+	DoMpedit(ch, "fido edit 3 act new args")
+	_ = readOutput(ch, client)
+	if ch.EditorSave == nil {
+		t.Fatal("EditorSave should be set")
+	}
+	ch.EditorSave(ch)
+
+	// After save, greet bit should be cleared (no remaining greet progs).
+	if idx.ProgTypes.IsSet(progBitIndex(types.MPROG_GREET)) {
+		t.Errorf("greet bit should have been cleared by rebuild")
+	}
+	if !idx.ProgTypes.IsSet(progBitIndex(types.MPROG_ACT)) {
+		t.Errorf("act bit should remain set after rebuild")
+	}
+	if !idx.ProgTypes.IsSet(progBitIndex(types.MPROG_SPEECH)) {
+		t.Errorf("speech bit should remain set after rebuild")
+	}
+}
+
+func TestMpeditEdit_OutOfRange(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 7004, []*types.MProgData{
+		{Type: types.MPROG_ACT, ArgList: "x", ComList: "x"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido edit 99 act new")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Program not found") {
+		t.Errorf("expected not-found, got: %q", out)
+	}
+}
+
+// --- G8: delete subcommand ---
+
+func TestMpeditDelete_Found(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 8001, []*types.MProgData{
+		{Type: types.MPROG_ACT, ComList: "A"},
+		{Type: types.MPROG_SPEECH, ComList: "B"},
+		{Type: types.MPROG_GREET, ComList: "C"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido delete 2")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Program removed") {
+		t.Errorf("expected removed message, got: %q", out)
+	}
+	if len(idx.MudProgs) != 2 {
+		t.Fatalf("expected 2 remaining progs, got %d", len(idx.MudProgs))
+	}
+	if idx.MudProgs[0].Type != types.MPROG_ACT || idx.MudProgs[1].Type != types.MPROG_GREET {
+		t.Errorf("wrong remaining progs: 0x%x, 0x%x", idx.MudProgs[0].Type, idx.MudProgs[1].Type)
+	}
+}
+
+func TestMpeditDelete_OutOfRange(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 8002, []*types.MProgData{
+		{Type: types.MPROG_ACT, ComList: "A"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido delete 99")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Program not found") {
+		t.Errorf("expected not-found, got: %q", out)
+	}
+	if len(idx.MudProgs) != 1 {
+		t.Errorf("progs should not have been mutated")
+	}
+}
+
+func TestMpeditDelete_Empty(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 8003, nil)
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido delete 1")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "No programs on mobile") {
+		t.Errorf("expected empty-list message, got: %q", out)
+	}
+}
+
+func TestMpeditDelete_ClearsBitWhenLast(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 8004, []*types.MProgData{
+		{Type: types.MPROG_GREET, ComList: "A"},
+	})
+	placeMobInRoomWith(ch, idx)
+	if !idx.ProgTypes.IsSet(progBitIndex(types.MPROG_GREET)) {
+		t.Fatal("setup precondition")
+	}
+
+	DoMpedit(ch, "fido delete 1")
+	_ = readOutput(ch, client)
+	if idx.ProgTypes.IsSet(progBitIndex(types.MPROG_GREET)) {
+		t.Errorf("greet bit should have been cleared (last of its type)")
+	}
+}
+
+func TestMpeditDelete_KeepsBitWhenSiblings(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 8005, []*types.MProgData{
+		{Type: types.MPROG_GREET, ComList: "A"},
+		{Type: types.MPROG_GREET, ComList: "B"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido delete 1")
+	_ = readOutput(ch, client)
+	if !idx.ProgTypes.IsSet(progBitIndex(types.MPROG_GREET)) {
+		t.Errorf("greet bit should remain set (sibling exists)")
+	}
+}
+
 // Mortal-reject regression (was the inspector test).
 func TestProgEditors_MortalReject(t *testing.T) {
 	_ = setupOlcWorld()
