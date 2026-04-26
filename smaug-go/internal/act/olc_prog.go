@@ -121,24 +121,35 @@ func progEditDispatch(ch *types.CharData, argument, kind string) {
 
 	// --- subcommand + value parsing (per-kind argument index shift) ---
 	var subcmd, valueStr, progStr, addArglist, insArglist string
+	// Compute arglist tail for add (after type) and insert/edit (after type).
+	// Mpedit/opedit consume one extra arg (target name) before subcommand,
+	// shifting all slots by one relative to rpedit. After OneArgument has
+	// peeled arg1..arg4 off the front, the remaining `tailAfterArgN` strings
+	// hold the residual arglist for the corresponding subcommand shape.
+	_, _ = arg4, afterArg4
+	tailAfterArg3 := strings.TrimSpace(afterArg3)
+	tailAfterArg4 := strings.TrimSpace(afterArg4)
 	if kind == "room" {
 		subcmd = strings.ToLower(arg1)
 		valueStr = arg2
-		// add/edit/insert in rpedit: progName uses the same slot as mpedit's
-		// arg3 (program type). For add, the arglist follows arg2 (the prog type).
-		// rpedit add: arg1=add, arg2=type, rest after arg2 = arglist.
-		// rpedit insert/edit: arg1=insert/edit, arg2=number, arg3=type, after arg3 = arglist.
+		// rpedit add:    arg1=add,    arg2=type,   arglist=tailAfterArg2 (i.e. after type=arg2 → starts at arg3-position)
+		// rpedit insert/edit: arg1=insert/edit, arg2=number, arg3=type, arglist=tailAfterArg3
 		progStr = arg3
-		addArglist = strings.TrimSpace(afterArg2)
-		insArglist = strings.TrimSpace(afterArg3)
+		// "tailAfterArg2" = residual after arg2 parse = afterArg3.
+		addArglist = tailAfterArg3
+		// "tailAfterArg3" = residual after arg3 parse = afterArg4.
+		insArglist = tailAfterArg4
 	} else {
 		subcmd = strings.ToLower(arg2)
 		valueStr = arg3
 		progStr = arg4
-		// mpedit add: arg1=victim, arg2=add, arg3=type, after arg3 = arglist.
-		// mpedit insert/edit: arg1=victim, arg2=insert/edit, arg3=number, arg4=type, after arg4 = arglist.
-		addArglist = strings.TrimSpace(afterArg3)
-		insArglist = strings.TrimSpace(afterArg4)
+		// mpedit add: arg1=victim, arg2=add, arg3=type, arglist starts after arg3 = tailAfterArg4.
+		// mpedit insert/edit: arg1=victim, arg2=insert/edit, arg3=number, arg4=type, arglist starts after arg4.
+		addArglist = tailAfterArg4
+		// For mpedit insert/edit the arglist is even further along — read one
+		// more word past arg4 to get the residual.
+		_, after5 := util.OneArgument(afterArg4)
+		insArglist = strings.TrimSpace(after5)
 	}
 	value, _ := strconv.Atoi(valueStr) // C atoi returns 0 on parse failure
 
@@ -467,22 +478,85 @@ func progEditList(ch *types.CharData, t *progEditorTarget, value int, valueStr s
 	ch.Sendf("%s\n\r", p.ComList)
 }
 
-// --- subcommand stubs (filled in by later waves) ---
+// --- add subcommand (G5) ---
 
+// progEditAdd appends a new mud-prog at the tail of the prog list. Mirrors C
+// build.c:9354-9373 (do_mpedit add arm). Sets the progtypes bit synchronously
+// (the C path also calls xSET_BIT before start_editing) and opens the string
+// editor seeded with empty ComList. The EditorSave closure copies the buffer
+// into mprg.ComList on /s — no progtypes rebuild (the bit was set above).
 func progEditAdd(ch *types.CharData, t *progEditorTarget, progName, argument string) {
-	_ = t
-	_ = progName
-	_ = argument
-	ch.Send("mpedit add: not yet implemented.\n\r")
+	mptype, ok := util.GetMpFlag(progName)
+	if !ok {
+		ch.Send("Unknown program type.\n\r")
+		return
+	}
+	mprg := &types.MProgData{
+		Type:    mptype,
+		ArgList: util.SmashTilde(argument),
+		ComList: "",
+	}
+	*t.progs = append(*t.progs, mprg)
+	t.progTypes.Set(progBitIndex(mptype))
+	progEditOpenEditor(ch, mprg, t, false /* no rebuild */)
 }
 
+// --- insert subcommand (G6) ---
+
+// progEditInsert splices a new mud-prog at 1-based position `value`. Mirrors C
+// build.c:9308-9352. C's `&& mprg->next` guard at :9340 means insertion at
+// the last-element position is rejected ("Program not found.") — append
+// requires the `add` subcommand. Q1/Q2 fix applied for rpedit (callers route
+// here regardless of arg-shape; the dispatcher already normalised).
 func progEditInsert(ch *types.CharData, t *progEditorTarget, value int, progName, argument string) {
-	_ = t
-	_ = value
-	_ = progName
-	_ = argument
-	ch.Send("mpedit insert: not yet implemented.\n\r")
+	if len(*t.progs) == 0 {
+		switch t.kind {
+		case "mob":
+			ch.Sendf("No programs on mobile: %s - #%d\n\r", t.targetName, t.targetVnum)
+		default:
+			ch.Send("That object has no mob programs.\n\r")
+		}
+		return
+	}
+	mptype, ok := util.GetMpFlag(progName)
+	if !ok {
+		ch.Send("Unknown program type.\n\r")
+		return
+	}
+	if value < 1 {
+		ch.Send("Program not found.\n\r")
+		return
+	}
+	mprg := &types.MProgData{
+		Type:    mptype,
+		ArgList: util.SmashTilde(argument),
+		ComList: "",
+	}
+	progs := *t.progs
+	if value == 1 {
+		// Splice at head.
+		newProgs := make([]*types.MProgData, 0, len(progs)+1)
+		newProgs = append(newProgs, mprg)
+		newProgs = append(newProgs, progs...)
+		*t.progs = newProgs
+	} else {
+		// Splice after the (value-1)-th prog (1-based). C's `&& mprg->next`
+		// guard rejects insertion at-end-of-list (use `add` instead).
+		if value-1 >= len(progs) {
+			ch.Send("Program not found.\n\r")
+			return
+		}
+		newProgs := make([]*types.MProgData, 0, len(progs)+1)
+		newProgs = append(newProgs, progs[:value-1]...)
+		newProgs = append(newProgs, mprg)
+		newProgs = append(newProgs, progs[value-1:]...)
+		*t.progs = newProgs
+	}
+	t.progTypes.Set(progBitIndex(mptype))
+	progEditOpenEditor(ch, mprg, t, false /* no rebuild */)
 }
+
+// --- edit / delete stubs (filled in by Wave 4) ---
 
 func progEditEdit(ch *types.CharData, t *progEditorTarget, value int, progName, argument string) {
 	_ = t
@@ -496,6 +570,39 @@ func progEditDelete(ch *types.CharData, t *progEditorTarget, value int) {
 	_ = t
 	_ = value
 	ch.Send("mpedit delete: not yet implemented.\n\r")
+}
+
+// --- editor closure (shared by add / insert / edit) ---
+
+// progEditOpenEditor sets ch.Substate = SUB_MPROG_EDIT, installs an
+// EditorSave closure that writes the buffer into mprg.ComList on /s, and
+// invokes StartEditingFunc seeded with the existing ComList. When
+// rebuildOnSave is true (edit path only, per C build.c:9234-9236), the
+// closure also clears + rebuilds the progtypes BitVector by iterating
+// the post-edit prog list — matching C `xCLEAR_BITS; for (...) xSET_BIT`.
+func progEditOpenEditor(ch *types.CharData, mprg *types.MProgData, t *progEditorTarget, rebuildOnSave bool) {
+	ch.Substate = types.SUB_MPROG_EDIT
+	captured := mprg
+	target := t
+	rebuild := rebuildOnSave
+	ch.EditorSave = func(c *types.CharData) {
+		if CopyBufferFunc != nil {
+			captured.ComList = CopyBufferFunc(c)
+		}
+		if StopEditingFunc != nil {
+			StopEditingFunc(c)
+		}
+		if rebuild && target != nil && target.progTypes != nil && target.progs != nil {
+			target.progTypes.Clear()
+			for _, p := range *target.progs {
+				target.progTypes.Set(progBitIndex(p.Type))
+			}
+		}
+		c.Send("\n\r")
+	}
+	if StartEditingFunc != nil {
+		StartEditingFunc(ch, mprg.ComList)
+	}
 }
 
 // progBitIndex converts a bit-flag value (1<<n) to its bit-index n.

@@ -392,6 +392,305 @@ func TestRpeditList_HeaderOnly(t *testing.T) {
 	}
 }
 
+// --- G5: add subcommand ---
+
+func TestMpeditAdd_AppendsAtTail(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 5001, []*types.MProgData{
+		{Type: types.MPROG_ACT, ArgList: "x", ComList: "say A"},
+		{Type: types.MPROG_SPEECH, ArgList: "y", ComList: "say B"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	defer func() { StartEditingFunc = prevStart }()
+
+	DoMpedit(ch, "fido add greet hello there")
+	_ = readOutput(ch, client)
+
+	if len(idx.MudProgs) != 3 {
+		t.Fatalf("expected 3 progs after add, got %d", len(idx.MudProgs))
+	}
+	added := idx.MudProgs[2]
+	if added.Type != types.MPROG_GREET {
+		t.Errorf("expected MPROG_GREET, got 0x%x", added.Type)
+	}
+	if added.ArgList != "hello there" {
+		t.Errorf("expected arglist 'hello there', got %q", added.ArgList)
+	}
+	if !idx.ProgTypes.IsSet(progBitIndex(types.MPROG_GREET)) {
+		t.Errorf("progtypes bit not set for greet")
+	}
+}
+
+func TestMpeditAdd_OpensEditor(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 5002, nil)
+	placeMobInRoomWith(ch, idx)
+
+	var seedSeen string
+	var saveAtCall func(*types.CharData)
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {
+		seedSeen = text
+		saveAtCall = c.EditorSave
+	}
+	defer func() { StartEditingFunc = prevStart }()
+
+	DoMpedit(ch, "fido add act sample args")
+	_ = readOutput(ch, client)
+
+	if seedSeen != "" {
+		t.Errorf("expected empty seed for new prog, got %q", seedSeen)
+	}
+	if saveAtCall == nil {
+		t.Fatal("EditorSave must be installed before StartEditingFunc is called")
+	}
+	if ch.Substate != types.SUB_MPROG_EDIT {
+		t.Errorf("expected Substate=SUB_MPROG_EDIT (%d), got %d", types.SUB_MPROG_EDIT, ch.Substate)
+	}
+}
+
+func TestMpeditAdd_EditorSaveWritesComList(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 5003, nil)
+	placeMobInRoomWith(ch, idx)
+
+	prevStart, prevCopy, prevStop := StartEditingFunc, CopyBufferFunc, StopEditingFunc
+	defer func() {
+		StartEditingFunc, CopyBufferFunc, StopEditingFunc = prevStart, prevCopy, prevStop
+	}()
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	CopyBufferFunc = func(c *types.CharData) string { return "say hi $n\n\r" }
+	StopEditingFunc = func(c *types.CharData) {
+		c.Substate = types.SUB_NONE
+		c.EditorSave = nil
+	}
+
+	DoMpedit(ch, "fido add greet hi $n")
+	_ = readOutput(ch, client)
+	if ch.EditorSave == nil {
+		t.Fatal("EditorSave should be set")
+	}
+	ch.EditorSave(ch)
+
+	if len(idx.MudProgs) != 1 {
+		t.Fatalf("expected 1 prog, got %d", len(idx.MudProgs))
+	}
+	if idx.MudProgs[0].ComList != "say hi $n\n\r" {
+		t.Errorf("ComList not written by EditorSave: got %q", idx.MudProgs[0].ComList)
+	}
+}
+
+func TestMpeditAdd_UnknownType(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 5004, nil)
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido add bogus_type sample")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Unknown program type") {
+		t.Errorf("expected unknown-type reject, got: %q", out)
+	}
+	if len(idx.MudProgs) != 0 {
+		t.Errorf("progs should not have been mutated")
+	}
+}
+
+func TestMpeditAdd_SmashesTilde(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 5005, nil)
+	placeMobInRoomWith(ch, idx)
+
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	defer func() { StartEditingFunc = prevStart }()
+
+	DoMpedit(ch, "fido add act hi~there~ok")
+	_ = readOutput(ch, client)
+	if len(idx.MudProgs) != 1 {
+		t.Fatalf("expected 1 prog, got %d", len(idx.MudProgs))
+	}
+	if strings.Contains(idx.MudProgs[0].ArgList, "~") {
+		t.Errorf("tildes not smashed: %q", idx.MudProgs[0].ArgList)
+	}
+}
+
+func TestMpeditAdd_DoubleSetIdempotent(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 5006, []*types.MProgData{
+		{Type: types.MPROG_GREET, ArgList: "x", ComList: "first"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	defer func() { StartEditingFunc = prevStart }()
+
+	// Add a second greet — bit should remain set, not toggle off.
+	DoMpedit(ch, "fido add greet second")
+	_ = readOutput(ch, client)
+	if !idx.ProgTypes.IsSet(progBitIndex(types.MPROG_GREET)) {
+		t.Errorf("greet bit lost after second add (Set vs Toggle mutation gate)")
+	}
+}
+
+// --- G6: insert subcommand ---
+
+func TestMpeditInsert_AtHead(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 6001, []*types.MProgData{
+		{Type: types.MPROG_ACT, ComList: "A"},
+		{Type: types.MPROG_SPEECH, ComList: "B"},
+		{Type: types.MPROG_GREET, ComList: "C"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	defer func() { StartEditingFunc = prevStart }()
+
+	DoMpedit(ch, "fido insert 1 death")
+	_ = readOutput(ch, client)
+	if len(idx.MudProgs) != 4 {
+		t.Fatalf("expected 4 progs, got %d", len(idx.MudProgs))
+	}
+	if idx.MudProgs[0].Type != types.MPROG_DEATH {
+		t.Errorf("expected DEATH at head, got 0x%x", idx.MudProgs[0].Type)
+	}
+}
+
+func TestMpeditInsert_InMiddle(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 6002, []*types.MProgData{
+		{Type: types.MPROG_ACT, ComList: "A"},
+		{Type: types.MPROG_SPEECH, ComList: "B"},
+		{Type: types.MPROG_GREET, ComList: "C"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	defer func() { StartEditingFunc = prevStart }()
+
+	DoMpedit(ch, "fido insert 2 death")
+	_ = readOutput(ch, client)
+	if len(idx.MudProgs) != 4 {
+		t.Fatalf("expected 4 progs, got %d", len(idx.MudProgs))
+	}
+	// Inserted at index 1 (i.e. before old position 2).
+	if idx.MudProgs[1].Type != types.MPROG_DEATH {
+		t.Errorf("expected DEATH at index 1, got 0x%x", idx.MudProgs[1].Type)
+	}
+	// Old index 1 (SPEECH) is now at index 2.
+	if idx.MudProgs[2].Type != types.MPROG_SPEECH {
+		t.Errorf("expected SPEECH at index 2 (shifted), got 0x%x", idx.MudProgs[2].Type)
+	}
+}
+
+func TestMpeditInsert_OutOfRange(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 6003, []*types.MProgData{
+		{Type: types.MPROG_ACT, ComList: "A"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido insert 99 greet")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Program not found") {
+		t.Errorf("expected not-found, got: %q", out)
+	}
+	if len(idx.MudProgs) != 1 {
+		t.Errorf("progs should not have been mutated")
+	}
+}
+
+func TestMpeditInsert_AtLastPosition(t *testing.T) {
+	// C-fidelity: insert at position == len(progs)+1 hits C's `&& mprg->next`
+	// guard — append requires `add`, not `insert`. (Audit F4.)
+	// On a 3-prog list, value=4 means "after position 4", which would be
+	// past the tail; C's loop exits without splicing.
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 6004, []*types.MProgData{
+		{Type: types.MPROG_ACT, ComList: "A"},
+		{Type: types.MPROG_SPEECH, ComList: "B"},
+		{Type: types.MPROG_GREET, ComList: "C"},
+	})
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido insert 4 death")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Program not found") {
+		t.Errorf("expected at-last reject, got: %q", out)
+	}
+	if len(idx.MudProgs) != 3 {
+		t.Errorf("progs should not have been mutated, got len=%d", len(idx.MudProgs))
+	}
+}
+
+func TestMpeditInsert_Empty(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 6005, nil)
+	placeMobInRoomWith(ch, idx)
+
+	DoMpedit(ch, "fido insert 1 act")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "No programs on mobile") {
+		t.Errorf("expected empty-list reject, got: %q", out)
+	}
+	if len(idx.MudProgs) != 0 {
+		t.Errorf("progs should not have been mutated")
+	}
+}
+
+func TestRpeditInsert_GateFires(t *testing.T) {
+	// Q1/Q2 fix: rpedit insert was a dead branch in C (gated on arg2 instead
+	// of arg1). Go-port routes correctly through the dispatcher.
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	setupRpeditFixture(ch, 6006, []*types.MProgData{
+		{Type: types.MPROG_ACT, ComList: "A"},
+		{Type: types.MPROG_SPEECH, ComList: "B"},
+	})
+
+	prevStart := StartEditingFunc
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	defer func() { StartEditingFunc = prevStart }()
+
+	DoRpedit(ch, "insert 1 death")
+	_ = readOutput(ch, client)
+	if len(ch.InRoom.MudProgs) != 3 {
+		t.Fatalf("expected 3 progs after rpedit insert, got %d", len(ch.InRoom.MudProgs))
+	}
+	if ch.InRoom.MudProgs[0].Type != types.MPROG_DEATH {
+		t.Errorf("expected DEATH at head, got 0x%x", ch.InRoom.MudProgs[0].Type)
+	}
+}
+
 // Mortal-reject regression (was the inspector test).
 func TestProgEditors_MortalReject(t *testing.T) {
 	_ = setupOlcWorld()
