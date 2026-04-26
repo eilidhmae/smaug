@@ -44,9 +44,11 @@ func resolveAreaFilePath(dataDir, filename string) (string, error) {
 //
 //  1. Filename + path-containment validation via resolveAreaFilePath.
 //  2. Write to <path>.tmp via persist.SaveArea.
-//  3. Atomic rename <path>.tmp → <path>.
-//
-// .bak rotation arrives in Wave 2 (G3) — this file is the seam.
+//  3. .bak rotation: if <path> exists, rename it to <path>.bak before
+//     installing the new tmp file. Mirrors C fold_area at
+//     src/build.c:7369-7370. Best-effort — rotation failure is logged
+//     but does not abort the save.
+//  4. Atomic rename <path>.tmp → <path>.
 //
 // Returns nil on success, or an error suitable for surfacing to the user.
 // The caller decides how to phrase the user-facing message.
@@ -79,8 +81,20 @@ func writeAreaToDisk(area *types.AreaData) error {
 		return fmt.Errorf("close tmp: %w", err)
 	}
 
-	// 2. Atomic install. .bak rotation lands in Wave 2 (G3) immediately
-	//    before this rename.
+	// 2. .bak rotation. Rotate-if-exists (a brand-new area's first save has
+	//    no live file to rotate). Failure is logged via util.Bug but does
+	//    NOT abort the save — the tmp file is the source of truth and the
+	//    operator can recover from disk via the tmp→live rename below.
+	//    Mirrors C fold_area at src/build.c:7369-7370.
+	if _, statErr := os.Stat(path); statErr == nil {
+		bakPath := path + ".bak"
+		if rerr := os.Rename(path, bakPath); rerr != nil {
+			util.Bug("writeAreaToDisk: .bak rotation failed for %q: %v", path, rerr)
+			// fall through; tmp→live rename below will overwrite the live file.
+		}
+	}
+
+	// 3. Atomic install.
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("install: %w", err)
 	}
