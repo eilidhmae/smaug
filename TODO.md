@@ -92,6 +92,14 @@ Three parallel adversary audits — functionality/C-parity, security, and Go idi
   - **`worldPcLookup` seam** for `medit <playername>` PC-by-name argument. C `do_omedit` (`omedit.c:180`) uses `get_char_world(ch, arg)`. Add `worldPcLookup(name string) *types.CharData` parallel to `worldMobLookup`, wire from boot via `act.WorldRef.Descriptors` walk, extend `DoMedit` to try the PC lookup before falling through to rejection. Pin `TestDoMedit_PcNameLooksUpConnectedPc`. Unblocks A31 + the G15 scenario-2 backfill (replace `TestTestclient_MeditSetField` NPC-name test with the originally-planned `TestTestclient_MeditPcSetStat`).
   - **Cross-descriptor double-edit guard**. C `do_omedit` (`omedit.c:203-210`) walks `first_descriptor` to detect ANY descriptor editing the same vnum. Wave 5 ships per-descriptor guard only. Defer until two-immortal-collision is observed.
 
+### Phase 6 OLC mpedit / opedit / rpedit (LANDED 2026-04-26)
+
+- [x] All 5 waves landed. See `smaug-go/doc/plan-phase6-olc-mpedit.md` §Completion Record for per-wave commit hashes (Wave 1 `b1c22ec` → Wave 2 `ef76c52` → Wave 3 `f054aff` → Wave 4 `a3dd47c` → Wave 5 closing). 28 new dispatcher tests + 5 helper tests + 1 boot-reg test. A1-A24 covered, M1-M14 mutation gates verified.
+- [ ] Post-mpedit follow-up: port `can_mmodify` / `can_omodify` / `can_rmodify` ACL helpers (C `mud_prog.c`) — currently the registry-level `LEVEL_IMMORTAL` gate is the only ACL. Low priority (no production builders are gated by these).
+- [ ] Post-mpedit follow-up: port the unported mprog flavors `load` / `greetinfight` / `move` / `emote` into the Go `MPROG_*` enum at `internal/types/mudprog.go`. `getMpFlag` returns "Unknown program type." for these names today. Document at the same time which interpreter sites need extending.
+- [ ] Post-mpedit follow-up: reclaim the unused `OEDIT_MPROGS` / `OEDIT_MPROGS_CHOICE` / `OEDIT_MPROGS_DELETE` / `OEDIT_MPROGS_TYPE` / `OEDIT_MPROGS_ARG` iota slots at `internal/types/olc.go:123-127` — reserved during medit Wave 1 for a hypothetical CON_OEDIT-driven mprogs editor that the EditorSave-callback design (this plan) makes unnecessary.
+- [ ] Post-mpedit follow-up: testclient E2E scenario `TestTestclient_MpeditAddCycle` — login as immortal, instantiate a prototype mob, type `mpedit fido add act "say hi"`, type editor body `say hello world\n`, type `/s`, type `mpedit fido list full`, assert "say hello world" appears. Optional G10b deferred per plan.
+
 ### High-impact combat gaps (from 2026-04-17 audit — P0)
 
 **→ See `smaug-go/doc/plan-combat-depth.md` for the full plan (9 task groups, adversary-verified). LANDED 2026-04-17.**

@@ -111,6 +111,29 @@ func TestBoot_WiresOlcMenuSeams(t *testing.T) {
 	}
 }
 
+// TestBoot_McEditorsRegistered pins mpedit/opedit/rpedit registration at
+// LEVEL_IMMORTAL. Plan-phase6-olc-mpedit.md §G11 acceptance.
+func TestBoot_McEditorsRegistered(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	const maxTrust = 65535
+	for _, name := range []string{"mpedit", "opedit", "rpedit"} {
+		c := reg.Find(name, maxTrust)
+		if c == nil {
+			t.Errorf("expected %q to be registered", name)
+			continue
+		}
+		if c.DoFun == nil {
+			t.Errorf("%q.DoFun must be non-nil", name)
+		}
+	}
+}
+
 // TestBoot_ClanOfficerRegistered pins induct/outcast/bestow command registration.
 // induct and outcast carry Level 0 (authority is in-command via isClanOfficer);
 // bestow is LEVEL_IMMORTAL. See plan-phase6-clan-officer.md §D5.

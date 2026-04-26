@@ -896,6 +896,166 @@ func TestMpeditDelete_KeepsBitWhenSiblings(t *testing.T) {
 	}
 }
 
+// --- G9: substate lifecycle ---
+
+func TestMpeditEditor_SubstateLifecycle(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 9001, nil)
+	placeMobInRoomWith(ch, idx)
+
+	prevStart, prevCopy, prevStop := StartEditingFunc, CopyBufferFunc, StopEditingFunc
+	defer func() {
+		StartEditingFunc, CopyBufferFunc, StopEditingFunc = prevStart, prevCopy, prevStop
+	}()
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	CopyBufferFunc = func(c *types.CharData) string { return "body" }
+	StopEditingFunc = func(c *types.CharData) {
+		c.Substate = types.SUB_NONE
+		c.EditorSave = nil
+	}
+
+	if ch.Substate != types.SUB_NONE {
+		t.Fatalf("precondition: Substate should start at SUB_NONE")
+	}
+	DoMpedit(ch, "fido add act sample")
+	_ = readOutput(ch, client)
+	if ch.Substate != types.SUB_MPROG_EDIT {
+		t.Errorf("expected SUB_MPROG_EDIT during edit, got %d", ch.Substate)
+	}
+	ch.EditorSave(ch)
+	if ch.Substate != types.SUB_NONE {
+		t.Errorf("expected SUB_NONE after StopEditingFunc, got %d", ch.Substate)
+	}
+}
+
+// --- G10: end-to-end cycles ---
+
+func TestMpedit_FullCycleAddListEdit(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	idx := setupMpeditFixture("fido", 10001, nil)
+	placeMobInRoomWith(ch, idx)
+
+	prevStart, prevCopy, prevStop := StartEditingFunc, CopyBufferFunc, StopEditingFunc
+	defer func() {
+		StartEditingFunc, CopyBufferFunc, StopEditingFunc = prevStart, prevCopy, prevStop
+	}()
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	editorBuf := "say HELLO_E2E\n\r"
+	CopyBufferFunc = func(c *types.CharData) string { return editorBuf }
+	StopEditingFunc = func(c *types.CharData) {
+		c.Substate = types.SUB_NONE
+		c.EditorSave = nil
+	}
+
+	// add
+	DoMpedit(ch, "fido add act welcome")
+	_ = readOutput(ch, client)
+	ch.EditorSave(ch)
+	if len(idx.MudProgs) != 1 {
+		t.Fatalf("after add: expected 1 prog, got %d", len(idx.MudProgs))
+	}
+
+	// list full — should show the body
+	DoMpedit(ch, "fido list full")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "HELLO_E2E") {
+		t.Errorf("list full missing body: %q", out)
+	}
+
+	// edit — change body via closure
+	editorBuf = "say UPDATED_E2E\n\r"
+	DoMpedit(ch, "fido edit 1 act new args")
+	_ = readOutput(ch, client)
+	ch.EditorSave(ch)
+	if !strings.Contains(idx.MudProgs[0].ComList, "UPDATED_E2E") {
+		t.Errorf("edit did not update body, got: %q", idx.MudProgs[0].ComList)
+	}
+}
+
+func TestOpedit_FullCycleAddDelete(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	obj := setupOpeditFixture(ch, 10002, "sword", nil)
+
+	prevStart, prevCopy, prevStop := StartEditingFunc, CopyBufferFunc, StopEditingFunc
+	defer func() {
+		StartEditingFunc, CopyBufferFunc, StopEditingFunc = prevStart, prevCopy, prevStop
+	}()
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	CopyBufferFunc = func(c *types.CharData) string { return "echo wear" }
+	StopEditingFunc = func(c *types.CharData) {
+		c.Substate = types.SUB_NONE
+		c.EditorSave = nil
+	}
+
+	DoOpedit(ch, "sword add wear keyword")
+	_ = readOutput(ch, client)
+	ch.EditorSave(ch)
+	if len(obj.IndexData.MudProgs) != 1 {
+		t.Fatalf("expected 1 prog after add, got %d", len(obj.IndexData.MudProgs))
+	}
+
+	DoOpedit(ch, "sword delete 1")
+	_ = readOutput(ch, client)
+	if len(obj.IndexData.MudProgs) != 0 {
+		t.Errorf("expected 0 progs after delete, got %d", len(obj.IndexData.MudProgs))
+	}
+
+	// List on empty list → C-bug "no mob programs" wording.
+	DoOpedit(ch, "sword list")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "no mob programs") {
+		t.Errorf("expected empty-list message, got: %q", out)
+	}
+}
+
+func TestRpedit_FullCycleAddInsert(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+	room := setupRpeditFixture(ch, 10003, nil)
+
+	prevStart, prevCopy, prevStop := StartEditingFunc, CopyBufferFunc, StopEditingFunc
+	defer func() {
+		StartEditingFunc, CopyBufferFunc, StopEditingFunc = prevStart, prevCopy, prevStop
+	}()
+	StartEditingFunc = func(c *types.CharData, text string) {}
+	CopyBufferFunc = func(c *types.CharData) string { return "body" }
+	StopEditingFunc = func(c *types.CharData) {
+		c.Substate = types.SUB_NONE
+		c.EditorSave = nil
+	}
+
+	DoRpedit(ch, "add act first")
+	_ = readOutput(ch, client)
+	ch.EditorSave(ch)
+	DoRpedit(ch, "add greet second")
+	_ = readOutput(ch, client)
+	ch.EditorSave(ch)
+	if len(room.MudProgs) != 2 {
+		t.Fatalf("expected 2 progs, got %d", len(room.MudProgs))
+	}
+
+	// Insert at head — Q1/Q2 fix verified end-to-end.
+	DoRpedit(ch, "insert 1 death new")
+	_ = readOutput(ch, client)
+	ch.EditorSave(ch)
+	if len(room.MudProgs) != 3 {
+		t.Fatalf("expected 3 progs after insert, got %d", len(room.MudProgs))
+	}
+	if room.MudProgs[0].Type != types.MPROG_DEATH {
+		t.Errorf("expected DEATH at head, got 0x%x", room.MudProgs[0].Type)
+	}
+	if room.MudProgs[1].Type != types.MPROG_ACT {
+		t.Errorf("expected ACT at index 1 (shifted), got 0x%x", room.MudProgs[1].Type)
+	}
+}
+
 // Mortal-reject regression (was the inspector test).
 func TestProgEditors_MortalReject(t *testing.T) {
 	_ = setupOlcWorld()

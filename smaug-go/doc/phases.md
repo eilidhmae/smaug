@@ -269,6 +269,7 @@ This document defines all phases of the SMAUG C-to-Go port.
 | Hotboot / copyover | `plan-phase6-hotboot.md` | LANDED 2026-04-19 | seamless restart via `syscall.Exec` + FD inheritance; Linux/Unix only (`//go:build !windows`); `TestHotboot_EndToEnd` integration |
 | OLC `oedit` substate | `plan-phase6-olc-oedit.md` | LANDED 2026-04-19 | `CON_OEDIT` interactive object editor — 4 waves, unblocks medit + mpedit |
 | OLC `medit` substate | `plan-phase6-olc-medit.md` | LANDED 2026-04-22 (TBD-commit) | `CON_MEDIT` interactive mob/PC editor — 5 waves, A1-A35 covered, M1-M16 + cleanup gates verified, unblocks mpedit |
+| OLC `mpedit` / `opedit` / `rpedit` | `plan-phase6-olc-mpedit.md` | LANDED 2026-04-26 | full add/delete/insert/edit/list mutator surface across mob/obj/room mud-progs — 5 waves (G1-G12), EditorSave-callback integration (no CON_MPEDIT), Q1/Q2 rpedit insert C-bug fix, A1-A24 covered, M1-M14 verified |
 
 **Pending (authored, not yet landed):**
 
@@ -277,7 +278,6 @@ This document defines all phases of the SMAUG C-to-Go port.
 | `plan-phase6-housing.md` | audited 2026-04-19 (CONCERNS, 5 corrections applied) |
 | `plan-phase6-overland-loader.md` | audited 2026-04-19 (PASS-with-notes, 2 corrections applied) |
 | `plan-phase6-overland-builder.md` | audited 2026-04-19 (PASS-with-notes, 5 corrections applied) — blocked on overland-loader |
-| `plan-phase6-olc-mpedit.md` | authored 2026-04-26; audited 2026-04-26 (PASS-with-CONCERNS, 5 corrections applied — mprog_flags 51→52 + last-position insert test + 3 cosmetic) |
 
 **Deferred:** `plan-phase6-marriage.md` — human decision 2026-04-19 (park; revisit on demand signal — `newgate.are` vnum-100/101 collision invalidates original `DoRings` strategy; poly-capable rewrite when revisited).
 

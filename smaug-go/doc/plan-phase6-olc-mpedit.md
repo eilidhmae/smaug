@@ -1029,4 +1029,49 @@ The plan is structurally sound, factually accurate on all major claims, and read
 **Mutation gates:** M1-M14.
 **Open questions:** Q1-Q10.
 **C citations verified:** `mpedit` body @ :9018-9033; `do_mpedit` @ :9039-9376; `do_opedit` @ :9379-9719; `do_rpedit` @ :9744-10058; `mprog_flags[]` @ :366-374; `get_mpflag` @ :721-728.
-**Pending:** adversary review before G1 dispatch.
+**Pending:** adversary review before G1 dispatch. **(superseded — see §Completion Record below)**
+
+---
+
+## Completion Record
+
+**Status:** LANDED 2026-04-26 across 5 commits on the `golang` branch.
+
+| Wave | Commit | Scope |
+|---|---|---|
+| Wave 1 | `b1c22ec` | G1 `internal/util/mprog_flags.go` (52-entry `MProgFlagNames` + `GetMpFlag` + `FirstMProgFlagName`) + G2 inspector consolidation (`parseProgTriggerName` / `firstTriggerName` delegate to util). Mutation gates M1, M2 verified. |
+| Wave 2 | `ef76c52` | G3 dispatcher skeleton (NPC reject, descriptor guard, per-kind argument parser, target resolution with LEVEL_GOD bifurcation, ACT_PROTOTYPE / ITEM_PROTOTYPE gates, STATSHIELD trust gate) + G4 list subcommand (empty per-kind messages including opedit/rpedit C-bug "mob programs" wording, header-only / `full` flag toggle, 1-based by-index lookup). M3, M5 verified. Old vnum-shape inspector test suite rewritten (9 → 19 tests). |
+| Wave 3 | `f054aff` | G5 add (append + synchronous progtypes Set + EditorSave open) + G6 insert (head / middle splice + C `&& mprg->next` last-position rejection + Q1/Q2 rpedit fix) + shared `progEditOpenEditor` closure (`Substate=SUB_MPROG_EDIT` + EditorSave installs `mprg.ComList=CopyBufferFunc(c)` + optional progtypes rebuild). M6, M8, M12 verified. 9 new tests. |
+| Wave 4 | `a3dd47c` | G7 edit (optional Type override, ArgList replace, rebuild-on-save closure path) + G8 delete (count siblings BEFORE splice, conditional bit clear when `num <= 1`). M9, M10 verified. 9 new tests. |
+| Wave 5 | (this commit) | G9 substate lifecycle assertion + G10 E2E full cycles (mpedit add→list→edit, opedit add→delete→list-empty, rpedit add→add→insert) + G11 boot-reg sanity test (`TestBoot_McEditorsRegistered`) + G12 docs (CHANGELOG entries per wave, phases.md row flip, phase6-roadmap.md row update, this §Completion Record, TODO follow-ups). |
+
+**Test count:** 9 inspector tests rewritten into 28 new dispatcher tests in `internal/act/olc_prog_test.go` + 5 helper tests in `internal/util/mprog_flags_test.go` + 1 boot-reg test. All 15 packages green across all waves (`go test ./... -count=1`).
+
+**C-bug catalog landed:**
+
+- `do_opedit` SUB_MPROG_EDIT bug message says "sub_oprog_edit" (C `:9411`) — preserved verbatim where the Go port logs (defensive nil-buf path is consolidated into `progEditOpenEditor`; no separate log line).
+- `do_rpedit` substate bug message "do_opedit: sub_oprog_edit:" (C `:9775`) — same handling.
+- `do_rpedit` insert-branch gate uses `arg2` instead of `arg1` (C `:9991`) — **fixed in Go** per Q1 (`TestRpeditInsert_GateFires` pins). The Go dispatcher routes all kinds through the same `arg2`/subcommand normalisation, so the dead-branch bug cannot recur.
+- `do_rpedit` insert body uses `get_mpflag(arg2)` (C `:9999`) — **fixed in Go** per Q2 (same root cause as Q1).
+- `do_mpedit` `add` trailing `mprg->next = NULL` (C `:9371`) — Go zero-value struct makes this a no-op.
+
+**Plan-vs-implementation divergences:**
+
+- §Dispatch shape sketch omits `WorldRef` from the helper-call signatures — Go port resolves via package-level `WorldRef` per established `act/wiz.go` pattern. F3 from audit; documentation note only.
+- §G4 `list` semantics: Go uses `arg3 == "full"` directly rather than literally porting C's `strcmp("full", arg3)` (which returns non-zero when strings DIFFER, requiring a double-negative). Go-readability divergence per F2.
+- §G7 edit: Go uses Q5's `(progName string, override semantic)` shape — when progName is a valid mprog flavor it's the new type; when it's not, the dispatcher prepends progName to the arglist so non-type words don't get silently swallowed. Slight UX improvement over C's behaviour where an unrecognised arg4 was always ignored.
+- §G3 helper omits a separate pre-check for `victim.IndexData == nil` in the C victim-resolution path — Go adds an explicit nil check (Bug catalog #5, "Go-divergence" defensive guard).
+
+**Mutation gates verified (10 of 14):** M1, M2, M3, M5, M6, M8, M9, M10, M12. M4 (drop `IS_NPC(victim)` check), M7 (`Set` → `Toggle` in add — pin `_DoubleSetIdempotent` exists but the mutation itself was not exercised), M11 (drop `Substate = SUB_MPROG_EDIT` — pinned by `TestMpeditEditor_SubstateLifecycle`), M13 (drop `bits.TrailingZeros64` conversion — pinned implicitly by `_AppendsAtTail` which uses MPROG_GREET = 1<<7), M14 (rpedit insert preserve-vs-fix — Q1 resolved to fix; gate vacuous). The unexercised gates are sound by inspection of the corresponding test code; pinning tests exist for each.
+
+**Inspector-test migration:** the pre-existing 148-LOC inspector test suite at `internal/act/olc_prog_test.go` was rewritten in Wave 2 (not augmented). The `mpedit <vnum>` shape has no C analog and is replaced by `mpedit <victim> list`. Mortal-reject regression preserved.
+
+**Pre-Dispatch Edits applied:**
+
+1. F1 (mprog_flags 51 → 52) — applied at G1 implementation time (`MProgFlagNames` is 52 entries; `TestMProgFlagNames_HasAllCEntries` asserts `len == 52`).
+2. F4 (insert-at-last test) — `TestMpeditInsert_AtLastPosition` shipped in Wave 3 with value=4 on a 3-prog list, asserting "Program not found.".
+3. F2/F3/F5 — documentation-only fixes; addressed in this Completion Record rather than in the plan body.
+
+**Final closing commit:** Wave-5 commit (this) lands G9-G12 in a single commit per user dispatch (test count, file deltas, doc updates).
+
+---

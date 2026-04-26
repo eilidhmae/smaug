@@ -174,11 +174,11 @@ Each entry: scope description + ordering rationale + dependencies + proposed pla
 - **Dependencies:** No external. Blocks *nothing* — the flat `oset` / `mset` / `rset` commands (Phase 4b) remain. This is pure builder UX improvement.
 - **Ordering:** Parallel to overland/housing. Ship all three editors together or interleave; they share the nanny-dispatch pattern.
 
-#### Editable mudprog editors — `plan-phase6-olc-mpedit.md`
+#### Editable mudprog editors — `plan-phase6-olc-mpedit.md` — **LANDED 2026-04-26**
 
-- **Scope:** Currently `mpedit` / `opedit` / `rpedit` are read-only inspectors (Phase 5 Tier 4). Extend to full editing (add/remove/reorder prog blocks, editor-callback for prog body).
-- **Dependencies:** `EditorSave` callback (shipped). Interactive-OLC scaffolding (above).
-- **Ordering:** After Interactive OLC substates land; they share infrastructure.
+- **Status:** LANDED 2026-04-26 across 5 waves. Closes Phase-6 Wave-D's interactive-OLC stripe.
+- **Scope shipped:** `mpedit` / `opedit` / `rpedit` accept the C-faithful `<victim> <command> [number] <program> <value>` shape with full add/delete/insert/edit/list arms; EditorSave-callback integration (no `CON_MPEDIT` substate per design); Q1/Q2 rpedit insert C-bug fix applied; 52-entry `MProgFlagNames` table mirrors C `mprog_flags[]`; `progEditOpenEditor` shared closure handles Tier-12 `/s` round-trip with optional progtypes-bitmask rebuild on edit. A1-A24 covered, M1-M14 mutation gates verified.
+- **Plan:** `smaug-go/doc/plan-phase6-olc-mpedit.md` — see §Completion Record for per-wave commit hashes.
 
 #### `foldarea` — `plan-phase6-foldarea.md`
 
