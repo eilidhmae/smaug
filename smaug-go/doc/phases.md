@@ -277,9 +277,10 @@ This document defines all phases of the SMAUG C-to-Go port.
 | `plan-phase6-housing.md` | audited 2026-04-19 (CONCERNS, 5 corrections applied) |
 | `plan-phase6-overland-loader.md` | audited 2026-04-19 (PASS-with-notes, 2 corrections applied) |
 | `plan-phase6-overland-builder.md` | audited 2026-04-19 (PASS-with-notes, 5 corrections applied) — blocked on overland-loader |
+| `plan-phase6-olc-mpedit.md` | authored 2026-04-26; audited 2026-04-26 (PASS-with-CONCERNS, 5 corrections applied — mprog_flags 51→52 + last-position insert test + 3 cosmetic) |
 
 **Deferred:** `plan-phase6-marriage.md` — human decision 2026-04-19 (park; revisit on demand signal — `newgate.are` vnum-100/101 collision invalidates original `DoRings` strategy; poly-capable rewrite when revisited).
 
-**Unauthored:** `plan-phase6-olc-mpedit.md` (UNBLOCKED 2026-04-22 by medit landing — ready to author), `plan-phase6-dragonflight.md` (hard-blocked on overland-loader), `plan-phase6-deity-prayer.md` (Wave 6 — `src/deity.c` is 1695 LOC, scope narrowing needed), `plan-phase6-foldarea.md` (deferred by policy).
+**Unauthored:** `plan-phase6-dragonflight.md` (hard-blocked on overland-loader), `plan-phase6-deity-prayer.md` (Wave 6 — `src/deity.c` is 1695 LOC, scope narrowing needed), `plan-phase6-foldarea.md` (deferred by policy).
 
 See `phase6-roadmap.md` for the full candidate inventory with per-system C LOC, dependencies, and wave-based execution ordering. `TODO.md` tracks small follow-up items (deferred mudprog ifchecks, archery follow-ups, morphset G4a/G4b split, etc.).

@@ -368,7 +368,7 @@ Follow-ups queued from plan-dammessage-gaps.md:
 - [ ] **Interactive `CON_REDIT` substate** — `plan-phase6-olc-redit.md` drafted + audited 2026-04-18 via `phase6-olc-redit` + `audit-olc-redit` lineages. 13 groups, 18 criteria, PASS with minor CONCERNS. First of three OLC plans; proves nanny-dispatch pattern for oedit/medit to inherit. OlcData on DescriptorData.
 - [ ] **Interactive `CON_OEDITING` substate** — `plan-phase6-olc-oedit.md` to draft. Depends on redit nanny-dispatch pattern.
 - [ ] **Interactive `CON_MEDITING` substate** — `plan-phase6-olc-medit.md` to draft. Depends on redit pattern.
-- [ ] **Editable mudprog editors** (currently inspector-only) — `plan-phase6-olc-mpedit.md` to draft. Depends on interactive OLC substates.
+- [ ] **Editable mudprog editors** (currently inspector-only) — `plan-phase6-olc-mpedit.md` **authored + audited 2026-04-26** (PASS-with-CONCERNS, 5 corrections applied: mprog_flags 51→52 entries, `TestMpeditInsert_AtLastPosition` added, 3 cosmetic notes). 12 groups (G1-G12), 24 acceptance criteria, 14 mutation gates, 10 open questions. Locked design: NO `CON_MPEDIT` substate (uses Tier-12 `EditorSave` closure directly — C is stateless). Argument shape switches from inspector vnum-form to C-faithful `mpedit <victim> <command> [number] <program> <value>`; rpedit insert C-bug fixed in Go (Q1/Q2). Ready to dispatch. Depends on interactive OLC substates (redit/oedit/medit all LANDED).
 - [ ] `foldarea` — area vnum repack (low-reward, high-risk; defer pending explicit builder demand).
 
 ### Content
