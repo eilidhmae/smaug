@@ -9,63 +9,11 @@ import (
 	"github.com/eilidhmae/smaug/internal/util"
 )
 
-// triggerBitFromName maps a trigger name to its MPROG_* bit mask.
-// Covers the common mob/obj/room prog triggers. Names match the C token used
-// in .are files (uppercase no underscores accepted too).
-var triggerBitFromName = map[string]int64{
-	"act":       types.MPROG_ACT,
-	"speech":    types.MPROG_SPEECH,
-	"rand":      types.MPROG_RAND,
-	"fight":     types.MPROG_FIGHT,
-	"death":     types.MPROG_DEATH,
-	"hitprcnt":  types.MPROG_HITPRCNT,
-	"entry":     types.MPROG_ENTRY,
-	"greet":     types.MPROG_GREET,
-	"all_greet": types.MPROG_ALL_GREET,
-	"allgreet":  types.MPROG_ALL_GREET,
-	"give":      types.MPROG_GIVE,
-	"bribe":     types.MPROG_BRIBE,
-	"hour":      types.MPROG_HOUR,
-	"time":      types.MPROG_TIME,
-	"wear":      types.MPROG_WEAR,
-	"remove":    types.MPROG_REMOVE,
-	"sac":       types.MPROG_SAC,
-	"look":      types.MPROG_LOOK,
-	"exa":       types.MPROG_EXA,
-	"examine":   types.MPROG_EXA,
-	"zap":       types.MPROG_ZAP,
-	"get":       types.MPROG_GET,
-	"drop":      types.MPROG_DROP,
-	"damage":    types.MPROG_DAMAGE,
-	"repair":    types.MPROG_REPAIR,
-	"randiw":    types.MPROG_RANDIW,
-	"speechiw":  types.MPROG_SPEECHIW,
-	"pull":      types.MPROG_PULL,
-	"push":      types.MPROG_PUSH,
-	"sleep":     types.MPROG_SLEEP,
-	"rest":      types.MPROG_REST,
-	"leave":     types.MPROG_LEAVE,
-	"script":    types.MPROG_SCRIPT,
-	"use":       types.MPROG_USE,
-	"login":    types.MPROG_LOGIN,
-	"void":     types.MPROG_VOID,
-	"tell":     types.MPROG_TELL,
-	"sell":     types.MPROG_SELL,
-	"imminfo":  types.MPROG_IMMINFO,
-	"cmd":      types.MPROG_CMD,
-	"enter":    types.MPROG_ENTER,
-}
-
+// parseProgTriggerName delegates to util.GetMpFlag (single source of truth
+// for the mprog keyword table). Kept as a thin wrapper for backward compat
+// with inspector callers.
 func parseProgTriggerName(s string) (int64, bool) {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if s == "" {
-		return 0, false
-	}
-	// Allow the trailing "_prog" suffix (common in .are files).
-	s = strings.TrimSuffix(s, "_prog")
-	s = strings.TrimSuffix(s, "prog")
-	v, ok := triggerBitFromName[s]
-	return v, ok
+	return util.GetMpFlag(s)
 }
 
 // showProg prints a mudprog in a human-readable block.
@@ -198,55 +146,11 @@ func lookupProgs(vnum int, kind string) ([]*types.MProgData, string, bool) {
 }
 
 // firstTriggerName returns a readable name for the first bit set in mask.
+// Delegates to util.FirstMProgFlagName (single source of truth) and falls
+// back to a hex rendering when no known bit is set.
 func firstTriggerName(mask int64) string {
-	// Sorted list of (name, bit) pairs so the output is deterministic.
-	ordered := []struct {
-		name string
-		bit  int64
-	}{
-		{"act", types.MPROG_ACT},
-		{"speech", types.MPROG_SPEECH},
-		{"rand", types.MPROG_RAND},
-		{"fight", types.MPROG_FIGHT},
-		{"death", types.MPROG_DEATH},
-		{"hitprcnt", types.MPROG_HITPRCNT},
-		{"entry", types.MPROG_ENTRY},
-		{"greet", types.MPROG_GREET},
-		{"all_greet", types.MPROG_ALL_GREET},
-		{"give", types.MPROG_GIVE},
-		{"bribe", types.MPROG_BRIBE},
-		{"hour", types.MPROG_HOUR},
-		{"time", types.MPROG_TIME},
-		{"wear", types.MPROG_WEAR},
-		{"remove", types.MPROG_REMOVE},
-		{"sac", types.MPROG_SAC},
-		{"look", types.MPROG_LOOK},
-		{"exa", types.MPROG_EXA},
-		{"zap", types.MPROG_ZAP},
-		{"get", types.MPROG_GET},
-		{"drop", types.MPROG_DROP},
-		{"damage", types.MPROG_DAMAGE},
-		{"repair", types.MPROG_REPAIR},
-		{"randiw", types.MPROG_RANDIW},
-		{"speechiw", types.MPROG_SPEECHIW},
-		{"pull", types.MPROG_PULL},
-		{"push", types.MPROG_PUSH},
-		{"sleep", types.MPROG_SLEEP},
-		{"rest", types.MPROG_REST},
-		{"leave", types.MPROG_LEAVE},
-		{"script", types.MPROG_SCRIPT},
-		{"use", types.MPROG_USE},
-		{"login", types.MPROG_LOGIN},
-		{"void", types.MPROG_VOID},
-		{"tell", types.MPROG_TELL},
-		{"sell", types.MPROG_SELL},
-		{"imminfo", types.MPROG_IMMINFO},
-		{"cmd", types.MPROG_CMD},
-	}
-	for _, e := range ordered {
-		if mask&e.bit != 0 {
-			return e.name
-		}
+	if name := util.FirstMProgFlagName(mask); name != "" {
+		return name
 	}
 	return fmt.Sprintf("0x%x", mask)
 }
