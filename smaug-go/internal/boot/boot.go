@@ -779,6 +779,8 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "olist", DoFun: act.DoOlist, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "mlist", DoFun: act.DoMlist, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "savearea", DoFun: act.DoSaveArea, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "foldarea", DoFun: act.DoFoldarea, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
+	reg.Register(&command.Command{Name: "unfoldarea", DoFun: act.DoUnfoldarea, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "mset", DoFun: act.DoMset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "oset", DoFun: act.DoOset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})
 	reg.Register(&command.Command{Name: "rset", DoFun: act.DoRset, Position: types.POS_DEAD, Level: types.LEVEL_IMMORTAL})

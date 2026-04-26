@@ -134,6 +134,39 @@ func TestBoot_McEditorsRegistered(t *testing.T) {
 	}
 }
 
+// TestBoot_FoldareaRegistered pins foldarea/unfoldarea registration at
+// LEVEL_IMMORTAL with POS_DEAD. Plan plan-phase6-foldarea.md §G6 / §A11.
+func TestBoot_FoldareaRegistered(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	const maxTrust = 65535
+	for _, name := range []string{"foldarea", "unfoldarea"} {
+		c := reg.Find(name, maxTrust)
+		if c == nil {
+			t.Errorf("expected %q to be registered", name)
+			continue
+		}
+		if c.DoFun == nil {
+			t.Errorf("%q.DoFun must be non-nil", name)
+		}
+		if c.Level != types.LEVEL_IMMORTAL {
+			t.Errorf("%q level: got %d, want LEVEL_IMMORTAL (%d)", name, c.Level, types.LEVEL_IMMORTAL)
+		}
+		if c.Position != types.POS_DEAD {
+			t.Errorf("%q position: got %d, want POS_DEAD (%d)", name, c.Position, types.POS_DEAD)
+		}
+	}
+	// Trust gate: a low-trust char should not see foldarea via Find.
+	if c := reg.Find("foldarea", 0); c != nil {
+		t.Errorf("foldarea must be hidden from trust=0; got %v", c)
+	}
+}
+
 // TestBoot_ClanOfficerRegistered pins induct/outcast/bestow command registration.
 // induct and outcast carry Level 0 (authority is in-command via isClanOfficer);
 // bestow is LEVEL_IMMORTAL. See plan-phase6-clan-officer.md §D5.
