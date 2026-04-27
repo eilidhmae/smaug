@@ -285,4 +285,6 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Landed (foldarea / `.bak` safety net):** `plan-phase6-foldarea.md` LANDED 2026-04-26 (Wave 1 `f96f114`, Wave 2 `bb81aa8`, Wave 3 `13e2cd9`) — `foldarea <filename>` saves by name with `.bak` rotation; `unfoldarea` ships scoped DOWN to a "use hotboot" guidance message because the area loader is not re-entrant. See plan §Completion Record for waves + mutation-gate disposition.
 
+**Landed (quickwins — pulseSave / DoBlank / worldPcLookup / do_pcrename):** `plan-phase6-quickwins-blank-pcrename.md` LANDED 2026-04-26 (Wave 1 `019c6ed`, Wave 2 `d48bf0e`, Wave 3 `37686f5`, Wave 4+5 `927e0dc`) — four bundled follow-ups: pulseSave init-bug fix, `blank` toggle command, `worldPcLookup` seam + `medit <playername>` PC-by-name, and `do_pcrename` port (in-memory + on-disk pfile rename via `persist.RenamePlayerFile`) wired into medit MEDIT_NAME PC arm. Unblocks A31 from medit Wave 5.
+
 See `phase6-roadmap.md` for the full candidate inventory with per-system C LOC, dependencies, and wave-based execution ordering. `TODO.md` tracks small follow-up items (deferred mudprog ifchecks, archery follow-ups, morphset G4a/G4b split, etc.).
