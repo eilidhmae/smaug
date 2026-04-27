@@ -1596,3 +1596,16 @@ func TestEnterGame_MailGreetingShown(t *testing.T) {
 		t.Errorf("expected mailbox greeting; got %q", out)
 	}
 }
+
+// TestNewGameLoop_PulseSaveInitialized pins D1 — pulseSave field must
+// be initialized to types.PULSE_SAVE in NewGameLoop. Pre-fix the field
+// was zero-valued, so the autosave decrement-to-zero fired on the very
+// first pulse after boot instead of after PULSE_SAVE ticks.
+//
+// Plan: plan-phase6-quickwins-blank-pcrename.md §G1 / §A1.
+func TestNewGameLoop_PulseSaveInitialized(t *testing.T) {
+	g := newTestLoop()
+	if g.pulseSave != types.PULSE_SAVE {
+		t.Errorf("pulseSave = %d; want %d (types.PULSE_SAVE)", g.pulseSave, types.PULSE_SAVE)
+	}
+}

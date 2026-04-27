@@ -89,6 +89,7 @@ func NewGameLoop(w *world.World, cmdReg *command.Registry, incoming chan *types.
 		pulseViolence:  types.PULSE_VIOLENCE,
 		pulseMobile:    types.PULSE_MOBILE,
 		pulseTick:      types.PULSE_TICK,
+		pulseSave:      types.PULSE_SAVE,
 		pulseAuction:   types.PULSE_AUCTION,
 		internalCtx:    ctx,
 		internalCancel: cancel,
