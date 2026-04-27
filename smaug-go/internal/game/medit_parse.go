@@ -30,6 +30,34 @@ var worldMobLookup = func(vnum int) *types.MobIndexData {
 	return worldRef.GetMobIndex(vnum)
 }
 
+// worldPcLookup resolves a connected-PC name to its *CharData by walking
+// world.Descriptors. Mirrors C get_char_world() (handler.c:1894-) for the
+// PC subset only — NPCs use worldMobLookup. Returns the first descriptor
+// whose Connected == CON_PLAYING and whose Character.Name matches case-
+// insensitively. Linkdead (Connected != CON_PLAYING) and nil-Character
+// descriptors are skipped.
+//
+// Tests can override directly without standing up a full world.
+//
+// Plan: plan-phase6-quickwins-blank-pcrename.md §D3 / §G3.
+var worldPcLookup = func(name string) *types.CharData {
+	if worldRef == nil {
+		return nil
+	}
+	for _, d := range worldRef.Descriptors {
+		if d == nil || d.Character == nil {
+			continue
+		}
+		if d.Connected != int(types.CON_PLAYING) {
+			continue
+		}
+		if strings.EqualFold(d.Character.Name, name) {
+			return d.Character
+		}
+	}
+	return nil
+}
+
 // meditParse is the top-level CON_MEDIT dispatcher. Keyed on d.Olc.Mode,
 // it mutates the victim (an NPC prototype OR a connected PC) and either
 // returns (stay in same mode) or transitions to a new mode + redisplays

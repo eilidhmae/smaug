@@ -260,3 +260,94 @@ func TestLoop_ConMeditDispatchesToMeditParse(t *testing.T) {
 		t.Errorf("Olc should be nil after Q; got %+v (loop arm likely routed to nanny)", d.Olc)
 	}
 }
+
+// -------------- worldPcLookup (plan §G3) --------------
+
+func TestWorldPcLookup_FindsConnectedPc(t *testing.T) {
+	w := newWorldStubForMedit()
+	prev := worldRef
+	worldRef = w
+	defer func() { worldRef = prev }()
+
+	pc := &types.CharData{Name: "Eilidh"}
+	d := &types.DescriptorData{Connected: int(types.CON_PLAYING), Character: pc}
+	w.Descriptors = append(w.Descriptors, d)
+
+	got := worldPcLookup("Eilidh")
+	if got != pc {
+		t.Errorf("worldPcLookup(Eilidh) = %v, want %v", got, pc)
+	}
+}
+
+func TestWorldPcLookup_IgnoresLinkdead(t *testing.T) {
+	w := newWorldStubForMedit()
+	prev := worldRef
+	worldRef = w
+	defer func() { worldRef = prev }()
+
+	pc := &types.CharData{Name: "Eilidh"}
+	// Connected != CON_PLAYING: simulates linkdead / mid-login state.
+	d := &types.DescriptorData{Connected: int(types.CON_GET_NAME), Character: pc}
+	w.Descriptors = append(w.Descriptors, d)
+
+	if got := worldPcLookup("Eilidh"); got != nil {
+		t.Errorf("linkdead descriptor should not match; got %v", got)
+	}
+}
+
+func TestWorldPcLookup_IgnoresNilCharacter(t *testing.T) {
+	w := newWorldStubForMedit()
+	prev := worldRef
+	worldRef = w
+	defer func() { worldRef = prev }()
+
+	d := &types.DescriptorData{Connected: int(types.CON_PLAYING), Character: nil}
+	w.Descriptors = append(w.Descriptors, d)
+
+	if got := worldPcLookup("Eilidh"); got != nil {
+		t.Errorf("nil-Character descriptor should not match; got %v", got)
+	}
+}
+
+func TestWorldPcLookup_CaseInsensitive(t *testing.T) {
+	w := newWorldStubForMedit()
+	prev := worldRef
+	worldRef = w
+	defer func() { worldRef = prev }()
+
+	pc := &types.CharData{Name: "Eilidh"}
+	d := &types.DescriptorData{Connected: int(types.CON_PLAYING), Character: pc}
+	w.Descriptors = append(w.Descriptors, d)
+
+	if got := worldPcLookup("eilidh"); got != pc {
+		t.Errorf("case-insensitive lookup failed; got %v", got)
+	}
+	if got := worldPcLookup("EILIDH"); got != pc {
+		t.Errorf("case-insensitive lookup failed; got %v", got)
+	}
+}
+
+func TestWorldPcLookup_NoMatch(t *testing.T) {
+	w := newWorldStubForMedit()
+	prev := worldRef
+	worldRef = w
+	defer func() { worldRef = prev }()
+
+	pc := &types.CharData{Name: "Eilidh"}
+	d := &types.DescriptorData{Connected: int(types.CON_PLAYING), Character: pc}
+	w.Descriptors = append(w.Descriptors, d)
+
+	if got := worldPcLookup("Bob"); got != nil {
+		t.Errorf("non-matching name should return nil; got %v", got)
+	}
+}
+
+func TestWorldPcLookup_NilWorld(t *testing.T) {
+	prev := worldRef
+	worldRef = nil
+	defer func() { worldRef = prev }()
+
+	if got := worldPcLookup("Eilidh"); got != nil {
+		t.Errorf("nil worldRef should return nil; got %v", got)
+	}
+}
