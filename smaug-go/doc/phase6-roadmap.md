@@ -53,7 +53,8 @@ All C-LOC counts verified 2026-04-18 via `wc -l src/<file>.c`. Summary header:
 | Marriage | 362 | `src/marry.c` | Game systems | Small; ifdef MARRIAGE |
 | Interactive OLC `CON_OEDIT` / `CON_MEDIT` / `CON_REDIT` | 2160 + 2280 + 1036 = 5476 | `src/ooedit.c` + `src/omedit.c` + `src/oredit.c` | OLC | Largest per-component |
 | Editable mudprog editors | (part of OLC) | `src/mpxset.c` et al. | OLC | Small |
-| Area vnum repack (`foldarea`) | — (in `src/renumber.c`) | `src/renumber.c` | OLC | High-risk |
+| `foldarea` / `unfoldarea` + `.bak` rotation for `savearea` | ~50 C LOC + reuse Phase-3 serializer | `src/build.c:7346,8036,8055` | OLC | **LANDED 2026-04-26** |
+| Area vnum repack (`renumber_area`) | — | `src/renumber.c` | OLC | High-risk; deferred (was conflated with `foldarea` in earlier roadmap) |
 | Full `do_auction` state machine | ~400 C LOC | `src/act_obj.c` + `src/update.c` | Content | Bounded |
 | Channels `music` / `newbiechat` / `racetalk` / `wartalk` / `counciltalk` / `guildtalk` | ~50 C LOC each | `src/act_comm.c` | Content | Trivial (template exists) |
 | Clan commands (`promote` / `demote` / `induct` / `outcast` / `bestow`) | ~300 C LOC total | `src/clans.c` | Content | Small |
@@ -180,10 +181,10 @@ Each entry: scope description + ordering rationale + dependencies + proposed pla
 - **Scope shipped:** `mpedit` / `opedit` / `rpedit` accept the C-faithful `<victim> <command> [number] <program> <value>` shape with full add/delete/insert/edit/list arms; EditorSave-callback integration (no `CON_MPEDIT` substate per design); Q1/Q2 rpedit insert C-bug fix applied; 52-entry `MProgFlagNames` table mirrors C `mprog_flags[]`; `progEditOpenEditor` shared closure handles Tier-12 `/s` round-trip with optional progtypes-bitmask rebuild on edit. A1-A24 covered, M1-M14 mutation gates verified.
 - **Plan:** `smaug-go/doc/plan-phase6-olc-mpedit.md` — see §Completion Record for per-wave commit hashes.
 
-#### `foldarea` — `plan-phase6-foldarea.md`
+#### `foldarea` / `unfoldarea` — `plan-phase6-foldarea.md` — **LANDED 2026-04-26**
 
-- **Scope:** Vnum repack tool. Low-reward (one-time builder utility), high-risk (rewrites reset/room/mob/obj vnums area-wide). Not porting unless builders request it.
-- **Ordering:** Deprioritize; revisit if a builder explicitly asks.
+- **Scope shipped:** `foldarea <filename>` saves a named area to disk via the shared `writeAreaToDisk` helper (which both `savearea` and `foldarea` use). `.bak` rotation added at the same seam — the live file is rotated to `<file>.bak` before each save, mirroring C `fold_area` at `src/build.c:7369-7370`. `unfoldarea` ships scoped DOWN to a "use hotboot" guidance message because `internal/persist/area.go:48-82`'s `loadAreaFile` is not re-entrant. Boot regs at `LEVEL_IMMORTAL` / `POS_DEAD`. **Note:** the original roadmap entry conflated `foldarea` (save-by-filename) with vnum repacking (`renumber_area` in `src/renumber.c`) — they are separate concerns; vnum repack remains deferred.
+- **Plan:** `smaug-go/doc/plan-phase6-foldarea.md` — see §Completion Record for per-wave commit hashes.
 
 ### Content gaps (carried over from Phase 5 TODO.md)
 
@@ -356,7 +357,7 @@ Summary table for the orchestrator dispatching future Phase 6 managers.
 3. **Archery prerequisites:** does Go need `WEAR_MISSILE_WIELD` as a new equipment slot, or can it reuse `WEAR_WIELD` with an item flag? C uses a distinct slot. Recommendation: match C.
 4. **Marriage level-10 gate:** C has commented-out code; port it (uncommented) or omit? Recommendation: omit (unreachable C code is unreachable intent).
 5. **Planes priority:** is this feature worth porting at all? It's mostly cosmetic (named grouping of rooms) and the C source shows very little actual usage. Can defer indefinitely.
-6. **`foldarea`:** is there a builder who actually wants this? Recommend waiting for explicit demand.
+6. **`foldarea`:** RESOLVED 2026-04-26 — landed as save-by-filename + `.bak` rotation (see §`foldarea` / `unfoldarea`). Vnum repack (`renumber_area`) remains deferred separately.
 7. **Starmap constellations:** the C data table has FIXED constellation positions (static arrays in `src/starmap.c:59-79`). Go port should preserve them verbatim. Confirm policy of "no gameplay invented" — this table IS the gameplay.
 
 ---

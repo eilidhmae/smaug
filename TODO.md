@@ -377,7 +377,10 @@ Follow-ups queued from plan-dammessage-gaps.md:
 - [ ] **Interactive `CON_OEDITING` substate** — `plan-phase6-olc-oedit.md` to draft. Depends on redit nanny-dispatch pattern.
 - [ ] **Interactive `CON_MEDITING` substate** — `plan-phase6-olc-medit.md` to draft. Depends on redit pattern.
 - [ ] **Editable mudprog editors** (currently inspector-only) — `plan-phase6-olc-mpedit.md` **authored + audited 2026-04-26** (PASS-with-CONCERNS, 5 corrections applied: mprog_flags 51→52 entries, `TestMpeditInsert_AtLastPosition` added, 3 cosmetic notes). 12 groups (G1-G12), 24 acceptance criteria, 14 mutation gates, 10 open questions. Locked design: NO `CON_MPEDIT` substate (uses Tier-12 `EditorSave` closure directly — C is stateless). Argument shape switches from inspector vnum-form to C-faithful `mpedit <victim> <command> [number] <program> <value>`; rpedit insert C-bug fixed in Go (Q1/Q2). Ready to dispatch. Depends on interactive OLC substates (redit/oedit/medit all LANDED).
-- [ ] `foldarea` — area vnum repack (low-reward, high-risk; defer pending explicit builder demand).
+- [x] ~~`foldarea` / `unfoldarea` + `.bak` rotation for `savearea`~~ — **LANDED 2026-04-26** (`plan-phase6-foldarea.md`). Three waves: extract shared save helper (`f96f114`), add `.bak` rotation (`bb81aa8`), ship `DoFoldarea` + `DoUnfoldarea`-as-guidance + boot regs (`13e2cd9`). The original TODO description ("area vnum repack") was mislabeled — vnum repack lives in `src/renumber.c` and is a separate concern (now captured below).
+- [ ] `installarea` — build/live area-list split decision (C maintains `first_build_area` vs `first_area`; Go has one `world.World.Areas`). Decide before porting `do_installarea` at `src/build.c:8108+`.
+- [ ] Safe post-boot area reload — `DoUnfoldarea` currently prints guidance only because `internal/persist/area.go:48-82`'s `loadAreaFile` unconditionally appends to `w.Areas` + double-registers index entries. Required work: per-area index-entry tracking, per-area unload, idempotent re-load. Then enable the real reload path.
+- [ ] Vnum repack (`renumber_area`) — out of scope of `plan-phase6-foldarea.md`; lives in `src/renumber.c`. Low-reward / high-risk; defer pending explicit builder demand.
 
 ### Content
 

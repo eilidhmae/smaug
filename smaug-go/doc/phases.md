@@ -281,6 +281,8 @@ This document defines all phases of the SMAUG C-to-Go port.
 
 **Deferred:** `plan-phase6-marriage.md` — human decision 2026-04-19 (park; revisit on demand signal — `newgate.are` vnum-100/101 collision invalidates original `DoRings` strategy; poly-capable rewrite when revisited).
 
-**Unauthored:** `plan-phase6-dragonflight.md` (hard-blocked on overland-loader), `plan-phase6-deity-prayer.md` (Wave 6 — `src/deity.c` is 1695 LOC, scope narrowing needed), `plan-phase6-foldarea.md` (deferred by policy).
+**Unauthored:** `plan-phase6-dragonflight.md` (hard-blocked on overland-loader), `plan-phase6-deity-prayer.md` (Wave 6 — `src/deity.c` is 1695 LOC, scope narrowing needed).
+
+**Landed (foldarea / `.bak` safety net):** `plan-phase6-foldarea.md` LANDED 2026-04-26 (Wave 1 `f96f114`, Wave 2 `bb81aa8`, Wave 3 `13e2cd9`) — `foldarea <filename>` saves by name with `.bak` rotation; `unfoldarea` ships scoped DOWN to a "use hotboot" guidance message because the area loader is not re-entrant. See plan §Completion Record for waves + mutation-gate disposition.
 
 See `phase6-roadmap.md` for the full candidate inventory with per-system C LOC, dependencies, and wave-based execution ordering. `TODO.md` tracks small follow-up items (deferred mudprog ifchecks, archery follow-ups, morphset G4a/G4b split, etc.).
