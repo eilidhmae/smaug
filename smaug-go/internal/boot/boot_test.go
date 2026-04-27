@@ -167,6 +167,31 @@ func TestBoot_FoldareaRegistered(t *testing.T) {
 	}
 }
 
+// TestBoot_BlankRegistered pins blank command registration at level 0
+// / POS_DEAD. Plan plan-phase6-quickwins-blank-pcrename.md §G2 / §A3.
+func TestBoot_BlankRegistered(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+	reg, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	c := reg.Find("blank", 0)
+	if c == nil {
+		t.Fatalf("expected %q to be registered", "blank")
+	}
+	if c.DoFun == nil {
+		t.Errorf("blank.DoFun must be non-nil")
+	}
+	if c.Level != 0 {
+		t.Errorf("blank level: got %d, want 0", c.Level)
+	}
+	if c.Position != types.POS_DEAD {
+		t.Errorf("blank position: got %d, want POS_DEAD (%d)", c.Position, types.POS_DEAD)
+	}
+}
+
 // TestBoot_ClanOfficerRegistered pins induct/outcast/bestow command registration.
 // induct and outcast carry Level 0 (authority is in-command via isClanOfficer);
 // bestow is LEVEL_IMMORTAL. See plan-phase6-clan-officer.md §D5.

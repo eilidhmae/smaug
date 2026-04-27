@@ -582,6 +582,7 @@ func registerCommands() *command.Registry {
 	reg.Register(&command.Command{Name: "save", DoFun: act.DoSave, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "afk", DoFun: act.DoAfk, Position: types.POS_SLEEPING, Level: 0})
 	reg.Register(&command.Command{Name: "gag", DoFun: act.DoGag, Position: types.POS_DEAD, Level: 0})
+	reg.Register(&command.Command{Name: "blank", DoFun: act.DoBlank, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "title", DoFun: act.DoTitle, Position: types.POS_DEAD, Level: 0})
 	reg.Register(&command.Command{Name: "password", DoFun: act.DoPassword, Position: types.POS_DEAD, Level: 0})
 	// Editor-backed player-config commands. Unblocked by plan-editor-save.md.

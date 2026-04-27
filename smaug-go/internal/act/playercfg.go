@@ -82,6 +82,41 @@ func DoGag(ch *types.CharData, argument string) {
 	ch.Send("Combat messages will be gagged.\n\r")
 }
 
+// DoBlank implements the 'blank' command — a standalone no-arg toggle
+// for PLR_BLANK, which causes the renderer to emit an extra "\n\r"
+// before each prompt (descriptor flush honors the flag, plan-tranche-c.md
+// G6 LANDED 2026-04-18).
+//
+// C divergence: SMAUG embeds blank toggling inside `do_config` at
+// src/act_info.c:5585 (blank branch). The Go port instead ships
+// standalone per-flag toggles (matching DoGag/DoAfk's local precedent)
+// with directional messages. See plan-do-gag.md / plan-tranche-c.md for
+// the divergence rationale.
+//
+// The nil-PCData guard mirrors DoGag at playercfg.go:72-74 for family-
+// pattern consistency: IsNPC() only checks Act.ACT_IS_NPC and does not
+// look at PCData, so a malformed non-NPC with nil PCData would pass
+// IsNPC(). PLR_BLANK lives on ch.Act (not PCData.Flags) so this guard
+// is defense-in-depth rather than crash-blocking, but kept for
+// idiom consistency with the rest of the per-flag toggle family.
+//
+// Plan: plan-phase6-quickwins-blank-pcrename.md §D2 / §G2.
+func DoBlank(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		return
+	}
+	if ch.PCData == nil {
+		return
+	}
+	if ch.Act.IsSet(types.PLR_BLANK) {
+		ch.Act.Remove(types.PLR_BLANK)
+		ch.Send("Blank lines will no longer be inserted before each prompt.\n\r")
+		return
+	}
+	ch.Act.Set(types.PLR_BLANK)
+	ch.Send("Blank lines will be inserted before each prompt.\n\r")
+}
+
 // setTitle is the Go port of C player.c:3112 set_title. If title starts with
 // an alphanumeric character it is prefixed with a space (so titles like "the
 // Wizard" read naturally after the player's name); otherwise the title is

@@ -597,6 +597,72 @@ func TestDoGag_NilPCDataIsNoop(t *testing.T) {
 	}
 }
 
+// -------------- DoBlank (plan-phase6-quickwins-blank-pcrename.md §G2) --------------
+
+func TestDoBlank_TogglesOn(t *testing.T) {
+	ch, client := makeTestChar("Spaced")
+	defer client.Close()
+
+	if ch.Act.IsSet(types.PLR_BLANK) {
+		t.Fatal("PLR_BLANK should start unset")
+	}
+	DoBlank(ch, "")
+	if !ch.Act.IsSet(types.PLR_BLANK) {
+		t.Errorf("PLR_BLANK should be set after toggle")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Blank lines will be inserted before each prompt.") {
+		t.Errorf("expected toggle-on message; got %q", out)
+	}
+}
+
+func TestDoBlank_TogglesOff(t *testing.T) {
+	ch, client := makeTestChar("Crowded")
+	defer client.Close()
+	ch.Act.Set(types.PLR_BLANK)
+
+	DoBlank(ch, "")
+	if ch.Act.IsSet(types.PLR_BLANK) {
+		t.Errorf("PLR_BLANK should be cleared after toggle")
+	}
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Blank lines will no longer be inserted before each prompt.") {
+		t.Errorf("expected toggle-off message; got %q", out)
+	}
+}
+
+func TestDoBlank_NPCIsNoop(t *testing.T) {
+	ch, client := makeTestChar("Mob")
+	defer client.Close()
+	ch.Act.Set(types.ACT_IS_NPC)
+
+	DoBlank(ch, "")
+	// PLR_BLANK and ACT_IS_NPC share the same Act bitvector but different
+	// bit positions, so we can verify the NPC gate by checking no toggle
+	// happened on PLR_BLANK and no output emitted.
+	if ch.Act.IsSet(types.PLR_BLANK) {
+		t.Errorf("NPC DoBlank must not toggle PLR_BLANK")
+	}
+	if out := readOutput(ch, client); out != "" {
+		t.Errorf("NPC DoBlank must emit nothing; got %q", out)
+	}
+}
+
+func TestDoBlank_NilPCDataIsNoop(t *testing.T) {
+	ch, client := makeTestChar("Hollow")
+	defer client.Close()
+	ch.PCData = nil
+
+	// Must not panic and must not toggle.
+	DoBlank(ch, "")
+	if ch.Act.IsSet(types.PLR_BLANK) {
+		t.Errorf("nil-PCData DoBlank must not toggle PLR_BLANK")
+	}
+	if out := readOutput(ch, client); out != "" {
+		t.Errorf("nil-PCData DoBlank must emit nothing; got %q", out)
+	}
+}
+
 // -------------- DoBio --------------
 
 // TestDoBio_SetsSubstateAndEditorSave verifies DoBio installs the
