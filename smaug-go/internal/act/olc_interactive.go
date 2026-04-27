@@ -297,12 +297,42 @@ func DoMedit(ch *types.CharData, argument string) {
 	}
 	vnum, err := strconv.Atoi(vnumArg)
 	if err != nil {
-		// Plan §G14 scope cut: PC-by-name lookup not yet supported
-		// (worldPcLookup seam unland). Distinguish "non-numeric" (likely
-		// a PC name) from "numeric but invalid (vnum<=0)" using the same
-		// err the outer Atoi already produced — re-parsing the same
-		// string would always re-fail the same way (LOW #4).
-		ch.Send("PC editing by name not yet supported; pass an NPC vnum.\n\r")
+		// Plan plan-phase6-quickwins-blank-pcrename.md §D3b: non-numeric
+		// arg → PC-by-name lookup (mirrors C do_omedit's
+		// get_char_world(ch, arg) at omedit.c:180 for the PC subset).
+		// Trust gate: LEVEL_IMMORTAL matches C do_omedit's entry gate
+		// at omedit.c:196 (sysdata.level_modify_proto, default
+		// LEVEL_IMMORTAL). The PC-rename trust comparison vs victim is
+		// enforced separately inside DoPcrename (D4b) via
+		// ch.GetTrust() < victim.GetTrust(). C's additional in-arm gate
+		// at omedit.c:1390 (LEVEL_SUB_IMPLEM) is rolled into the same
+		// pipeline by routing every PC name change through DoPcrename.
+		victim := WorldPcLookup(vnumArg)
+		if victim == nil {
+			ch.Send("No such player connected.\n\r")
+			return
+		}
+		if ch.GetTrust() < types.LEVEL_IMMORTAL {
+			ch.Send("Huh?\n\r")
+			return
+		}
+		if ch.Desc == nil {
+			ch.Send("No descriptor.\n\r")
+			return
+		}
+		if ch.Desc.Connected == int(types.CON_MEDIT) && ch.Desc.Olc != nil {
+			ch.Send("You are already editing a mob. Type Q to exit first.\n\r")
+			return
+		}
+		ch.Desc.Olc = &types.OlcData{
+			Mode:   types.MEDIT_PC_MAIN_MENU,
+			Vnum:   0, // PCs have no prototype vnum
+			Target: victim,
+		}
+		ch.Desc.Connected = int(types.CON_MEDIT)
+		if MeditDispMenuFunc != nil {
+			MeditDispMenuFunc(ch.Desc)
+		}
 		return
 	}
 	if vnum <= 0 {

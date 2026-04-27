@@ -67,10 +67,16 @@ func parseInt(arg string) int {
 }
 
 // meditArmName handles MEDIT_NAME. C omedit.c:1389-1405.
-// For PC with trust > LEVEL_SUB_IMPLEM-1, C invokes do_pcrename to
-// rename the pfile on disk. Go port falls back to direct name assignment
-// with a TODO entry (see TODO-updates.md) because DoPcrename does not
-// yet exist. SmashTilde applied before assignment.
+// For PC victims, route through PcrenameFunc seam (act.DoPcrename) so
+// the pfile is renamed on disk in lock-step with the in-memory rename.
+// The DoMedit PC-arg trust gate (LEVEL_IMMORTAL) and DoPcrename's
+// trust-vs-victim check together replace C's two-tier gate at
+// omedit.c:196 (entry) + omedit.c:1390 (in-arm).
+//
+// NPC path unchanged: direct assignment + IndexData.PlayerName mirror
+// when ACT_PROTOTYPE is set.
+//
+// Plan: plan-phase6-quickwins-blank-pcrename.md §D4c / §G7.
 func meditArmName(d *types.DescriptorData, victim *types.CharData, arg string) {
 	arg = util.SmashTilde(strings.TrimSpace(arg))
 	if arg == "" {
@@ -78,8 +84,19 @@ func meditArmName(d *types.DescriptorData, victim *types.CharData, arg string) {
 		meditFinishArm(d, victim)
 		return
 	}
+	if !victim.IsNPC() {
+		// PC: route through pfile-rename pipeline. Pass the raw old
+		// (victim.Name) and new (arg) names; DoPcrename handles all
+		// validation, lookup, trust checks, and on-disk rename.
+		if PcrenameFunc != nil {
+			PcrenameFunc(d.Character, victim.Name+" "+arg)
+		}
+		olcLog(d, "MOB", "Changed name to %s", arg)
+		meditFinishArm(d, victim)
+		return
+	}
 	victim.Name = arg
-	if victim.IsNPC() && victim.Act.IsSet(types.ACT_PROTOTYPE) && victim.IndexData != nil {
+	if victim.Act.IsSet(types.ACT_PROTOTYPE) && victim.IndexData != nil {
 		victim.IndexData.PlayerName = victim.Name
 	}
 	olcLog(d, "MOB", "Changed name to %s", arg)

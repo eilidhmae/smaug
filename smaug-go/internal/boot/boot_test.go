@@ -167,6 +167,25 @@ func TestBoot_FoldareaRegistered(t *testing.T) {
 	}
 }
 
+// TestBoot_PcrenameSeamsWired pins the D4 boot wirings: RenamePlayerFileFunc
+// (act seam → persist.RenamePlayerFile) + game.PcrenameFunc (game seam →
+// act.DoPcrename). Plan plan-phase6-quickwins-blank-pcrename.md §G8 / §A16.
+func TestBoot_PcrenameSeamsWired(t *testing.T) {
+	_ = os.RemoveAll(filepath.Join(testDataDir, "player"))
+	w := world.New(testDataDir)
+	incoming := makeIncoming()
+	_, _, err := boot.Boot(w, testDataDir, incoming, boot.ProductionOpts())
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if act.RenamePlayerFileFunc == nil {
+		t.Error("act.RenamePlayerFileFunc must be wired after boot")
+	}
+	if game.PcrenameFunc == nil {
+		t.Error("game.PcrenameFunc must be wired after boot")
+	}
+}
+
 // TestBoot_BlankRegistered pins blank command registration at level 0
 // / POS_DEAD. Plan plan-phase6-quickwins-blank-pcrename.md §G2 / §A3.
 func TestBoot_BlankRegistered(t *testing.T) {

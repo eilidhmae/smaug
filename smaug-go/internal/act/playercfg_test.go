@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,6 +13,7 @@ import (
 
 	"github.com/eilidhmae/smaug/internal/command"
 	"github.com/eilidhmae/smaug/internal/handler"
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/world"
 )
@@ -905,5 +908,411 @@ func TestInterpret_PagelenAlias(t *testing.T) {
 	reg.Interpret(ch, "pagelen 40")
 	if ch.PCData.PagerLen != 40 {
 		t.Errorf("after pagelen 40, PagerLen = %d, want 40", ch.PCData.PagerLen)
+	}
+}
+
+// -------------- DoPcrename (plan-phase6-quickwins-blank-pcrename.md §G6) --------------
+
+// pcrenameSetup installs WorldPcLookup, RenamePlayerFileFunc, and
+// SaveFunc test doubles and returns a teardown closure.
+func pcrenameSetup(t *testing.T, victim *types.CharData,
+	renameImpl func(o, n string) error,
+	saveImpl func(*types.CharData),
+) func() {
+	t.Helper()
+	prevLookup := WorldPcLookup
+	prevRename := RenamePlayerFileFunc
+	prevSave := SaveFunc
+	WorldPcLookup = func(name string) *types.CharData {
+		if victim != nil && strings.EqualFold(victim.Name, name) {
+			return victim
+		}
+		return nil
+	}
+	RenamePlayerFileFunc = renameImpl
+	SaveFunc = saveImpl
+	return func() {
+		WorldPcLookup = prevLookup
+		RenamePlayerFileFunc = prevRename
+		SaveFunc = prevSave
+	}
+}
+
+func TestDoPcrename_HappyPath(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	var renameCalls [][2]string
+	saveCalls := 0
+	teardown := pcrenameSetup(t, victim,
+		func(o, n string) error {
+			renameCalls = append(renameCalls, [2]string{o, n})
+			return nil
+		},
+		func(c *types.CharData) {
+			saveCalls++
+			if c != victim {
+				t.Errorf("SaveFunc called with %v, want victim %v", c, victim)
+			}
+		},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Bob")
+	out := readOutput(ch, client)
+
+	if len(renameCalls) != 1 || renameCalls[0] != [2]string{"Eilidh", "Bob"} {
+		t.Errorf("RenamePlayerFileFunc calls = %v; want [[Eilidh Bob]]", renameCalls)
+	}
+	if victim.Name != "Bob" {
+		t.Errorf("victim.Name = %q; want Bob", victim.Name)
+	}
+	if saveCalls != 1 {
+		t.Errorf("SaveFunc calls = %d; want 1", saveCalls)
+	}
+	if !strings.Contains(out, "Character was renamed.") {
+		t.Errorf("expected success message; got %q", out)
+	}
+}
+
+func TestDoPcrename_NPCCallerIsNoop(t *testing.T) {
+	ch, client := makeTestChar("Mob")
+	defer client.Close()
+	ch.Act.Set(types.ACT_IS_NPC)
+
+	called := 0
+	teardown := pcrenameSetup(t, nil,
+		func(o, n string) error { called++; return nil },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Bob")
+	if called != 0 {
+		t.Errorf("NPC caller must not invoke rename; called=%d", called)
+	}
+	if out := readOutput(ch, client); out != "" {
+		t.Errorf("NPC DoPcrename must emit nothing; got %q", out)
+	}
+}
+
+func TestDoPcrename_EmptyArgs(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	teardown := pcrenameSetup(t, nil,
+		func(o, n string) error { return nil },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Syntax: pcrename") {
+		t.Errorf("expected syntax message; got %q", out)
+	}
+}
+
+func TestDoPcrename_VictimNotFound(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	teardown := pcrenameSetup(t, nil, // victim==nil → lookup always returns nil
+		func(o, n string) error { return nil },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Ghost Bob")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "No such player connected.") {
+		t.Errorf("expected not-found message; got %q", out)
+	}
+}
+
+func TestDoPcrename_VictimIsNPC(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	npcVictim := &types.CharData{Name: "Goblin"}
+	npcVictim.Act.Set(types.ACT_IS_NPC)
+	called := 0
+	teardown := pcrenameSetup(t, npcVictim,
+		func(o, n string) error { called++; return nil },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Goblin Bob")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "You can't rename NPCs.") {
+		t.Errorf("expected NPC-victim rejection; got %q", out)
+	}
+	if called != 0 {
+		t.Errorf("rename must not be called for NPC victim; called=%d", called)
+	}
+}
+
+func TestDoPcrename_BelowTrust(t *testing.T) {
+	ch, client := makeTestChar("Lowly")
+	defer client.Close()
+	ch.Trust = 10
+
+	victim := &types.CharData{Name: "Eilidh", Trust: 100, PCData: &types.PCData{}}
+	called := 0
+	teardown := pcrenameSetup(t, victim,
+		func(o, n string) error { called++; return nil },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Bob")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "I don't think they would like that!") {
+		t.Errorf("expected trust rejection; got %q", out)
+	}
+	if called != 0 {
+		t.Errorf("rename must not be called below trust; called=%d", called)
+	}
+	if victim.Name != "Eilidh" {
+		t.Errorf("victim.Name should be unchanged; got %q", victim.Name)
+	}
+}
+
+func TestDoPcrename_SameName(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	called := 0
+	teardown := pcrenameSetup(t, victim,
+		func(o, n string) error { called++; return nil },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Eilidh")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "identical") {
+		t.Errorf("expected same-name rejection; got %q", out)
+	}
+	if called != 0 {
+		t.Errorf("rename must not be called for same-name; called=%d", called)
+	}
+}
+
+func TestDoPcrename_RenameFuncErrInvalidName(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	saveCalls := 0
+	teardown := pcrenameSetup(t, victim,
+		func(o, n string) error { return persist.ErrInvalidName },
+		func(*types.CharData) { saveCalls++ },
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Bob")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Illegal name.") {
+		t.Errorf("expected illegal-name message; got %q", out)
+	}
+	if victim.Name != "Eilidh" {
+		t.Errorf("victim.Name must NOT be updated when rename fails; got %q", victim.Name)
+	}
+	if saveCalls != 0 {
+		t.Errorf("SaveFunc must not be called when rename fails; calls=%d", saveCalls)
+	}
+}
+
+func TestDoPcrename_RenameFuncErrSourceMissing(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	teardown := pcrenameSetup(t, victim,
+		func(o, n string) error { return persist.ErrSourcePfileNotFound },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Bob")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Source pfile not found.") {
+		t.Errorf("expected source-not-found message; got %q", out)
+	}
+}
+
+func TestDoPcrename_RenameFuncErrDestExists(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	teardown := pcrenameSetup(t, victim,
+		func(o, n string) error { return persist.ErrDestPfileExists },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Bob")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "That name already exists.") {
+		t.Errorf("expected dest-exists message; got %q", out)
+	}
+}
+
+func TestDoPcrename_RenameFuncGenericError(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	teardown := pcrenameSetup(t, victim,
+		func(o, n string) error { return errSomethingElse },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Bob")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Couldn't rename the pfile.") {
+		t.Errorf("expected generic-error message; got %q", out)
+	}
+}
+
+var errSomethingElse = newSentinel("something else")
+
+type sentinelErr string
+
+func (s sentinelErr) Error() string { return string(s) }
+func newSentinel(s string) error    { return sentinelErr(s) }
+
+func TestDoPcrename_NoSeamWired(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	prevLookup := WorldPcLookup
+	prevRename := RenamePlayerFileFunc
+	WorldPcLookup = func(name string) *types.CharData {
+		if strings.EqualFold(name, "Eilidh") {
+			return victim
+		}
+		return nil
+	}
+	RenamePlayerFileFunc = nil
+	defer func() {
+		WorldPcLookup = prevLookup
+		RenamePlayerFileFunc = prevRename
+	}()
+
+	DoPcrename(ch, "Eilidh Bob")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Pfile rename not wired.") {
+		t.Errorf("expected unwired message; got %q", out)
+	}
+}
+
+func TestDoPcrename_SmashTilde(t *testing.T) {
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	var sawNew string
+	teardown := pcrenameSetup(t, victim,
+		func(o, n string) error { sawNew = n; return nil },
+		func(*types.CharData) {},
+	)
+	defer teardown()
+
+	DoPcrename(ch, "Eilidh Bo~b")
+	if strings.Contains(sawNew, "~") {
+		t.Errorf("new name must have tildes scrubbed; got %q", sawNew)
+	}
+	if victim.Name == "" || strings.Contains(victim.Name, "~") {
+		t.Errorf("victim.Name must have tildes scrubbed; got %q", victim.Name)
+	}
+	_ = readOutput(ch, client) // drain
+}
+
+// TestDoPcrename_E2EOnDisk pins the full round-trip with the real
+// persist.RenamePlayerFile implementation: tmp dir + fixture pfile +
+// real seam wiring + assert pfile moved on disk + assert in-memory
+// victim.Name updated.
+func TestDoPcrename_E2EOnDisk(t *testing.T) {
+	dataDir := t.TempDir()
+	// Pre-create a fixture pfile at <dataDir>/player/e/Eilidh.
+	srcPath := persist.PlayerFilePath(dataDir, "Eilidh")
+	if srcPath == "" {
+		t.Fatal("PlayerFilePath returned empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(srcPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(srcPath, []byte("pfile-body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ch, client := makeTestChar("Hero")
+	defer client.Close()
+	ch.Trust = 100
+
+	victim := &types.CharData{Name: "Eilidh", PCData: &types.PCData{}}
+	saveCalls := 0
+	prevLookup := WorldPcLookup
+	prevRename := RenamePlayerFileFunc
+	prevSave := SaveFunc
+	WorldPcLookup = func(name string) *types.CharData {
+		if strings.EqualFold(name, "Eilidh") {
+			return victim
+		}
+		return nil
+	}
+	// Wire the REAL persist.RenamePlayerFile against the tmp dir.
+	RenamePlayerFileFunc = func(o, n string) error {
+		return persist.RenamePlayerFile(dataDir, o, n)
+	}
+	SaveFunc = func(*types.CharData) { saveCalls++ }
+	defer func() {
+		WorldPcLookup = prevLookup
+		RenamePlayerFileFunc = prevRename
+		SaveFunc = prevSave
+	}()
+
+	DoPcrename(ch, "Eilidh Bob")
+	out := readOutput(ch, client)
+
+	if !strings.Contains(out, "Character was renamed.") {
+		t.Errorf("expected success; got %q", out)
+	}
+	if victim.Name != "Bob" {
+		t.Errorf("victim.Name = %q; want Bob", victim.Name)
+	}
+	if saveCalls != 1 {
+		t.Errorf("SaveFunc calls = %d; want 1", saveCalls)
+	}
+	// Pfile must have moved on disk.
+	if _, err := os.Stat(srcPath); !os.IsNotExist(err) {
+		t.Errorf("old pfile must not exist; stat err=%v", err)
+	}
+	dstPath := persist.PlayerFilePath(dataDir, "Bob")
+	body, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatalf("ReadFile dst pfile: %v", err)
+	}
+	if string(body) != "pfile-body" {
+		t.Errorf("dst pfile body = %q; want pfile-body", body)
 	}
 }

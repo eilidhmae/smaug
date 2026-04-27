@@ -1005,3 +1005,87 @@ func TestFlagNameTables_MatchCConstC(t *testing.T) {
 		}
 	}
 }
+
+// -------------- meditArmName PC routing (plan §G7 / §A15) --------------
+
+func TestMeditArmName_PcRoutesToPcrename(t *testing.T) {
+	rig := newPcHarness(t)
+	rig.victim.Name = "Eilidh"
+	rig.d.Olc.Mode = types.MEDIT_NAME
+
+	var calls [][2]string // (caller-name, arg)
+	prev := PcrenameFunc
+	PcrenameFunc = func(ch *types.CharData, argument string) {
+		calls = append(calls, [2]string{ch.Name, argument})
+	}
+	defer func() { PcrenameFunc = prev }()
+
+	meditParse(rig.d, "Bob")
+	if len(calls) != 1 {
+		t.Fatalf("PcrenameFunc calls = %d; want 1", len(calls))
+	}
+	// Expect (d.Character.Name, "Eilidh Bob")
+	if calls[0][1] != "Eilidh Bob" {
+		t.Errorf("PcrenameFunc arg = %q; want %q", calls[0][1], "Eilidh Bob")
+	}
+	if calls[0][0] != rig.d.Character.Name {
+		t.Errorf("PcrenameFunc caller = %q; want %q (d.Character.Name)", calls[0][0], rig.d.Character.Name)
+	}
+}
+
+func TestMeditArmName_NpcUnchanged(t *testing.T) {
+	rig := meditRigWithNpcProto(t)
+	rig.victim.Name = "old name"
+	rig.d.Olc.Mode = types.MEDIT_NAME
+
+	called := 0
+	prev := PcrenameFunc
+	PcrenameFunc = func(*types.CharData, string) { called++ }
+	defer func() { PcrenameFunc = prev }()
+
+	meditParse(rig.d, "new name")
+	if called != 0 {
+		t.Errorf("PcrenameFunc must NOT be called for NPC; calls=%d", called)
+	}
+	if rig.victim.Name != "new name" {
+		t.Errorf("NPC victim.Name = %q; want 'new name' (direct assign)", rig.victim.Name)
+	}
+	if rig.victim.IndexData == nil || rig.victim.IndexData.PlayerName != "new name" {
+		t.Errorf("NPC IndexData.PlayerName not mirrored; got %v", rig.victim.IndexData)
+	}
+}
+
+func TestMeditArmName_PcrenameFuncNil(t *testing.T) {
+	rig := newPcHarness(t)
+	rig.victim.Name = "Eilidh"
+	rig.d.Olc.Mode = types.MEDIT_NAME
+
+	prev := PcrenameFunc
+	PcrenameFunc = nil
+	defer func() { PcrenameFunc = prev }()
+
+	// Must not panic; must finish the arm cleanly (mode flips back to PC main menu).
+	meditParse(rig.d, "Bob")
+	if rig.d.Olc.Mode != types.MEDIT_PC_MAIN_MENU {
+		t.Errorf("Mode = %d; want MEDIT_PC_MAIN_MENU after meditFinishArm", rig.d.Olc.Mode)
+	}
+}
+
+func TestMeditArmName_EmptyArg(t *testing.T) {
+	rig := newPcHarness(t)
+	rig.victim.Name = "Eilidh"
+	rig.d.Olc.Mode = types.MEDIT_NAME
+
+	called := 0
+	prev := PcrenameFunc
+	PcrenameFunc = func(*types.CharData, string) { called++ }
+	defer func() { PcrenameFunc = prev }()
+
+	meditParse(rig.d, "")
+	if called != 0 {
+		t.Errorf("PcrenameFunc must not be called for empty arg; calls=%d", called)
+	}
+}
+
+// Suppress unused-import warning if any.
+var _ = util.SmashTilde

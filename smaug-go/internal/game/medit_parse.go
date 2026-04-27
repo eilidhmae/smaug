@@ -40,6 +40,17 @@ var worldMobLookup = func(vnum int) *types.MobIndexData {
 // Tests can override directly without standing up a full world.
 //
 // Plan: plan-phase6-quickwins-blank-pcrename.md §D3 / §G3.
+// PcrenameFunc is the seam to act.DoPcrename, wired at boot. The medit
+// MEDIT_NAME PC arm calls this to route PC name changes through the
+// pfile-rename pipeline (instead of the in-memory-only assignment that
+// silently desyncs the on-disk pfile path).
+//
+// Set once at boot before the game loop starts; read only from the
+// game loop goroutine. Safe without synchronization.
+//
+// Plan: plan-phase6-quickwins-blank-pcrename.md §D4c / §G7.
+var PcrenameFunc func(ch *types.CharData, argument string)
+
 var worldPcLookup = func(name string) *types.CharData {
 	if worldRef == nil {
 		return nil

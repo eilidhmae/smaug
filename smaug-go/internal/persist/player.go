@@ -1,8 +1,10 @@
 package persist
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -10,6 +12,55 @@ import (
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
+
+// Sentinel errors returned by RenamePlayerFile. Plan
+// plan-phase6-quickwins-blank-pcrename.md §D4.
+var (
+	ErrInvalidName         = errors.New("invalid player name")
+	ErrSourcePfileNotFound = errors.New("source pfile does not exist")
+	ErrDestPfileExists     = errors.New("destination pfile already exists")
+)
+
+// RenamePlayerFile renames a player file on disk from oldName to newName.
+// Both names go through PlayerFilePath (same charset validation via the
+// validPlayerName regex ^[a-zA-Z]{3,12}$ and lowercase-first-letter
+// subdirectory layout). Returns:
+//   - ErrInvalidName     — either name fails PlayerFilePath validation.
+//   - ErrSourcePfileNotFound — old pfile missing on disk.
+//   - ErrDestPfileExists — new pfile already exists (refuse to overwrite).
+//   - other errors from MkdirAll / Rename — surfaced as-is.
+//
+// Path-containment guarantee: PlayerFilePath calls filepath.Base(name)
+// at :739 BEFORE the regex check, stripping any directory components.
+// A newName of "../etc/passwd" becomes "passwd" (legal alphabetic
+// 6-char name), resolving to <dataDir>/player/p/passwd — still inside
+// the player tree. A newName of "foo/bar" becomes "bar" similarly.
+// A name failing the regex (too short / too long / non-alpha) returns
+// "" from PlayerFilePath, which we map to ErrInvalidName.
+//
+// Plan: plan-phase6-quickwins-blank-pcrename.md §D4 / §G5.
+func RenamePlayerFile(dataDir, oldName, newName string) error {
+	oldPath := PlayerFilePath(dataDir, oldName)
+	newPath := PlayerFilePath(dataDir, newName)
+	if oldPath == "" || newPath == "" {
+		return ErrInvalidName
+	}
+	if _, err := os.Stat(oldPath); err != nil {
+		if os.IsNotExist(err) {
+			return ErrSourcePfileNotFound
+		}
+		return err
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return ErrDestPfileExists
+	}
+	// Ensure destination subdirectory exists. Renaming "Eilidh" -> "Bob"
+	// crosses from player/e/ to player/b/; the latter may not yet exist.
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
+		return err
+	}
+	return os.Rename(oldPath, newPath)
+}
 
 // ObjIndexLookup is a function that resolves a vnum to an object template.
 type ObjIndexLookup func(vnum int) *types.ObjIndexData

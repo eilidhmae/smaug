@@ -162,6 +162,17 @@ func Boot(w *world.World, dataDir string, incoming chan *types.DescriptorData, o
 	act.MeditDispMenuFunc = game.MeditDispMenu
 	game.SetWorldRef(w)
 
+	// Pcrename seams (plan-phase6-quickwins-blank-pcrename.md §G6 / §G7).
+	// RenamePlayerFileFunc gives act.DoPcrename the on-disk rename
+	// primitive without an act->persist cycle (in fact persist is
+	// already imported by act so this is just consistent layering).
+	// PcrenameFunc lets the medit MEDIT_NAME PC arm reach act.DoPcrename
+	// without a game->act import cycle.
+	act.RenamePlayerFileFunc = func(oldName, newName string) error {
+		return persist.RenamePlayerFile(dataDir, oldName, newName)
+	}
+	game.PcrenameFunc = act.DoPcrename
+
 	// TIMER_DO_FUN callback registry (plan-tranche-b.md G2). Registry
 	// is empty today because no Go skill command currently sets a
 	// TIMER_DO_FUN timer. When `do_detrap` / `do_dig` / `do_search` /

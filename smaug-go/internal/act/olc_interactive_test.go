@@ -475,30 +475,136 @@ func TestDoMedit_NoArgEntersMenuNpc(t *testing.T) {
 	}
 }
 
-// TestDoMedit_PcNameRefusedPendingLookupSeam pins the documented A31
-// scope cut: PC-by-name (`medit Tagith`) requires a worldPcLookup seam
-// that has not landed. Today non-numeric arguments emit a clear
-// message naming the gap so future workers know to wire it.
-func TestDoMedit_PcNameRefusedPendingLookupSeam(t *testing.T) {
+// TestDoMedit_PcNameLooksUpConnectedPc pins the D3b PC-by-name path
+// (plan-phase6-quickwins-blank-pcrename.md §G4): non-numeric arg
+// resolves a connected PC via WorldPcLookup, allocates Olc with
+// MEDIT_PC_MAIN_MENU mode + Target=victim, transitions to CON_MEDIT,
+// and invokes MeditDispMenuFunc.
+func TestDoMedit_PcNameLooksUpConnectedPc(t *testing.T) {
 	_ = setupOlcWorld()
 	ch, client := makeImmTestChar("Builder")
 	defer client.Close()
 
+	victim := &types.CharData{Name: "Tagith", Level: 10, PCData: &types.PCData{}}
+	prev := WorldPcLookup
+	WorldPcLookup = func(name string) *types.CharData {
+		if strings.EqualFold(name, "Tagith") {
+			return victim
+		}
+		return nil
+	}
+	defer func() { WorldPcLookup = prev }()
+
+	dispCalled := false
 	MeditDispMenuFunc = func(d *types.DescriptorData) {
-		t.Error("MeditDispMenuFunc must NOT fire on non-numeric arg")
+		dispCalled = true
+		if d.Olc == nil {
+			t.Error("Olc not allocated")
+			return
+		}
+		if d.Olc.Mode != types.MEDIT_PC_MAIN_MENU {
+			t.Errorf("Mode = %d, want MEDIT_PC_MAIN_MENU", d.Olc.Mode)
+		}
+		got, ok := d.Olc.Target.(*types.CharData)
+		if !ok || got != victim {
+			t.Errorf("Target = %v, want victim %v", d.Olc.Target, victim)
+		}
+	}
+	defer func() { MeditDispMenuFunc = nil }()
+
+	DoMedit(ch, "Tagith")
+	_ = readOutput(ch, client)
+
+	if !dispCalled {
+		t.Error("MeditDispMenuFunc was not invoked")
+	}
+	if ch.Desc.Connected != int(types.CON_MEDIT) {
+		t.Errorf("Connected = %d, want CON_MEDIT", ch.Desc.Connected)
+	}
+}
+
+func TestDoMedit_PcNameLookupNoMatch(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+
+	prev := WorldPcLookup
+	WorldPcLookup = func(name string) *types.CharData { return nil }
+	defer func() { WorldPcLookup = prev }()
+
+	MeditDispMenuFunc = func(d *types.DescriptorData) {
+		t.Error("disp must not fire on no-match")
+	}
+	defer func() { MeditDispMenuFunc = nil }()
+
+	DoMedit(ch, "Ghost")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "No such player connected.") {
+		t.Errorf("expected not-found; got %q", out)
+	}
+	if ch.Desc.Connected == int(types.CON_MEDIT) {
+		t.Error("no-match must not transition to CON_MEDIT")
+	}
+	if ch.Desc.Olc != nil {
+		t.Error("no-match must not allocate Olc")
+	}
+}
+
+func TestDoMedit_PcNameLookupBelowTrust(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	// Below LEVEL_IMMORTAL — should bounce.
+	ch.Level = types.LEVEL_IMMORTAL - 5
+	ch.Trust = 0
+	defer client.Close()
+
+	// First gate (DoMedit entry) at LEVEL_IMMORTAL bounces with "Huh?"
+	// even before the PC lookup runs. That's the actual existing
+	// behavior for low-trust callers and the test pins that path.
+	prev := WorldPcLookup
+	WorldPcLookup = func(name string) *types.CharData {
+		t.Error("WorldPcLookup must not be called when DoMedit entry trust gate fails")
+		return nil
+	}
+	defer func() { WorldPcLookup = prev }()
+
+	DoMedit(ch, "Tagith")
+	out := readOutput(ch, client)
+	if !strings.Contains(out, "Huh?") {
+		t.Errorf("expected trust-gate Huh?; got %q", out)
+	}
+	if ch.Desc.Connected == int(types.CON_MEDIT) {
+		t.Error("low-trust must not transition to CON_MEDIT")
+	}
+}
+
+func TestDoMedit_PcNameLookupAlreadyEditing(t *testing.T) {
+	_ = setupOlcWorld()
+	ch, client := makeImmTestChar("Builder")
+	defer client.Close()
+
+	victim := &types.CharData{Name: "Tagith", Level: 10}
+	prev := WorldPcLookup
+	WorldPcLookup = func(name string) *types.CharData { return victim }
+	defer func() { WorldPcLookup = prev }()
+
+	// Pre-set descriptor as already in CON_MEDIT.
+	ch.Desc.Connected = int(types.CON_MEDIT)
+	ch.Desc.Olc = &types.OlcData{Mode: types.MEDIT_NPC_MAIN_MENU}
+	prevOlc := ch.Desc.Olc
+
+	MeditDispMenuFunc = func(d *types.DescriptorData) {
+		t.Error("disp must not fire when already editing")
 	}
 	defer func() { MeditDispMenuFunc = nil }()
 
 	DoMedit(ch, "Tagith")
 	out := readOutput(ch, client)
-	if !strings.Contains(out, "PC editing by name not yet supported") {
-		t.Errorf("expected PC-name-not-supported message, got: %q", out)
+	if !strings.Contains(out, "already editing") {
+		t.Errorf("expected already-editing; got %q", out)
 	}
-	if ch.Desc.Connected == int(types.CON_MEDIT) {
-		t.Error("non-numeric arg must not transition to CON_MEDIT")
-	}
-	if ch.Desc.Olc != nil {
-		t.Error("non-numeric arg must not allocate Olc")
+	if ch.Desc.Olc != prevOlc {
+		t.Error("Olc must be preserved (not clobbered) on double-edit")
 	}
 }
 

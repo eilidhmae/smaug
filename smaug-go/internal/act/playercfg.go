@@ -2,9 +2,11 @@ package act
 
 import (
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/eilidhmae/smaug/internal/persist"
 	"github.com/eilidhmae/smaug/internal/types"
 	"github.com/eilidhmae/smaug/internal/util"
 )
@@ -115,6 +117,85 @@ func DoBlank(ch *types.CharData, argument string) {
 	}
 	ch.Act.Set(types.PLR_BLANK)
 	ch.Send("Blank lines will be inserted before each prompt.\n\r")
+}
+
+// DoPcrename implements the 'pcrename' command (C act_wiz.c:12665-12770
+// do_pcrename). Renames a connected PC both in-memory (victim.Name) and
+// on disk (the pfile is renamed via RenamePlayerFileFunc seam).
+//
+// Divergences from C (recorded in plan-phase6-quickwins-blank-pcrename.md
+// §C Reference table):
+//   - Lookup uses WorldPcLookup (world-wide via Descriptors) instead of
+//     C's get_char_room. C's room-only lookup was a Shaddai-era security
+//     precaution; the Go port relies on the LEVEL_GREATER trust gate at
+//     the medit entry point (DoMedit PC-arg branch) for protection.
+//   - No backname removal — Go pfile layout has no .bak analog yet.
+//   - No god-dir cleanup — wizlist port deferred independently.
+//   - No build-area rename — Go has no per-immortal area assignment.
+//
+// CaseArgument preserves capitalization (OneArgument lowercases, which
+// would corrupt victim.Name).
+//
+// C-bug-not-preserved: C silently desyncs in-memory PC name from pfile
+// when caller's trust is below LEVEL_SUB_IMPLEM at omedit.c:1390. The Go
+// port routes ALL PC name changes through DoPcrename when the medit
+// MEDIT_NAME PC arm fires (D4c wire-up); the caller has already passed
+// the LEVEL_GREATER gate at DoMedit entry (D3b).
+//
+// Plan: plan-phase6-quickwins-blank-pcrename.md §D4 / §G6.
+func DoPcrename(ch *types.CharData, argument string) {
+	if ch.IsNPC() {
+		return
+	}
+	// CaseArgument preserves capitalization; OneArgument lowercases.
+	arg1, rest := util.CaseArgument(argument)
+	arg2, _ := util.CaseArgument(rest)
+	arg2 = util.SmashTilde(arg2)
+	if arg1 == "" || arg2 == "" {
+		ch.Send("Syntax: pcrename <victim> <new name>\n\r")
+		return
+	}
+	victim := WorldPcLookup(arg1)
+	if victim == nil {
+		ch.Send("No such player connected.\n\r")
+		return
+	}
+	if victim.IsNPC() {
+		ch.Send("You can't rename NPCs.\n\r")
+		return
+	}
+	if ch.GetTrust() < victim.GetTrust() {
+		ch.Send("I don't think they would like that!\n\r")
+		return
+	}
+	if strings.EqualFold(arg1, arg2) {
+		ch.Send("Old and new names are identical.\n\r")
+		return
+	}
+	if RenamePlayerFileFunc == nil {
+		ch.Send("Pfile rename not wired.\n\r")
+		return
+	}
+	if err := RenamePlayerFileFunc(arg1, arg2); err != nil {
+		switch err {
+		case persist.ErrInvalidName:
+			ch.Send("Illegal name.\n\r")
+		case persist.ErrSourcePfileNotFound:
+			ch.Send("Source pfile not found.\n\r")
+			util.Bug("DoPcrename: source pfile missing for %q", arg1)
+		case persist.ErrDestPfileExists:
+			ch.Send("That name already exists.\n\r")
+		default:
+			ch.Send("Couldn't rename the pfile.\n\r")
+			util.Bug("DoPcrename: rename failed: %v", err)
+		}
+		return
+	}
+	victim.Name = arg2
+	if SaveFunc != nil {
+		SaveFunc(victim)
+	}
+	ch.Send("Character was renamed.\n\r")
 }
 
 // setTitle is the Go port of C player.c:3112 set_title. If title starts with

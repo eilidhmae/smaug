@@ -38,6 +38,14 @@ var ReditDispMenuFunc func(d *types.DescriptorData)
 // Plan plan-phase6-olc-oedit.md §G3.
 var OeditDispMenuFunc func(d *types.DescriptorData)
 
+// RenamePlayerFileFunc is the seam to persist.RenamePlayerFile, wired
+// at boot. Tests can override to record calls / inject errors without
+// touching disk. Set once at boot before the game loop starts; read
+// only from the game loop goroutine. Safe without synchronization.
+//
+// Plan: plan-phase6-quickwins-blank-pcrename.md §D4b / §G6.
+var RenamePlayerFileFunc func(oldName, newName string) error
+
 // MeditDispMenuFunc is the medit counterpart to ReditDispMenuFunc /
 // OeditDispMenuFunc. Wired from boot (game.MeditDispMenu) in Wave 2 — Wave
 // 1 declares the seam but deliberately does NOT wire it in boot.go because

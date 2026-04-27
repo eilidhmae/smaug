@@ -1378,3 +1378,185 @@ func TestSavePlayer_OmitsZeroArenaCounters(t *testing.T) {
 		t.Errorf("ADeaths should be omitted when zero; got:\n%s", buf.String())
 	}
 }
+
+// -------------- RenamePlayerFile (plan §G5) --------------
+
+// renameFixture creates a tmp data dir with a pfile at <dataDir>/player/<lc>/<name>
+// containing the given body and returns (dataDir, fullPath).
+func renameFixture(t *testing.T, name, body string) (string, string) {
+	t.Helper()
+	dataDir := t.TempDir()
+	path := PlayerFilePath(dataDir, name)
+	if path == "" {
+		t.Fatalf("PlayerFilePath(%q) returned empty", name)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return dataDir, path
+}
+
+func TestRenamePlayerFile_HappyPath(t *testing.T) {
+	dataDir, oldPath := renameFixture(t, "Eilidh", "v1-content")
+	if err := RenamePlayerFile(dataDir, "Eilidh", "Bob"); err != nil {
+		t.Fatalf("RenamePlayerFile: %v", err)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Errorf("old pfile should not exist; stat err=%v", err)
+	}
+	newPath := PlayerFilePath(dataDir, "Bob")
+	body, err := os.ReadFile(newPath)
+	if err != nil {
+		t.Fatalf("ReadFile new pfile: %v", err)
+	}
+	if string(body) != "v1-content" {
+		t.Errorf("new pfile body = %q, want v1-content", body)
+	}
+}
+
+func TestRenamePlayerFile_HappyPathSameSubdir(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Eilidh", "data")
+	if err := RenamePlayerFile(dataDir, "Eilidh", "Edward"); err != nil {
+		t.Fatalf("RenamePlayerFile: %v", err)
+	}
+	newPath := PlayerFilePath(dataDir, "Edward")
+	if _, err := os.Stat(newPath); err != nil {
+		t.Errorf("new pfile should exist; stat err=%v", err)
+	}
+}
+
+func TestRenamePlayerFile_DifferentSubdirCreatesIt(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Alice", "data")
+	// player/b/ does not yet exist
+	if err := RenamePlayerFile(dataDir, "Alice", "Bob"); err != nil {
+		t.Fatalf("RenamePlayerFile: %v", err)
+	}
+	newPath := PlayerFilePath(dataDir, "Bob")
+	if _, err := os.Stat(newPath); err != nil {
+		t.Errorf("new pfile in fresh subdir should exist; stat err=%v", err)
+	}
+}
+
+func TestRenamePlayerFile_SourceMissing(t *testing.T) {
+	dataDir := t.TempDir()
+	err := RenamePlayerFile(dataDir, "Eilidh", "Bob")
+	if err != ErrSourcePfileNotFound {
+		t.Errorf("err = %v, want ErrSourcePfileNotFound", err)
+	}
+}
+
+func TestRenamePlayerFile_DestExists(t *testing.T) {
+	dataDir, oldPath := renameFixture(t, "Eilidh", "src-data")
+	// Pre-create the destination.
+	destPath := PlayerFilePath(dataDir, "Bob")
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destPath, []byte("dest-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := RenamePlayerFile(dataDir, "Eilidh", "Bob")
+	if err != ErrDestPfileExists {
+		t.Errorf("err = %v, want ErrDestPfileExists", err)
+	}
+	// Source must be untouched.
+	body, _ := os.ReadFile(oldPath)
+	if string(body) != "src-data" {
+		t.Errorf("source mutated on dest-exists; body=%q", body)
+	}
+	// Dest must be untouched.
+	body, _ = os.ReadFile(destPath)
+	if string(body) != "dest-data" {
+		t.Errorf("dest mutated on dest-exists; body=%q", body)
+	}
+}
+
+func TestRenamePlayerFile_InvalidOldName(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := RenamePlayerFile(dataDir, "A", "Bob"); err != ErrInvalidName {
+		t.Errorf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestRenamePlayerFile_InvalidNewNameTooShort(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Eilidh", "data")
+	if err := RenamePlayerFile(dataDir, "Eilidh", "AB"); err != ErrInvalidName {
+		t.Errorf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestRenamePlayerFile_InvalidNewNameTooLong(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Eilidh", "data")
+	if err := RenamePlayerFile(dataDir, "Eilidh", "ThirteenCharsX"); err != ErrInvalidName {
+		t.Errorf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestRenamePlayerFile_InvalidNewNameNonAlpha(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Eilidh", "data")
+	if err := RenamePlayerFile(dataDir, "Eilidh", "bo.b"); err != ErrInvalidName {
+		t.Errorf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestRenamePlayerFile_InvalidNewNameSpace(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Eilidh", "data")
+	if err := RenamePlayerFile(dataDir, "Eilidh", "bo b"); err != ErrInvalidName {
+		t.Errorf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+// TestRenamePlayerFile_TraversalNeutralized pins the path-containment
+// behavior: PlayerFilePath calls filepath.Base BEFORE the regex check,
+// so "../etc/passwd" becomes "passwd" (legal name) and lands at
+// <dataDir>/player/p/passwd — never escapes the player tree.
+func TestRenamePlayerFile_TraversalNeutralized(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Eilidh", "data")
+	err := RenamePlayerFile(dataDir, "Eilidh", "../etc/passwd")
+	// "passwd" is a legal alphabetic 6-char name -> Base strips to "passwd"
+	// -> rename succeeds and lands at player/p/passwd. No filesystem escape.
+	if err != nil {
+		t.Fatalf("expected rename to succeed (containment neutralizes traversal); err=%v", err)
+	}
+	expected := PlayerFilePath(dataDir, "passwd")
+	if _, statErr := os.Stat(expected); statErr != nil {
+		t.Errorf("expected %s to exist; stat err=%v", expected, statErr)
+	}
+	// Critically: ensure no file was created OUTSIDE the player tree.
+	dataDirAbs, _ := filepath.Abs(dataDir)
+	expectedAbs, _ := filepath.Abs(expected)
+	playerTree := filepath.Join(dataDirAbs, "player")
+	if !strings.HasPrefix(expectedAbs, playerTree) {
+		t.Errorf("file escaped player tree: %s not under %s", expectedAbs, playerTree)
+	}
+}
+
+func TestRenamePlayerFile_TraversalAbsolutePathNeutralized(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Eilidh", "data")
+	err := RenamePlayerFile(dataDir, "Eilidh", "/etc/passwd")
+	// Same as above: filepath.Base("/etc/passwd") == "passwd" (legal).
+	if err != nil {
+		t.Fatalf("absolute-path traversal must be neutralized; err=%v", err)
+	}
+	expected := PlayerFilePath(dataDir, "passwd")
+	if _, statErr := os.Stat(expected); statErr != nil {
+		t.Errorf("expected %s to exist; stat err=%v", expected, statErr)
+	}
+	if _, statErr := os.Stat("/etc/passwd.smaug-test-leak"); statErr == nil {
+		t.Errorf("must not have escaped to /etc")
+	}
+}
+
+func TestRenamePlayerFile_EmptyNames(t *testing.T) {
+	dataDir, _ := renameFixture(t, "Eilidh", "data")
+	if err := RenamePlayerFile(dataDir, "", "Bob"); err != ErrInvalidName {
+		t.Errorf("empty old: err=%v, want ErrInvalidName", err)
+	}
+	if err := RenamePlayerFile(dataDir, "Eilidh", ""); err != ErrInvalidName {
+		t.Errorf("empty new: err=%v, want ErrInvalidName", err)
+	}
+}
