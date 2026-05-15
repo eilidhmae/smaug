@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+#
+# pre-push -- Adversary review gate for smaug-go.
+#
+# Hard gates (exit non-zero, blocks the push):
+#   - adversary scan returns FAIL on any ref being pushed
+#   - new-branch push but the local `golang` integration branch is missing
+#
+# Informational (exit 0, push proceeds, operator should follow up):
+#   - adversary scan returns CONCERNS -- review summary and per-finding
+#     details print to stdout; full review file persists under
+#     smaug-go/reviews/<basename>-<ts>.md
+#
+# Mandatory: this hook intentionally has NO SMAUG_SKIP_* env-var bypass
+# (unlike pre-commit). `git push --no-verify` is git's own builtin and
+# cannot be intercepted by the hook script itself; it is strongly
+# discouraged for pushes.
+#
+# Branch model: all smaug-go work lives on the local `golang` integration
+# branch; `main` exists but has none of smaug-go's files. Feature branches
+# are cut from `golang` and reviewed against the local `golang` ref
+# (single-developer workflow -- local state is authoritative; origin is
+# backup).
+#
+# Range resolution (pre-push contract: git sends one line per ref on
+# stdin: "<local-ref> <local-sha> <remote-ref> <remote-sha>"):
+#   - remote-sha == 40 zeros (new branch upstream):
+#       scan "$(git merge-base golang $local_sha)..$local_sha"
+#   - otherwise:
+#       scan "$remote_sha..$local_sha" -- what the push actually adds.
+#
+# Deletions (local_sha == 40 zeros) are skipped silently.
+
+set -uo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+MODULE_DIR="$REPO_ROOT/smaug-go"
+SCAN_SH="$HOME/.pi/agent/tools/adversary-scan.sh"
+ZERO40="0000000000000000000000000000000000000000"
+INTEGRATION_BRANCH="golang"
+
+if [[ ! -x "$SCAN_SH" ]]; then
+    echo "pre-push: $SCAN_SH not found or not executable."
+    echo "         Install pi-tools (~/src/pi-tools/install.sh) before pushing."
+    exit 1
+fi
+
+if [[ ! -d "$MODULE_DIR" ]]; then
+    echo "pre-push: $MODULE_DIR not found; skipping (this hook is smaug-go-scoped)."
+    exit 0
+fi
+
+echo "========================================="
+echo " smaug-go pre-push: adversary scan"
+echo "========================================="
+echo "Repo:    $REPO_ROOT"
+echo "Module:  $MODULE_DIR"
+echo "Time:    $(date '+%Y-%m-%d %H:%M:%S')"
+
+FAIL_COUNT=0
+REF_COUNT=0
+
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    REF_COUNT=$((REF_COUNT + 1))
+
+    if [[ "$local_sha" = "$ZERO40" ]]; then
+        echo ""
+        echo "--- $remote_ref (deletion) ---"
+        echo "  Skipped: no diff to scan."
+        continue
+    fi
+
+    if [[ "$remote_sha" = "$ZERO40" ]]; then
+        if ! git rev-parse --verify --quiet "$INTEGRATION_BRANCH" >/dev/null; then
+            echo ""
+            echo "--- $local_ref -> $remote_ref (new branch) ---"
+            echo "  ERROR: local branch '$INTEGRATION_BRANCH' not found on this clone."
+            echo "         Create it (e.g. \`git branch $INTEGRATION_BRANCH <sha>\`)"
+            echo "         so the merge-base is resolvable, then retry."
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            continue
+        fi
+        if ! base=$(git merge-base "$INTEGRATION_BRANCH" "$local_sha" 2>/dev/null); then
+            echo ""
+            echo "--- $local_ref -> $remote_ref (new branch) ---"
+            echo "  ERROR: could not determine merge-base of $INTEGRATION_BRANCH and $local_sha."
+            echo "         Refusing to push without a scannable range."
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            continue
+        fi
+        RANGE="$base..$local_sha"
+        echo ""
+        echo "--- $local_ref -> $remote_ref (new branch) ---"
+        echo "  Range:  $RANGE (merge-base with local $INTEGRATION_BRANCH)"
+    else
+        RANGE="$remote_sha..$local_sha"
+        echo ""
+        echo "--- $local_ref -> $remote_ref ---"
+        echo "  Range:  $RANGE"
+    fi
+
+    # cd into smaug-go so scan.sh writes review files to smaug-go/reviews/
+    # rather than $REPO_ROOT/reviews/. Git resolution still walks up to .git.
+    if ! ( cd "$MODULE_DIR" && "$SCAN_SH" --range "$RANGE" --gate ); then
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+done
+
+echo ""
+echo "========================================="
+if [[ "$REF_COUNT" -eq 0 ]]; then
+    echo " No refs received on stdin -- nothing to scan."
+    echo "========================================="
+    exit 0
+fi
+if [[ "$FAIL_COUNT" -gt 0 ]]; then
+    echo " BLOCKED: $FAIL_COUNT of $REF_COUNT ref(s) failed adversary gate"
+    echo "========================================="
+    exit 1
+fi
+echo " OK: adversary scan completed for $REF_COUNT ref(s)"
+echo "      (CONCERNS verdicts, if any, are printed above with review file paths)"
+echo "========================================="
+exit 0
