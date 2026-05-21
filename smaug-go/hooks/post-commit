@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+#
+# post-commit -- Non-blocking adversary scan for corpus capture.
+#
+# Mirrors the pi-tools post-commit pattern: scan the just-landed commit
+# (HEAD~..HEAD) asynchronously, building up training corpus on every
+# commit without changing the dev loop. Returns immediately; the scan
+# runs detached and writes its review markdown + bootstrap.jsonl record
+# in the background.
+#
+# Skip conditions (silent exit 0):
+#   - merge commits (HEAD has two parents) -- diffs are large, capture
+#     value is low, and HEAD~..HEAD is ambiguous
+#   - root commit (no HEAD~) -- no range to scan
+#   - commit message contains [skip scan] or [no scan] (case-insensitive)
+#   - SMAUG_SKIP_POST_COMMIT_SCAN=1 in env
+#   - adversary-scan.sh not found at any candidate path
+#   - smaug-go/ not present under repo root (this hook is module-scoped)
+#
+# Output:
+#   - one-line stdout message naming the log file
+#   - the scan's full output streams into the log file in the
+#     background; bootstrap.jsonl records get appended by the scan
+#     itself (existing capture pipeline)
+#
+# Bypass with `git commit --no-verify` (skips all hooks) or
+# SMAUG_SKIP_POST_COMMIT_SCAN=1 in env.
+
+set -uo pipefail
+
+if [[ "${SMAUG_SKIP_POST_COMMIT_SCAN:-0}" == "1" ]]; then
+    exit 0
+fi
+
+# Skip merge commits (two parents).
+if git rev-parse --verify -q HEAD^2 >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Skip root commit (no HEAD~).
+if ! git rev-parse --verify -q HEAD~ >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Skip if commit message opts out.
+if git log -1 --format=%B | grep -qiE '\[(skip|no) scan\]'; then
+    exit 0
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+MODULE_DIR="$REPO_ROOT/smaug-go"
+
+# Module-scoped hook: skip silently if smaug-go/ is missing.
+if [[ ! -d "$MODULE_DIR" ]]; then
+    exit 0
+fi
+
+# Find adversary-scan.sh; prefer the global install, fall back to
+# in-tree clones if pi-tools is colocated.
+SCAN=""
+for candidate in \
+    "$HOME/.pi/agent/tools/adversary-scan.sh" \
+    "$REPO_ROOT/.pi/agent/tools/adversary-scan.sh" \
+    "$REPO_ROOT/tools/bash/adversary-scan.sh" \
+; do
+    if [[ -x "$candidate" ]]; then
+        SCAN="$candidate"
+        break
+    fi
+done
+if [[ -z "$SCAN" ]]; then
+    exit 0
+fi
+
+SHA=$(git rev-parse --short HEAD)
+TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+LOG_DIR="$MODULE_DIR/reviews"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/post-commit-${SHA}-${TS}.log"
+
+# Run the scan detached from the parent shell. nohup + disown so the
+# scan survives the operator's terminal closing; redirect all stdio
+# to the log file; & to background it. Paths are passed as positional
+# args (rather than interpolated into the single-quoted command string)
+# so a $MODULE_DIR or $SCAN containing a literal single quote can't
+# break out and become shell injection -- the inner shell quotes them
+# safely. The scan runs from the module directory so reviews/ resolves
+# under $MODULE_DIR (smaug-go's own reviews tree, not the repo root).
+nohup bash -c '
+    cd "$1" && "$2" --range HEAD~..HEAD
+' _ "$MODULE_DIR" "$SCAN" >"$LOG" 2>&1 &
+disown
+
+echo "  [post-commit] adversary scan running in background → $(basename "$LOG")"
