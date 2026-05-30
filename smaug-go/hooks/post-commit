@@ -59,9 +59,9 @@ fi
 # in-tree clones if pi-tools is colocated.
 SCAN=""
 for candidate in \
-    "$HOME/.pi/agent/tools/adversary-scan.sh" \
-    "$REPO_ROOT/.pi/agent/tools/adversary-scan.sh" \
-    "$REPO_ROOT/tools/bash/adversary-scan.sh" \
+    "$HOME/.pi/agent/scripts/adversary-scan.sh" \
+    "$REPO_ROOT/.pi/agent/scripts/adversary-scan.sh" \
+    "$REPO_ROOT/scripts/bash/adversary-scan.sh" \
 ; do
     if [[ -x "$candidate" ]]; then
         SCAN="$candidate"

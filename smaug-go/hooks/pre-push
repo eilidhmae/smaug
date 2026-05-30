@@ -35,7 +35,7 @@ set -uo pipefail
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 MODULE_DIR="$REPO_ROOT/smaug-go"
-SCAN_SH="$HOME/.pi/agent/tools/adversary-scan.sh"
+SCAN_SH="$HOME/.pi/agent/scripts/adversary-scan.sh"
 ZERO40="0000000000000000000000000000000000000000"
 INTEGRATION_BRANCH="golang"
 
