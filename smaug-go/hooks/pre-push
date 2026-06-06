@@ -33,6 +33,17 @@
 
 set -uo pipefail
 
+# BLOCKING LLM PUSH-GATE DISABLED (2026-06-05) -- this gate ran
+# adversary-scan.sh --range --gate (single-shot adversary-pass.sh) with NO
+# bypass, so a low-precision FAIL, a large-diff runaway (empty body -> UNKNOWN),
+# or a down :18080 backend would BLOCK the push. The local adversary is being
+# re-platformed onto the multi-turn pi HARNESS as a NON-BLOCKING post-push
+# capture (local harness adversary + Claude teacher, for distillation) -- see
+# my-macbook/NEXT_STEPS.md + corpus-epoch-2026-06-05.md. Until that lands, this
+# gate is off (push proceeds). The mechanical pre-commit gate is unaffected.
+echo "pre-push: LLM adversary gate disabled (re-platforming to non-blocking post-push harness capture; see NEXT_STEPS.md). Push proceeding."
+exit 0
+
 REPO_ROOT=$(git rev-parse --show-toplevel)
 MODULE_DIR="$REPO_ROOT/smaug-go"
 SCAN_SH="$HOME/.pi/agent/scripts/adversary-scan.sh"

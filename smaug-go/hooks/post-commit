@@ -28,6 +28,16 @@
 
 set -uo pipefail
 
+# LLM CAPTURE MOVED TO POST-PUSH HARNESS PIPELINE (2026-06-05) -- the old
+# per-commit single-shot scan (adversary-scan.sh -> adversary-pass.sh) runs the
+# thinking model away on real-sized inputs (empty body) and captured old-base,
+# unpaired, style-skewed records (see corpus-epoch-2026-06-05.md). Per-commit
+# LLM capture is therefore OFF; corpus capture moves to a non-blocking post-push
+# pipeline that runs the local adversary in the pi HARNESS (adversary-jailed.sh,
+# multi-turn) + a Claude teacher for distillation. Re-enable target: see
+# my-macbook/NEXT_STEPS.md. The mechanical pre-commit gate is unaffected.
+exit 0
+
 if [[ "${SMAUG_SKIP_POST_COMMIT_SCAN:-0}" == "1" ]]; then
     exit 0
 fi
